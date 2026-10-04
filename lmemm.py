@@ -35,13 +35,21 @@ def memory(n):
         sys.exit("nothing remembered yet. Run:  python3 lmemm.py")
     print("remembered (most recent first)\n")
     for i in items[:n]:
-        print(f"{i['last_seen'][11:19]}  {i['seconds']:5d}s  x{i['visits']:<2}  {i['app'][:14]:14}  {i['doing']}")
+        print(f"{i['last_seen'][11:19]}  {i['seconds']:5d}s  x{i['visits']:<2}  "
+              f"{(i.get('mostly') or '-'):9}  {i['app'][:14]:14}  {i['doing']}")
+        acts = i.get("activity", {})
+        split = "  ".join(f"{c} {a['seconds']}s" for c, a in acts.items() if a["seconds"])
+        if split:
+            print(f"{'':30}{split}")
+        typed = acts.get("typing", {}).get("text")
+        if typed:
+            print(f"{'':30}typed: {typed[-1][:80]}")
     sessions = sorted(glob.glob(os.path.join(tracker.SESSIONS_DIR, "*.json")))
     if sessions:
         doc = json.load(open(sessions[-1]))
         print(f"\nlatest session {doc['session']}\n")
         for e in doc["timeline"][-n:]:
-            print(f"{e['from']}  {e['seconds']:4d}s  {e['app'][:14]:14}  {e['doing']}")
+            print(f"{e['from']}  {e['seconds']:4d}s  {(e.get('mostly') or '-'):9}  {e['app'][:14]:14}  {e['doing']}")
     print(f"\n{tracker.ITEMS_FILE}")
 
 

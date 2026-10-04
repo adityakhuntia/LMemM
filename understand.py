@@ -81,12 +81,14 @@ TITLE_FIELDS = ("subject", "document", "chat", "conversation", "file", "video", 
                 "query", "folder")
 
 
-def state(app, action, doing, target=None, details=None, evidence=None):
+def state(app, action, doing, target=None, details=None, evidence=None, doing_typing=None):
     d = {k: v for k, v in (details or {}).items() if v not in (None, "", [], {})}
     title = next((d[k] for k in TITLE_FIELDS if d.get(k)), None)
     return {"app": app, "action": action, "kind": KINDS.get(action, action), "title": title,
             "doing": doing, "target": target,
-            "details": d, "evidence": evidence or []}
+            "details": d, "evidence": evidence or [],
+            # how to say it when the pixels show you typing (activity.py decides that)
+            "doing_typing": doing_typing or doing}
 
 
 # ---------------------------------------------------------------- per-app rules
@@ -184,10 +186,8 @@ def chat(res, meta, app):
     ev = [f"open chat header: {who}" if who else "no chat header found"]
     if not who:
         return state(app, "browsing_chats", f"Looking through chats in {app}", target=None, evidence=ev)
-    ev.append("message box empty" if placeholder else "message box has text")
-    return state(app, "chatting" if placeholder else "typing_message",
-                 (f"Reading the chat with {who}" if placeholder else f"Typing a message to {who}"),
-                 target=who, details={"chat": who}, evidence=ev)
+    return state(app, "chatting", f"In the chat with {who}", target=who, details={"chat": who},
+                 evidence=ev, doing_typing=f"Typing a message to {who}")
 
 
 def ai(res, meta, app):
@@ -199,9 +199,8 @@ def ai(res, meta, app):
     empty = any(PLACEHOLDER.match(o["text"]) for o in objs)
     path = urlparse(meta.get("url") or "").path
     conv = re.search(r"/(?:app|c|chat)/([\w-]{6,})", path)
-    return state(app, "using_ai" if empty else "prompting_ai",
-                 (f'Talking to {app}' if empty else f"Writing a prompt to {app}")
-                 + (f' about "{short(title, 70)}"' if title else ""),
+    about = f' about "{short(title, 70)}"' if title else ""
+    return state(app, "using_ai", f"Talking to {app}{about}", doing_typing=f"Writing a prompt to {app}{about}",
                  target=conv.group(1) if conv else title, details={"conversation": title},
                  evidence=["conversation title from window"] if title else [])
 

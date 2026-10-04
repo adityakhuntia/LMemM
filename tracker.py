@@ -40,15 +40,17 @@ import sys
 import threading
 import time
 from collections import Counter
+from difflib import SequenceMatcher
 from datetime import datetime
 
 try:
     import objc
     import Foundation
-    from AppKit import NSObject, NSScreen, NSWorkspace
+    from AppKit import NSEvent, NSObject, NSScreen, NSWorkspace
 except ImportError:
     sys.exit("Missing dependency. Run:  pip3 install pyobjc-framework-Cocoa")
 
+import activity
 import resolver
 import understand
 
@@ -104,9 +106,29 @@ def cg():
     return _CG
 
 
-def idle_seconds():
-    # HID system state, any input event type
-    return cg()["CGEventSourceSecondsSinceLastEventType"](1, 0xFFFFFFFF)
+def idle_seconds(event_type=0xFFFFFFFF):
+    # HID system state; default = any input event type
+    return cg()["CGEventSourceSecondsSinceLastEventType"](1, event_type)
+
+
+def input_ages():
+    """Seconds since the last key press, scroll, and click. Counters only: never
+    which key, never where you clicked."""
+    return {
+        "key": round(idle_seconds(10), 1),                                  # keyDown
+        "scroll": round(idle_seconds(22), 1),                               # scrollWheel
+        "click": round(min(idle_seconds(1), idle_seconds(3)), 1),           # left/right mouseDown
+    }
+
+
+def pointer_on(display_frame):
+    """Pointer position at capture, in points from the captured display's top-left."""
+    p = NSEvent.mouseLocation()
+    f = display_frame
+    x, y = p.x - f.origin.x, (f.origin.y + f.size.height) - p.y
+    if 0 <= x < f.size.width and 0 <= y < f.size.height:
+        return {"x": int(x), "y": int(y)}
+    return None
 
 
 def front():
@@ -165,15 +187,15 @@ def display_for(bounds):
     """1-based screencapture -D index of the display holding the window's centre."""
     screens = NSScreen.screens()
     if not bounds or len(screens) < 2:
-        return 1, screens[0].frame().size
+        return 1, screens[0].frame()
     main_h = screens[0].frame().size.height
     cx = bounds["X"] + bounds["Width"] / 2
     cy = main_h - (bounds["Y"] + bounds["Height"] / 2)      # CG top-left -> Cocoa bottom-left
     for i, s in enumerate(screens):
         f = s.frame()
         if f.origin.x <= cx < f.origin.x + f.size.width and f.origin.y <= cy < f.origin.y + f.size.height:
-            return i + 1, f.size
-    return 1, screens[0].frame().size
+            return i + 1, f
+    return 1, screens[0].frame()
 
 
 def screenshot(path, display):
@@ -252,6 +274,7 @@ class Tracker:
         self.paused = None
         self.q = queue.Queue()
         self.events = []               # the session timeline: when, pointing at items
+        self.last_frame = None         # previous frame (pixels + OCR) for change tracking
         self.items = load_items()      # the memory: one entry per thing, across sessions
         self.stats = Counter()
         self.session = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -341,7 +364,9 @@ class Tracker:
             say(f"{datetime.now():%H:%M:%S}  {trigger:13}  {f['app'][:22]:22}  SKIP  {skip}")
             return
 
-        display, size = display_for(f["bounds"])
+        display, frame = display_for(f["bounds"])
+        size = frame.size
+        inputs, pointer = input_ages(), pointer_on(frame)
         ts = datetime.now().strftime("%Y%m%d-%H%M%S")
         img = os.path.join(DATA_DIR, ts + ".jpg")
         if os.path.exists(img):          # two captures in one second
@@ -364,6 +389,7 @@ class Tracker:
             "screen": {"w": int(size.width), "h": int(size.height)}, "display": display,
             "image": ts + ".jpg", "bytes": os.path.getsize(img),
             "trigger": trigger, "pinned": pinned, "session": self.session,
+            "inputs": inputs, "pointer": pointer,
         }
         meta_path = os.path.join(DATA_DIR, ts + ".json")
         with open(meta_path, "w") as fh:
@@ -388,23 +414,55 @@ class Tracker:
                 self.q.task_done()
 
     def handle(self, meta_path, meta, trigger, pinned):
-        res = resolver.resolve(meta_path)
-        st = understand.describe(res, meta)
         now = time.mktime(time.strptime(meta["ts"], "%Y%m%d-%H%M%S"))
-        cur = self.events[-1] if self.events else None
-        item_id = self.item_for(st, cur)
-        item = self.items.get(item_id)
-        frame_used = False
+        img = activity.load(os.path.join(DATA_DIR, meta["image"]))
+        last = self.last_frame
+        sig = (meta.get("app"), meta.get("window"), meta.get("url"))
 
-        # -- the memory: one entry per thing
+        # 1. pixels first: an unchanged screen of the same window needs no OCR at all
+        same_window = last is not None and last["sig"] == sig
+        change = activity.diff(last["img"], img) if same_window else None
+        if change is not None and not change["regions"] and not pinned:
+            res, st = last["res"], last["st"]
+            self.stats["no_ocr"] += 1
+        else:
+            res = resolver.resolve(meta_path)
+            st = understand.describe(res, meta)
+
+        # 2. which thing is this?
+        cur = self.events[-1] if self.events else None
+        scrolled = bool(change and change["scroll"]) or (meta.get("inputs") or {}).get("scroll", 1e9) < 3 * self.every
+        item_id, ref = self.item_for(st, cur, res, trigger, scrolled)
+        item = self.items.get(item_id)
+        same_thing = last is not None and last["item"] == item_id
+        if not same_thing:
+            change = None                  # diffing two different things means nothing
+        elif change is None:
+            change = activity.diff(last["img"], img)    # same thing, its URL/title changed
+
+        # 3. what happened since the last frame of it: typing / reading / receiving / focus
+        dt = min(now - last["t"], 3 * self.every) if same_thing else 0
+        scale = res["image_size"]["w"] / meta["screen"]["w"] if meta.get("screen") else 1
+        ptr = meta.get("pointer")
+        act = activity.classify(change, last["res"] if same_thing else None, res,
+                                meta.get("inputs") or {"key": 1e9, "scroll": 1e9, "click": 1e9},
+                                (ptr["x"] * scale, ptr["y"] * scale) if ptr else None, dt,
+                                kind=st["kind"])
+        self.last_frame = {"sig": sig, "img": img, "res": res, "st": st, "item": item_id, "t": now}
+        if act["category"] == "typing":
+            st = dict(st, doing=st.get("doing_typing") or st["doing"])
+
+        # 4. the memory: one entry per thing
         state_hash = hashlib.sha1(json.dumps(st["details"], sort_keys=True).encode()).hexdigest()[:12]
+        frame_used = False
         if item is None:
             item = self.items[item_id] = {
                 "id": item_id, "app": st["app"], "kind": st["kind"], "title": st["title"],
-                "doing": st["doing"], "state": st["details"],
+                "doing": st["doing"], "mostly": None, "state": st["details"],
+                "activity": {c: {"seconds": 0, "text": []} for c in CATEGORIES},
                 "first_seen": meta["iso"], "last_seen": meta["iso"],
                 "seconds": 0, "visits": 0, "updates": 0,
-                "screenshot": meta["image"], "content_hash": state_hash, "ref": understand.ref(st)}
+                "screenshot": meta["image"], "content_hash": state_hash, "ref": ref, "refs": [ref]}
             frame_used = True
             self.stats["new_items"] += 1
         else:
@@ -421,43 +479,117 @@ class Tracker:
                 frame_used = True
         if pinned:
             item["pinned"] = True
+        self.record(item["activity"], act, dt)
+        if act["category"] == "typing":
+            boxes = [o["box"] for o in res["objects"] if o["text"] in act["new_text"]]
+            if item.get("typing_area"):
+                boxes.append(item["typing_area"])
+            if boxes:
+                x0 = min(b[0] for b in boxes); y0 = min(b[1] for b in boxes)
+                x1 = max(b[0] + b[2] for b in boxes); y1 = max(b[1] + b[3] for b in boxes)
+                item["typing_area"] = [x0, y0, x1 - x0, y1 - y0]
+        item["mostly"] = mostly(item["activity"])
+        if not item["title"] and authored(item):
+            item["title"] = item["activity"]["typing"]["text"][0][:60]   # untitled: name it by what you wrote
 
-        # -- the timeline: when you were on which item
+        # 5. the timeline: when you were on which item, and what you were doing there
         t = hms(meta["ts"])
         if cur and cur["item"] == item_id:
             self.extend(cur, now, t)
             cur["doing"] = st["doing"]
         else:
             if cur:
+                # the gap between its last frame and now: you kept doing what you were doing
+                gap = int(now - (last["t"] if last else now))
+                cat = cur.get("_last_cat") or "reading"
+                if gap > 0 and cur["item"] in self.items:
+                    cur["activity"][cat] = cur["activity"].get(cat, 0) + gap
+                    cur["mostly"] = max(cur["activity"], key=cur["activity"].get)
+                    prev_item = self.items[cur["item"]]
+                    prev_item["activity"][cat]["seconds"] += gap
+                    prev_item["mostly"] = mostly(prev_item["activity"])
                 self.extend(cur, now, t)
             item["visits"] += 1
-            self.events.append({"from": t, "to": t, "seconds": 0, "item": item_id,
-                                "app": st["app"], "doing": st["doing"], "trigger": trigger,
-                                "_start": now})
+            cur = {"from": t, "to": t, "seconds": 0, "item": item_id, "app": st["app"],
+                   "doing": st["doing"], "activity": {}, "trigger": trigger, "_start": now}
+            self.events.append(cur)
             back = item["visits"] > 1
             say(f"{t}  {trigger:13}  {st['app'][:16]:16}  {st['doing']}"
                 + ("   (back to it)" if back else ""))
+        if dt:
+            cur["activity"][act["category"]] = cur["activity"].get(act["category"], 0) + int(dt)
+            cur["mostly"] = max(cur["activity"], key=cur["activity"].get)
+        cur["_last_cat"] = act["category"]
+        if act["category"] != "reading" or act["new_text"]:
+            say(f"{t}  {'':13}  {'':16}    {act['category']}"
+                + (f": {act['new_text'][0][:70]}" if act["new_text"] else "")
+                + (f"  [pointer on {act['pointer_on'][:30]}]" if act.get("pointer_on") else ""))
+
         if not frame_used:
             self.drop_frame(meta["image"])
             self.stats["no_change"] += 1
         self.save()
 
-    def item_for(self, st, cur):
-        """Which memory item this screen belongs to."""
+    @staticmethod
+    def record(acts, act, dt):
+        """Add this moment to the thing's activity: seconds, and the text involved."""
+        a = acts[act["category"]]
+        a["seconds"] += int(dt)
+        if act["category"] == "receiving" and act["new_text"]:
+            a["count"] = a.get("count", 0) + 1
+        texts = act["new_text"] + ([act["pointer_on"]] if act.get("pointer_on") and
+                                   act["category"] == "focus" else [])
+        for txt in texts:
+            if txt in a["text"]:
+                a["text"].remove(txt)
+            a["text"].append(txt)
+        del a["text"][:-KEEP_TEXT]                    # newest KEEP_TEXT lines
+
+    def item_for(self, st, cur, res, trigger, scrolled):
+        """
+        Which memory item this screen belongs to -> (item id, ref). Same rule for every app.
+
+        The ref (understand.py) names WHERE you are: a URL, a window, a draft slot.
+        What you TYPED there tells instances apart:
+          - same place, and your earlier text is still on screen      -> the same thing
+          - same place, your text vanished while you stayed on it (no scroll), or you
+            come back and the spot you typed into is empty          -> a NEW thing that
+            just looks the same (a second email, a new note, a fresh prompt)
+          - conversations (it has received text from others) never split
+          - new place reached without navigating (no app/tab switch), while what you
+            typed is still on screen, or the old place only had a placeholder name
+            ("new", "untitled")                                      -> the same thing,
+            whose URL/id/title changed (a draft got saved, a doc got a name)
+          - anything else is a different thing: two chats in one WhatsApp tab are two
+        """
         ref = understand.ref(st)
-        iid = f'{st["kind"]}-{hashlib.sha1(ref.encode()).hexdigest()[:8]}'
+        on_screen = [o["text"] for o in res["objects"]
+                     if o["text"] and o["kind"] not in understand.CHROME]
         cur_item = self.items.get(cur["item"]) if cur else None
-        if st["kind"] == "email_draft" and cur_item and cur_item["kind"] == "email_draft":
-            if ref.endswith("draft:new"):
-                return cur["item"]               # Gmail hasn't assigned the draft an id yet
-            if cur_item["ref"].endswith("draft:new") and iid not in self.items:
-                # ...and now it has: the "new" draft we were tracking is this one
-                self.items[iid] = self.items.pop(cur["item"])
-                self.items[iid].update(id=iid, ref=ref)
-                for e in self.events:
-                    if e["item"] == cur["item"]:
-                        e["item"] = iid
-        return iid
+
+        instances = [i for i in self.items.values() if ref in i.get("refs", [i.get("ref")])]
+        if instances:
+            # back on a place we know: which instance is on screen?
+            for inst in sorted(instances, key=lambda i: i["last_seen"], reverse=True):
+                if authored(inst) and still_there(inst, on_screen):
+                    return inst["id"], ref
+            latest = max(instances, key=lambda i: i["last_seen"])
+            if (authored(latest) and not scrolled and not conversation(latest)
+                    and (trigger == "timer" or is_empty_where_typed(latest, res))):
+                n = len(instances) + 1           # your text is gone: a fresh one, same place
+                iid = make_id(st, f"{ref}#{n}")
+                return iid, ref
+            return latest["id"], ref
+
+        if (cur_item and trigger == "timer" and cur_item["app"] == st["app"]
+                and cur_item["kind"] == st["kind"]
+                and (still_there(cur_item, on_screen)
+                     or (provisional(cur_item) and not authored(cur_item)))):
+            # you didn't go anywhere, but the place's name changed: same thing, new ref
+            cur_item.setdefault("refs", [cur_item["ref"]]).append(ref)
+            cur_item["ref"] = ref
+            return cur_item["id"], ref
+        return make_id(st, ref), ref
 
     def extend(self, ev, now, t):
         secs = int(now - ev["_start"])
@@ -537,23 +669,78 @@ class Tracker:
             pass
         s = self.stats
         touched = {e["item"] for e in self.events}
+        say(f"  {s['no_ocr']} screenshots were pixel-identical and skipped OCR")
         say(f"\nsession {self.session}")
         say(f"  {s['captured']} screenshots -> {len(touched)} things ({s['new_items']} new),"
             f" {len(self.events)} stretches of time; {s['no_change']} screenshots showed nothing new"
             f" and were deleted; {s['skipped']} sensitive skipped\n")
         for i in sorted((self.items[t] for t in touched), key=lambda i: -i["seconds"]):
-            say(f"  {i['seconds']:5d}s  x{i['visits']}  {i['app'][:14]:14}  {i['doing']}")
+            say(f"  {i['seconds']:5d}s  x{i['visits']}  {(i.get('mostly') or ''):9}  {i['app'][:14]:14}  {i['doing']}")
         say(f"\nmemory:   {ITEMS_FILE}\ntimeline: {os.path.join(SESSIONS_DIR, self.session + '.json')}")
 
 
 ITEMS_FILE = os.path.join(MEMORY_DIR, "memory.json")
+CATEGORIES = ("typing", "reading", "receiving", "focus")
+KEEP_TEXT = 15
+
+
+def make_id(st, ref):
+    return f'{st["kind"]}-{hashlib.sha1(ref.encode()).hexdigest()[:8]}'
+
+
+def authored(item):
+    """Did you type anything into this thing?"""
+    return bool(item.get("activity", {}).get("typing", {}).get("text"))
+
+
+def still_there(item, on_screen):
+    """Is a real piece of what you typed into it still visible (exactly, re-read with
+    OCR noise, or grown since)? Short fragments don't count: "magick" also matches a
+    bookmark called "MagickWorld"."""
+    typed = [t.lower() for t in item["activity"]["typing"]["text"][-6:]
+             if len(t) >= 8 and activity.is_content(t)]
+    screen = [l.lower() for l in on_screen if len(l) >= 8]
+    return any(l.startswith(t) or SequenceMatcher(None, t, l).ratio() > 0.85
+               for t in typed for l in screen)
+
+
+def provisional(item):
+    """A placeholder name the app gives something before it's saved or named."""
+    return bool(re.search(r"(^|[:|/])(new|untitled)\b|\|$", item.get("ref") or "", re.I))
+
+
+def conversation(item):
+    """Anything that has received text from others is a stream (a chat, a thread):
+    your messages scrolling out of view doesn't make it a new one."""
+    r = item["activity"]["receiving"]
+    return bool(r["seconds"] or r.get("count"))
+
+
+def is_empty_where_typed(item, res):
+    """Coming back from elsewhere: is the spot you typed into (nearly) empty again?"""
+    box = item.get("typing_area")
+    if not box:
+        return True
+    x, y, w, h = box
+    inside = [o for o in res["objects"] if o["text"] and len(re.findall(r"[A-Za-z]", o["text"])) >= 3
+              and x - 10 <= o["box"][0] <= x + w + 10 and y - 10 <= o["box"][1] <= y + h + 10]
+    return len(inside) <= 1
+
+
+def mostly(acts):
+    secs = {c: a["seconds"] for c, a in acts.items() if a["seconds"]}
+    return max(secs, key=secs.get) if secs else None
 SESSIONS_DIR = os.path.join(MEMORY_DIR, "sessions")
 
 
 def load_items():
     try:
         with open(ITEMS_FILE) as fh:
-            return {i["id"]: i for i in json.load(fh)["items"]}
+            items = {i["id"]: i for i in json.load(fh)["items"]}
+        for i in items.values():          # entries written before activity tracking existed
+            i.setdefault("activity", {c: {"seconds": 0, "text": []} for c in CATEGORIES})
+            i.setdefault("mostly", None)
+        return items
     except (OSError, ValueError, KeyError):
         return {}
 

@@ -98,7 +98,20 @@ def run_vision(path, w, h):
     scene = vn["VNClassifyImageRequest"].alloc().init()
 
     if not handler.performRequests_error_([ocr, rects, scene], None):
-        raise RuntimeError(f"Vision failed on {path}")
+        # Vision's accurate OCR occasionally refuses an image outright (seen on a
+        # Google Sheets screen). Don't lose the frame: redo the parts separately, retry
+        # with automatic language detection (reads it fine), then fast OCR as a last resort.
+        handler.performRequests_error_([rects, scene], None)
+        for level, auto in ((0, True), (1, False)):
+            ocr = vn["VNRecognizeTextRequest"].alloc().init()
+            ocr.setRecognitionLevel_(level)
+            ocr.setUsesLanguageCorrection_(level == 0)
+            ocr.setAutomaticallyDetectsLanguage_(auto)
+            if vn["VNImageRequestHandler"].alloc().initWithURL_options_(url, {}) \
+                    .performRequests_error_([ocr], None):
+                break
+        else:
+            raise RuntimeError(f"Vision failed on {path}")
 
     def px(b):
         # Vision: normalised, bottom-left origin -> pixels, top-left origin

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key><string>com.lmemm.listen</string>
+  <key>CFBundleName</key><string>LMemM Listen</string>
+  <key>CFBundleExecutable</key><string>listen</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>1.0</string>
+  <key>LSUIElement</key><true/>
+  <key>NSMicrophoneUsageDescription</key><string>LMemM listens while the note window is open, to turn what you say into your note.</string>
+  <key>NSSpeechRecognitionUsageDescription</key><string>LMemM turns what you say into your note, on this Mac.</string>
+</dict>
+</plist>

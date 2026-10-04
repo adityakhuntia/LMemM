@@ -5,6 +5,7 @@ LMemM - one command for the whole pipeline.
     python3 lmemm.py                 start: capture on app/tab change, build a timeline of what you do
     python3 lmemm.py --every 10      same, with a 10s same-window timer (default 5s)
     python3 lmemm.py pin             pin the current screen in the running session
+    python3 lmemm.py note            open the dictation note window (same as the ⌃⌥N hotkey)
     python3 lmemm.py memory [N]      what's remembered + the latest session's timeline
     python3 lmemm.py peek [--list]   text summary of every frame kept on disk
 
@@ -30,7 +31,9 @@ def memory(n):
     """What's remembered (one line per thing), then the latest session's timeline."""
     import glob
     try:
-        items = json.load(open(tracker.ITEMS_FILE))["items"]
+        items = sorted(tracker.load_items().values(), key=lambda i: i["last_seen"], reverse=True)
+        if not items:
+            raise ValueError
     except (OSError, ValueError):
         sys.exit("nothing remembered yet. Run:  python3 lmemm.py")
     print("remembered (most recent first)\n")
@@ -44,12 +47,14 @@ def memory(n):
         typed = acts.get("typing", {}).get("text")
         if typed:
             print(f"{'':30}typed: {typed[-1][:80]}")
+        for n in i.get("notes", [])[-3:]:
+            print(f"{'':30}your note: \"{n['text'][:80]}\"")
     sessions = sorted(glob.glob(os.path.join(tracker.SESSIONS_DIR, "*.json")))
     if sessions:
         doc = json.load(open(sessions[-1]))
         print(f"\nlatest session {doc['session']}\n")
         for e in doc["timeline"][-n:]:
-            print(f"{e['from']}  {e['seconds']:4d}s  {(e.get('mostly') or '-'):9}  {e['app'][:14]:14}  {e['doing']}")
+            print(f"{e['from']}  {e['for']:>7}  {(e.get('mostly') or '-'):9}  {e['app'][:14]:14}  {e['doing']}")
     print(f"\n{tracker.ITEMS_FILE}")
 
 
@@ -59,6 +64,8 @@ def main():
 
     if cmd == "pin":
         tracker.pin()
+    elif cmd == "note":
+        tracker.note()
     elif cmd == "memory":
         memory(int(args[1]) if len(args) > 1 else 20)
     elif cmd == "peek":
@@ -73,10 +80,10 @@ def main():
             try:
                 every = int(args[args.index("--every") + 1])
             except (IndexError, ValueError):
-                sys.exit("usage: python3 lmemm.py [--every SECONDS] | pin | memory [N] | peek")
+                sys.exit("usage: python3 lmemm.py [--every SECONDS] | pin | note | memory [N] | peek")
         tracker.Tracker(every=every).run()
     else:
-        sys.exit("usage: python3 lmemm.py [--every SECONDS] | pin | memory [N] | peek")
+        sys.exit("usage: python3 lmemm.py [--every SECONDS] | pin | note | memory [N] | peek")
 
 
 if __name__ == "__main__":

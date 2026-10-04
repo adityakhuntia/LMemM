@@ -26,6 +26,7 @@ Grant your terminal app (Terminal, iTerm, VS Code, ...) these permissions in
 python3 lmemm.py             # start; Ctrl-C to stop
 python3 lmemm.py memory      # see what was remembered
 python3 lmemm.py pin         # (in another terminal) force-save the current screen
+python3 lmemm.py note        # same as ⌃⌥N: dictate a note onto what you're on
 ```
 
 While it runs it prints one line each time what you're doing changes:
@@ -45,6 +46,29 @@ To run it in the background instead:
 ./run.sh stop       # stop and print the session summary
 ./run.sh memory     # see what was remembered
 ```
+
+## Dictate a note (⌃⌥N)
+
+While it runs, press **⌃⌥N** (Control-Option-N) anywhere. A small window opens
+saying what you're on ("Note for: Working on 'Q3 plan'") and it's **already
+listening**: just talk, and your words appear as you speak. You can also type
+or fix words. **Return** saves, **Esc** cancels, and you're put back in your app.
+
+The note is stored on the memory entry for that doc, email, chat or file,
+under `notes`, separately from what LMemM observed:
+
+```json
+"notes": [{"at": "2026-10-05T10:12:03", "text": "add a pricing section, ask Rahul for the vendor list",
+           "while": "Working on \"Q3 plan\""}]
+```
+
+- Speech to text is Apple's on-device recognizer, run by a tiny helper app
+  (`listen/listen.m`, built into `bin/LMemM Listen.app` with clang on first run).
+  It only runs while the note window is open. The first time, macOS asks you to
+  allow **Microphone** and **Speech Recognition** for "LMemM Listen".
+- The hotkey is registered with macOS for that one key combination, so no
+  keyboard monitoring and no extra permission.
+- `python3 lmemm.py note` opens the same window from a terminal.
 
 ## When it takes a screenshot
 
@@ -78,13 +102,26 @@ something you did; UI noise (placeholders, "online", timestamps) is ignored.
 Everything goes in `data/`:
 
 - `data/memory/memory.json`: one entry per thing (an email draft, a doc, a chat,
-  a file, a page), across all sessions. Each entry has:
-  - `doing`: one line, e.g. *Writing an email to Aditya Gupta, subject "Testing"*
-  - `mostly`: which activity took most of the time on it
-  - `state`: its latest content (e.g. an email's to / subject / draft)
-  - `activity`: seconds spent typing / reading / receiving / focus, and the text
-    involved in each (what you typed, what you scrolled past, what came in)
-  - time spent, visits, updates, and its one screenshot
+  a file, a page), across all sessions, newest first. Each entry:
+
+  ```json
+  {
+   "id": "email_draft-69532021",
+   "app": "Gmail",
+   "what": "Testing Lmemit ?",
+   "doing": "Writing an email to Aditya Gupta (gmail.com), subject \"Testing Lmemit ?\"",
+   "your_notes": [{"at": "2026-10-05 10:12", "text": "ask Rahul for the vendor list"}],
+   "latest": {"to": ["Aditya Gupta (gmail.com)"], "draft": "Hi I am testing the POC ..."},
+   "mostly": "typing",
+   "activity": {"typing": {"time": "40s", "text": ["Testing Lmemit ?", "Hi I am testing the POC ..."]},
+                "reading": {"time": "10s"}},
+   "time": {"total": "50s", "visits": 2, "first": "2026-10-05 10:05", "last": "2026-10-05 10:12"},
+   "screenshot": "20261005-101203.jpg"
+  }
+  ```
+
+  Bookkeeping (refs, content hashes, typing areas) is kept out of it, in
+  `data/memory/.index.json`.
 
   **Same thing or a new one?** One rule for every app, based on what you typed:
   if your earlier text is still on screen, it's the same thing (even if its URL
@@ -105,6 +142,8 @@ Everything goes in `data/`:
 | `lmemm.py` | the one command: start, `memory`, `pin`, `peek` |
 | `tracker.py` | watches macOS for app / tab / window changes, takes screenshots, keeps the memory |
 | `resolver.py` | reads each screenshot: text + layout (Apple Vision, on-device) |
+| `dictation.py` | the ⌃⌥N hotkey, the note window, and the speech helper it starts |
+| `listen/` | the speech helper's source (Objective-C) and its Info.plist |
 | `activity.py` | compares each screenshot with the last one: changed regions, scrolling, typing / reading / receiving / focus |
 | `understand.py` | rules that turn a screen into "what you're doing" (Gmail, chats, AI apps, editors, browser, ...) |
 | `run.sh` | background start / stop |

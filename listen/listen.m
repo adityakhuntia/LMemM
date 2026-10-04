@@ -1,0 +1,111 @@
+// LMemM Listen - on-device speech to text for the ⌃⌥N note window.
+//
+// Lives in its own tiny app bundle ("LMemM Listen.app") because macOS only lets an
+// app with its own microphone / speech usage strings use Apple's speech recognizer;
+// a Python process can't. dictation.py builds it (clang, once) and starts it with
+// `open`, so macOS treats it as its own app and asks for permission once.
+//
+//   listen <out-file>
+//     writes the running transcript to <out-file> (rewritten on every update)
+//     stops when <out-file>.stop appears, after 120 s, or on SIGTERM;
+//     the last write before exiting is followed by <out-file>.done
+//
+// Recognition is on-device when the Mac supports it (requiresOnDeviceRecognition).
+
+#import <Foundation/Foundation.h>
+#import <Speech/Speech.h>
+#import <AVFoundation/AVFoundation.h>
+
+static NSString *outPath;
+static NSString *latest = @"";
+static volatile sig_atomic_t stopRequested = 0;
+
+static void writeText(NSString *text) {
+    latest = text ?: @"";
+    [latest writeToFile:outPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
+}
+
+static void finish(int code) {
+    writeText(latest);
+    [@"" writeToFile:[outPath stringByAppendingString:@".done"] atomically:YES
+            encoding:NSUTF8StringEncoding error:nil];
+    exit(code);
+}
+
+static void fail(NSString *why) {
+    [why writeToFile:[outPath stringByAppendingString:@".error"] atomically:YES
+            encoding:NSUTF8StringEncoding error:nil];
+    finish(1);
+}
+
+static void onTerm(int sig) { stopRequested = 1; }
+
+int main(int argc, const char *argv[]) {
+    @autoreleasepool {
+        if (argc < 2) { fprintf(stderr, "usage: listen <out-file>\n"); return 2; }
+        outPath = [NSString stringWithUTF8String:argv[1]];
+        signal(SIGTERM, onTerm);
+        writeText(@"");
+
+        // 1. permissions (asked once; macOS remembers)
+        __block SFSpeechRecognizerAuthorizationStatus speech = SFSpeechRecognizerAuthorizationStatusNotDetermined;
+        dispatch_semaphore_t s1 = dispatch_semaphore_create(0);
+        [SFSpeechRecognizer requestAuthorization:^(SFSpeechRecognizerAuthorizationStatus st) {
+            speech = st; dispatch_semaphore_signal(s1);
+        }];
+        dispatch_semaphore_wait(s1, DISPATCH_TIME_FOREVER);
+        if (speech != SFSpeechRecognizerAuthorizationStatusAuthorized)
+            fail(@"Speech Recognition permission denied: System Settings > Privacy & Security > Speech Recognition > LMemM Listen");
+
+        __block BOOL mic = NO;
+        dispatch_semaphore_t s2 = dispatch_semaphore_create(0);
+        [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL ok) {
+            mic = ok; dispatch_semaphore_signal(s2);
+        }];
+        dispatch_semaphore_wait(s2, DISPATCH_TIME_FOREVER);
+        if (!mic) fail(@"Microphone permission denied: System Settings > Privacy & Security > Microphone > LMemM Listen");
+
+        // 2. recognizer: system language, on-device if possible
+        SFSpeechRecognizer *rec = [[SFSpeechRecognizer alloc] initWithLocale:[NSLocale currentLocale]];
+        if (!rec || !rec.isAvailable) rec = [[SFSpeechRecognizer alloc] initWithLocale:[NSLocale localeWithLocaleIdentifier:@"en-US"]];
+        if (!rec || !rec.isAvailable) fail(@"Speech recognition isn't available on this Mac right now");
+
+        SFSpeechAudioBufferRecognitionRequest *req = [[SFSpeechAudioBufferRecognitionRequest alloc] init];
+        req.shouldReportPartialResults = YES;
+        if (rec.supportsOnDeviceRecognition) req.requiresOnDeviceRecognition = YES;
+        if (@available(macOS 13.0, *)) req.addsPunctuation = YES;
+
+        // 3. microphone -> recognizer
+        AVAudioEngine *engine = [[AVAudioEngine alloc] init];
+        AVAudioInputNode *input = engine.inputNode;
+        AVAudioFormat *fmt = [input outputFormatForBus:0];
+        [input installTapOnBus:0 bufferSize:1024 format:fmt block:^(AVAudioPCMBuffer *buf, AVAudioTime *when) {
+            [req appendAudioPCMBuffer:buf];
+        }];
+        [engine prepare];
+        NSError *err = nil;
+        if (![engine startAndReturnError:&err]) fail([NSString stringWithFormat:@"Couldn't start the microphone: %@", err.localizedDescription]);
+
+        __block BOOL ended = NO;
+        [rec recognitionTaskWithRequest:req resultHandler:^(SFSpeechRecognitionResult *r, NSError *e) {
+            if (r) writeText(r.bestTranscription.formattedString);
+            if (e || r.isFinal) ended = YES;
+        }];
+
+        // 4. run until asked to stop, then let the last words come through
+        NSString *stopPath = [outPath stringByAppendingString:@".stop"];
+        NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:120];
+        while (!stopRequested && !ended && [deadline timeIntervalSinceNow] > 0
+               && ![[NSFileManager defaultManager] fileExistsAtPath:stopPath]) {
+            [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+        }
+        [engine stop];
+        [input removeTapOnBus:0];
+        [req endAudio];
+        NSDate *grace = [NSDate dateWithTimeIntervalSinceNow:1.5];
+        while (!ended && [grace timeIntervalSinceNow] > 0)
+            [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+        finish(0);
+    }
+    return 0;
+}

@@ -51,6 +51,7 @@ except ImportError:
     sys.exit("Missing dependency. Run:  pip3 install pyobjc-framework-Cocoa")
 
 import activity
+import dictation
 import resolver
 import understand
 
@@ -262,6 +263,24 @@ def say(msg):
     print(msg, flush=True)
 
 
+def line(t, app, msg):
+    """Every live line looks the same: time, app, what happened."""
+    say(f"{t}  {(app or '')[:14]:14}  {msg}")
+
+
+def quiet_system_logs():
+    """macOS input-method frameworks NSLog noise ("IMKClient subclass", "_TIPropertyValueIsValid",
+    ...) straight to the terminal whenever a text box gets focus. Send the raw stderr file
+    descriptor to /dev/null, but keep Python's own errors visible on the real one."""
+    try:
+        real = os.dup(2)
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, 2)
+        sys.stderr = os.fdopen(real, "w", buffering=1)
+    except OSError:
+        pass
+
+
 class Tracker:
     def __init__(self, every=EVERY):
         self.every = every
@@ -275,6 +294,12 @@ class Tracker:
         self.q = queue.Queue()
         self.events = []               # the session timeline: when, pointing at items
         self.last_frame = None         # previous frame (pixels + OCR) for change tracking
+        self.lock = threading.Lock()   # the resolver thread and the note window both write memory
+        self.note_request = False
+        self.panel = dictation.NotePanel()
+        self.notes = []                # this session's dictated notes
+        self.frame_item = {}           # screenshot ts -> memory entry it became
+        self.last_ts = None
         self.items = load_items()      # the memory: one entry per thing, across sessions
         self.stats = Counter()
         self.session = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -299,6 +324,13 @@ class Tracker:
     # -- main loop
 
     def tick(self):
+        if self.panel.open:
+            self.panel.poll()           # starts Dictation once the window is really in front
+            return                      # you're dictating: don't capture the note window
+        if self.note_request:
+            self.note_request = False
+            self.open_note()
+            return
         now = time.time()
         f = front()
 
@@ -313,12 +345,12 @@ class Tracker:
             reason = "idle"
         if reason:
             if self.paused != reason:
-                say(f"          paused: {reason}")
+                line(datetime.now().strftime("%H:%M:%S"), "", f"paused ({reason})")
                 self.paused = reason
             self.pending = None
             return
         if self.paused:
-            say(f"          resumed")
+            line(datetime.now().strftime("%H:%M:%S"), "", "resumed")
             self.paused = None
             self.trigger("resume")
 
@@ -361,7 +393,7 @@ class Tracker:
                 else None)
         if skip:
             self.stats["skipped"] += 1
-            say(f"{datetime.now():%H:%M:%S}  {trigger:13}  {f['app'][:22]:22}  SKIP  {skip}")
+            line(datetime.now().strftime("%H:%M:%S"), f["app"], f"skipped: {skip}")
             return
 
         display, frame = display_for(f["bounds"])
@@ -392,12 +424,59 @@ class Tracker:
             "inputs": inputs, "pointer": pointer,
         }
         meta_path = os.path.join(DATA_DIR, ts + ".json")
+        self.last_ts = ts
         with open(meta_path, "w") as fh:
             json.dump(meta, fh, indent=2)
         self.stats["captured"] += 1
         self.q.put((meta_path, meta, trigger, pinned))
 
     # -- resolver thread
+
+    # -- dictated notes
+
+    def open_note(self):
+        """Hotkey pressed: open the note window for whatever is in front RIGHT NOW,
+        in any app. If memory hasn't caught up with it yet (you just switched),
+        take a screenshot first; the note is attached once that's resolved."""
+        f = front() or {}
+        with self.lock:
+            cur = self.events[-1] if self.events else None
+            item = self.items.get(cur["item"]) if cur else None
+            known = cur is not None and cur.get("_raw") == (f.get("app"), f.get("window"))
+        if known:
+            label, target = item["doing"], ("item", item["id"])
+        else:
+            n = self.stats["captured"]
+            self.capture("note", pinned=True)
+            ts = self.last_ts if self.stats["captured"] > n else None
+            label = f"{f.get('app', 'this screen')}" + (f": {f['window']}" if f.get("window") else "")
+            target = ("frame", ts) if ts else ("item", item["id"] if item else None)
+        self.panel.show(label, lambda text: self.save_note(target, text))
+
+    def save_note(self, target, text):
+        if not text:
+            line(datetime.now().strftime("%H:%M:%S"), "", "note cancelled")
+            return
+        at = datetime.now().isoformat(timespec="seconds")
+        kind, key = target
+        if kind == "frame":
+            # wait (briefly) for the resolver to turn that screenshot into a memory entry
+            deadline = time.time() + 30
+            while key not in self.frame_item and time.time() < deadline:
+                time.sleep(0.2)
+            item_id = self.frame_item.get(key)
+        else:
+            item_id = key
+        with self.lock:
+            item = self.items.get(item_id)
+            note = {"at": at, "text": text}
+            if item:
+                note["while"] = item["doing"]
+                item.setdefault("notes", []).append(note)
+                item["last_seen"] = at
+            self.notes.append({"item": item_id, **note})
+            self.save()
+        line(at[11:19], (item or {}).get("app", "?"), f'note: "{text[:90]}"')
 
     def worker(self):
         while True:
@@ -406,7 +485,7 @@ class Tracker:
                 return
             meta_path, meta, trigger, pinned = item
             try:
-                with objc.autorelease_pool():
+                with objc.autorelease_pool(), self.lock:
                     self.handle(meta_path, meta, trigger, pinned)
             except Exception as e:
                 say(f"  ! {meta['ts']}: {e}")
@@ -512,19 +591,19 @@ class Tracker:
             item["visits"] += 1
             cur = {"from": t, "to": t, "seconds": 0, "item": item_id, "app": st["app"],
                    "doing": st["doing"], "activity": {}, "trigger": trigger, "_start": now}
+            cur["_raw"] = (meta.get("app"), meta.get("window"))
             self.events.append(cur)
             back = item["visits"] > 1
-            say(f"{t}  {trigger:13}  {st['app'][:16]:16}  {st['doing']}"
-                + ("   (back to it)" if back else ""))
+            line(t, st["app"], st["doing"] + ("  (back to it)" if back else ""))
         if dt:
             cur["activity"][act["category"]] = cur["activity"].get(act["category"], 0) + int(dt)
             cur["mostly"] = max(cur["activity"], key=cur["activity"].get)
         cur["_last_cat"] = act["category"]
-        if act["category"] != "reading" or act["new_text"]:
-            say(f"{t}  {'':13}  {'':16}    {act['category']}"
-                + (f": {act['new_text'][0][:70]}" if act["new_text"] else "")
-                + (f"  [pointer on {act['pointer_on'][:30]}]" if act.get("pointer_on") else ""))
+        if act["new_text"] and act["category"] in ("typing", "receiving"):
+            line(t, "", f"  {act['category']}: {act['new_text'][0][:80]}")
 
+        self.frame_item[meta["ts"]] = item_id
+        cur["_raw"] = (meta.get("app"), meta.get("window"))
         if not frame_used:
             self.drop_frame(meta["image"])
             self.stats["no_change"] += 1
@@ -604,16 +683,24 @@ class Tracker:
                 pass
 
     def save(self):
-        strip = lambda d: {k: v for k, v in d.items() if not k.startswith("_")}
-        write_json(ITEMS_FILE, {"items": sorted(self.items.values(), key=lambda i: i["last_seen"],
-                                                reverse=True)})
+        items = sorted(self.items.values(), key=lambda i: i["last_seen"], reverse=True)
+        # the bookkeeping (refs, hashes, typing area) lives in its own file;
+        # memory.json is only what's worth reading
+        write_json(INTERNAL_FILE, {"items": items})
+        write_json(ITEMS_FILE, {"updated": nice_time(datetime.now().isoformat(timespec="seconds")),
+                                "things": [readable(i) for i in items]})
         by_app = Counter()
         for e in self.events:
             by_app[e["app"]] += e["seconds"]
         write_json(os.path.join(SESSIONS_DIR, self.session + ".json"), {
             "session": self.session,
-            "timeline": [strip(e) for e in self.events],
-            "seconds_by_app": dict(by_app.most_common()),
+            "time_by_app": {a: duration(s) for a, s in by_app.most_common()},
+            "timeline": [{"from": e["from"], "to": e["to"], "for": duration(e["seconds"]),
+                          "app": e["app"], "doing": e["doing"],
+                          **({"mostly": e["mostly"]} if e.get("mostly") else {}),
+                          "memory": e["item"]} for e in self.events],
+            **({"notes": [{"at": nice_time(n["at"]), "on": n["item"], "text": n["text"]}
+                          for n in self.notes]} if self.notes else {}),
         })
 
     # -- lifecycle
@@ -633,25 +720,34 @@ class Tracker:
             raise KeyboardInterrupt
         signal.signal(signal.SIGTERM, stop)
         signal.signal(signal.SIGUSR1, lambda *_: setattr(self, "pin", True))
+        signal.signal(signal.SIGUSR2, lambda *_: setattr(self, "note_request", True))
+        app = dictation.start_app()
+        hotkey_ok = dictation.register_hotkey(lambda: setattr(self, "note_request", True))
+        dictation.ensure_listener()        # build the speech helper now, not on first ⌃⌥N
 
         events = Events.alloc().initWithTracker_(self)
         subscribe(events)
         self.thread = threading.Thread(target=self.worker, daemon=True)
         self.thread.start()
 
-        say(f"LMemM session {self.session}  -> {MEMORY_DIR}")
-        say(f"captures on app/tab/window change, else every {self.every}s; pauses after {IDLE}s idle.")
-        say("Ctrl-C to stop.  python3 lmemm.py pin  pins the current screen.\n")
+        quiet_system_logs()
+        say(f"LMemM is watching  ·  captures on app/tab switches, else every {self.every}s"
+            f"  ·  pauses after {IDLE}s idle")
         self.last_sig = front()
         self.last_capture = time.time()      # the "start" trigger takes the first frame
         self.trigger("start")
 
-        loop = Foundation.NSRunLoop.currentRunLoop()
+        say((f"{dictation.HOTKEY_LABEL} dictate a note" if hotkey_ok
+             else f"(couldn't register {dictation.HOTKEY_LABEL}: use  python3 lmemm.py note)")
+            + "  ·  Ctrl-C stop\n")
         try:
             while True:
-                # deliver pending notifications, then wait up to 0.25s for more
-                loop.runMode_beforeDate_(Foundation.NSDefaultRunLoopMode,
-                                         Foundation.NSDate.dateWithTimeIntervalSinceNow_(0.25))
+                # deliver events (hotkey, note window) and notifications, waiting up to 0.25s
+                ev = app.nextEventMatchingMask_untilDate_inMode_dequeue_(
+                    0xFFFFFFFFFFFFFFFF, Foundation.NSDate.dateWithTimeIntervalSinceNow_(0.25),
+                    Foundation.NSDefaultRunLoopMode, True)
+                if ev is not None:
+                    app.sendEvent_(ev)
                 self.tick()
         except KeyboardInterrupt:
             pass
@@ -659,7 +755,7 @@ class Tracker:
             self.finish()
 
     def finish(self):
-        say("\nstopping: resolving what's still queued ...")
+        say("\nstopping…")
         self.q.put(None)
         self.thread.join(timeout=60)
         try:
@@ -668,18 +764,29 @@ class Tracker:
         except OSError:
             pass
         s = self.stats
-        touched = {e["item"] for e in self.events}
-        say(f"  {s['no_ocr']} screenshots were pixel-identical and skipped OCR")
-        say(f"\nsession {self.session}")
-        say(f"  {s['captured']} screenshots -> {len(touched)} things ({s['new_items']} new),"
-            f" {len(self.events)} stretches of time; {s['no_change']} screenshots showed nothing new"
-            f" and were deleted; {s['skipped']} sensitive skipped\n")
-        for i in sorted((self.items[t] for t in touched), key=lambda i: -i["seconds"]):
-            say(f"  {i['seconds']:5d}s  x{i['visits']}  {(i.get('mostly') or ''):9}  {i['app'][:14]:14}  {i['doing']}")
-        say(f"\nmemory:   {ITEMS_FILE}\ntimeline: {os.path.join(SESSIONS_DIR, self.session + '.json')}")
+        spent, visits = Counter(), Counter()
+        for e in self.events:                       # this session only
+            spent[e["item"]] += e["seconds"]
+            visits[e["item"]] += 1
+        notes = Counter(n["item"] for n in self.notes)
+        first = self.events[0]["from"] if self.events else "-"
+        last = self.events[-1]["to"] if self.events else "-"
+        say(f"\nsession {first} → {last}  ·  {s['captured']} screenshots → {len(spent)} thing{'s' * (len(spent) != 1)}"
+            + (f"  ·  {len(self.notes)} note{'s' * (len(self.notes) != 1)}" if self.notes else "")
+            + (f"  ·  {s['skipped']} skipped (sensitive)" if s["skipped"] else "") + "\n")
+        for iid, secs in spent.most_common():
+            i = self.items[iid]
+            extra = [f"{visits[iid]} visits" if visits[iid] > 1 else "",
+                     i.get("mostly") or "",
+                     f"{notes[iid]} note{'s' * (notes[iid] != 1)}" if notes[iid] else ""]
+            extra = "  ·  ".join(x for x in extra if x)
+            say(f"  {duration(secs):>7}  {i['app'][:14]:14}  {i['doing'][:70]}"
+                + (f"   ({extra})" if extra else ""))
+        say(f"\nsaved to {os.path.relpath(ITEMS_FILE)}")
 
 
 ITEMS_FILE = os.path.join(MEMORY_DIR, "memory.json")
+INTERNAL_FILE = os.path.join(MEMORY_DIR, ".index.json")
 CATEGORIES = ("typing", "reading", "receiving", "focus")
 KEEP_TEXT = 15
 
@@ -735,7 +842,8 @@ SESSIONS_DIR = os.path.join(MEMORY_DIR, "sessions")
 
 def load_items():
     try:
-        with open(ITEMS_FILE) as fh:
+        src = INTERNAL_FILE if os.path.exists(INTERNAL_FILE) else ITEMS_FILE   # older runs: memory.json
+        with open(src) as fh:
             items = {i["id"]: i for i in json.load(fh)["items"]}
         for i in items.values():          # entries written before activity tracking existed
             i.setdefault("activity", {c: {"seconds": 0, "text": []} for c in CATEGORIES})
@@ -745,11 +853,63 @@ def load_items():
         return {}
 
 
+def nice_time(iso):
+    return iso.replace("T", " ")[:16] if iso else None
+
+
+def duration(s):
+    s = int(s or 0)
+    return f"{s // 3600}h {s % 3600 // 60}m" if s >= 3600 else f"{s // 60}m {s % 60}s" if s >= 60 else f"{s}s"
+
+
+def readable(i):
+    """One memory entry as a person would want to read it: what, what you did, your notes."""
+    acts = {}
+    for c, a in i.get("activity", {}).items():
+        if not a["seconds"] and not a["text"]:
+            continue
+        entry = {"time": duration(a["seconds"])}
+        if a.get("count"):
+            entry["times"] = a["count"]
+        if a["text"]:
+            entry["text"] = a["text"][-8:]
+        acts[c] = entry
+    out = {
+        "id": i["id"],
+        "app": i["app"],
+        "what": i.get("title") or i["doing"],
+        "doing": i["doing"],
+    }
+    if i.get("notes"):
+        out["your_notes"] = [{"at": nice_time(n["at"]), "text": n["text"]} for n in i["notes"]]
+    latest = {k: v for k, v in (i.get("state") or {}).items() if v != out["what"]}
+    if latest:                                   # e.g. an email's to / subject / draft
+        out["latest"] = latest
+    if acts:
+        out["mostly"] = i.get("mostly")
+        out["activity"] = acts
+    out["time"] = {"total": duration(i["seconds"]), "visits": i["visits"],
+                   "first": nice_time(i["first_seen"]), "last": nice_time(i["last_seen"])}
+    out["screenshot"] = i["screenshot"]
+    if i.get("pinned"):
+        out["pinned"] = True
+    return out
+
+
 def write_json(path, doc):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path + ".tmp", "w") as fh:
         json.dump(doc, fh, indent=1, ensure_ascii=False)
     os.replace(path + ".tmp", path)
+
+
+def note():
+    try:
+        pid = int(open(PIDFILE).read().strip())
+        os.kill(pid, signal.SIGUSR2)
+        print("note window opened.")
+    except (OSError, ValueError):
+        sys.exit("LMemM isn't running.")
 
 
 def pin():

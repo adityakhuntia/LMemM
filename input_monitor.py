@@ -23,38 +23,78 @@ def context_id(f):
     return hashlib.sha256(raw).hexdigest()[:16]
 
 
-def permitted_context(allowed_apps):
-    if secure_input_enabled() is not False:
+def permitted_context(allowed_apps, on_denied=None):
+    def deny(reason):
+        if on_denied:
+            on_denied(reason)
         return None
+    secure = secure_input_enabled()
+    if secure is not False:
+        return deny("secure_input_unknown" if secure is None else "secure_input_active")
     try:
         import ApplicationServices as q
         import tracker
         if not q.AXIsProcessTrusted():
-            return None
+            return deny("accessibility_permission")
         f = tracker.front()
         if not f or f.get("bundle_id") not in allowed_apps or not f.get("bounds") or not f.get("win_id"):
-            return None
+            return deny("excluded_or_missing_window")
         if tracker.SKIP_TITLES.search(f.get("window") or ""):
-            return None
+            return deny("excluded_window")
         system = q.AXUIElementCreateSystemWide()
         err, element = q.AXUIElementCopyAttributeValue(system, "AXFocusedUIElement", None)
         if err or element is None:
-            return None
+            return deny("focused_element_unavailable")
         pid_err, focus_pid = q.AXUIElementGetPid(element, None)
         if pid_err or focus_pid != f["pid"]:
-            return None
+            return deny("focus_owner_mismatch")
         err, role = q.AXUIElementCopyAttributeValue(element, "AXRole", None)
         if err or role not in {"AXTextArea", "AXTextField", "AXOutline", "AXButton", "AXGroup", "AXScrollArea"}:
-            return None
+            return deny("unsupported_focus_role")
         sub_err, subrole = q.AXUIElementCopyAttributeValue(element, "AXSubrole", None)
-        if subrole == "AXSecureTextField" or sub_err not in (0, -25205) or role == "AXTextField" and (sub_err or subrole is None):
-            return None
+        if subrole == "AXSecureTextField":
+            return deny("secure_text_field")
+        if sub_err not in (0, -25205, -25212) or role == "AXTextField" and (sub_err or subrole is None):
+            return deny("unverified_focus_subrole")
         after = tracker.front()
         if after is None or any(after.get(k) != f.get(k) for k in ("pid", "win_id", "window", "bounds")):
-            return None
+            return deny("focus_context_changed")
         return {"id": context_id(f), "bundle_id": f["bundle_id"], "window_id": f["win_id"], "bounds": f["bounds"], "pid": f["pid"]}
     except Exception:
-        return None
+        return deny("focus_inspection_error")
+
+
+
+class AccessibilitySupport:
+    """Opt-in Electron structural AX support; restore only flags we changed."""
+    def __init__(self, native):
+        self.native = native
+        self.changed = {}
+
+    def ensure(self, foreground, allowed_apps):
+        if not foreground or foreground.get("bundle_id") != "com.microsoft.VSCode" or foreground["bundle_id"] not in allowed_apps:
+            return
+        pid = foreground["pid"]
+        if pid in self.changed:
+            return
+        try:
+            app = self.native.AXUIElementCreateApplication(pid)
+            error, enabled = self.native.AXUIElementCopyAttributeValue(app, "AXManualAccessibility", None)
+            if not error and enabled is False:
+                if self.native.AXUIElementSetAttributeValue(app, "AXManualAccessibility", True) == 0:
+                    self.changed[pid] = app
+        except Exception:
+            pass  # Focus inspection still fails closed if the tree is unavailable.
+
+    def restore(self):
+        for app in self.changed.values():
+            try:
+                error, enabled = self.native.AXUIElementCopyAttributeValue(app, "AXManualAccessibility", None)
+                if not error and enabled is True:
+                    self.native.AXUIElementSetAttributeValue(app, "AXManualAccessibility", False)
+            except Exception:
+                pass
+        self.changed.clear()
 
 
 def native_uptime_ns():
@@ -82,10 +122,19 @@ class InputMonitor:
         self.native = native
         self.aggregator = aggregator
         self.allowed_apps = allowed_apps
-        self.context_provider = context_provider
+        self.context_denial = None
+        if context_provider is permitted_context:
+            def checked_context(apps):
+                self.context_denial = None
+                return permitted_context(apps, lambda reason: setattr(self, "context_denial", reason))
+            self.context_provider = checked_context
+        else:
+            self.context_provider = context_provider
+        self.accessibility_support = AccessibilitySupport(native)
         self.on_gap = on_gap or (lambda reason: None)
         self.clock, self.native_clock = clock, native_clock
         self.tap = self.source = self.loop = None
+        self.accessibility_support.restore()
         self.state = "off"
         self.paused = False
         self.offset_ns = 0
@@ -118,6 +167,7 @@ class InputMonitor:
                  q.kCGEventRightMouseDown, q.kCGEventOtherMouseDown, q.kCGEventLeftMouseDragged,
                  q.kCGEventRightMouseDragged, q.kCGEventOtherMouseDragged, q.kCGEventScrollWheel)
         self.offset_ns = self.clock() - self.native_clock()
+        self.prepare_context()
         self.verify_context(self.context_provider(self.allowed_apps))
         self.tap = q.CGEventTapCreate(q.kCGAnnotatedSessionEventTap, q.kCGHeadInsertEventTap,
                                     q.kCGEventTapOptionListenOnly, sum(1 << t for t in types),
@@ -132,6 +182,14 @@ class InputMonitor:
         q.CGEventTapEnable(self.tap, True)
         self.state = "recording"
         return True
+
+    def prepare_context(self):
+        # Only the main loop calls this; no AX writes in the native callback.
+        try:
+            import tracker
+            self.accessibility_support.ensure(tracker.front(), self.allowed_apps)
+        except Exception:
+            pass
 
     def verify_context(self, context):
         if context != self.verified_context:
@@ -157,6 +215,7 @@ class InputMonitor:
             q.CFRunLoopRemoveSource(self.loop, self.source, q.kCFRunLoopCommonModes)
             q.CFMachPortInvalidate(self.tap)
         self.tap = self.source = self.loop = None
+        self.accessibility_support.restore()
         self.state = "off"
 
     def status(self):
@@ -179,7 +238,7 @@ class InputMonitor:
                 return event
             context = self.context_provider(self.allowed_apps)
             if context is None or context.get("bundle_id") not in self.allowed_apps:
-                self._gap("protected_or_excluded")
+                self._gap(self.context_denial or "protected_or_excluded")
                 self.verify_context(None)
                 return event
             self.verify_context(context)

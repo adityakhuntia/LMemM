@@ -1,4 +1,5 @@
 import unittest
+import tracker
 from unittest.mock import patch
 
 from input_events import Aggregator
@@ -150,3 +151,33 @@ class InputMonitorTests(unittest.TestCase):
             for role, sub in (("AXTextField", "AXSecureTextField"), ("unknown", None), (None, None)):
                 native.AXUIElementCopyAttributeValue = lambda element, name, unused: (0, "element" if name == "AXFocusedUIElement" else role if name == "AXRole" else sub)
                 self.assertIsNone(permitted_context({"com.microsoft.VSCode"}))
+
+    def test_vscode_accessibility_is_enabled_only_for_opted_in_foreground_app(self):
+        import input_monitor
+        from types import SimpleNamespace
+        calls = []
+        flag = {"enabled": False}
+        def set_attribute(app, attr, value):
+            calls.append((app, attr, value))
+            flag["enabled"] = value
+            return 0
+        native = SimpleNamespace(AXUIElementCreateApplication=lambda pid: pid,
+                                 AXUIElementCopyAttributeValue=lambda *args: (0, flag["enabled"]),
+                                 AXUIElementSetAttributeValue=set_attribute)
+        support = input_monitor.AccessibilitySupport(native)
+        support.ensure({"pid": 42, "bundle_id": "com.microsoft.VSCode"}, {"com.microsoft.VSCode"})
+        support.ensure({"pid": 42, "bundle_id": "com.microsoft.VSCode"}, {"com.microsoft.VSCode"})
+        support.ensure({"pid": 43, "bundle_id": "com.apple.Safari"}, {"com.microsoft.VSCode"})
+        self.assertEqual(calls, [(42, "AXManualAccessibility", True)])
+        support.restore()
+        self.assertEqual(calls[-1], (42, "AXManualAccessibility", False))
+
+    def test_native_no_subrole_value_is_not_an_unknown_or_secure_field(self):
+        import sys
+        from types import SimpleNamespace
+        foreground = {"pid": 42, "win_id": 7, "window": "Project", "bundle_id": "com.microsoft.VSCode", "bounds": CTX["bounds"]}
+        def attributes(element, name, unused):
+            return {"AXFocusedUIElement": (0, "element"), "AXRole": (0, "AXTextArea"), "AXSubrole": (-25212, None)}[name]
+        native = SimpleNamespace(AXIsProcessTrusted=lambda: True, AXUIElementCreateSystemWide=lambda: "system", AXUIElementCopyAttributeValue=attributes, AXUIElementGetPid=lambda *args: (0, 42))
+        with patch.dict(sys.modules, {"ApplicationServices": native}), patch("tracker.front", return_value=foreground), patch("input_monitor.secure_input_enabled", return_value=False):
+            self.assertIsNotNone(permitted_context({"com.microsoft.VSCode"}))

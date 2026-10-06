@@ -94,3 +94,11 @@ class InputPipelineTests(unittest.TestCase):
         capture.poll_input()
         transitions = [e for e in capture.input_store.read()["events"] if e["kind"] == "context_transition"]
         self.assertEqual(transitions[0]["payload"], {"from": "old", "to": "new"})
+
+    def test_unavailable_collector_preserves_permission_failure_reason(self):
+        capture = tracker.Tracker(input_apps={"com.microsoft.VSCode"})
+        capture.input_monitor.state = "unavailable"
+        capture.input_monitor._gap("input_permission")
+        capture.input_monitor.context_provider = lambda apps: None
+        capture.poll_input()
+        self.assertEqual(capture.input_store.status()["gap"], "input_permission")

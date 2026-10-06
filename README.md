@@ -265,3 +265,11 @@ Automated coverage includes fake native events, privacy/context boundaries,
 retention, deletion/recovery, and existing native OCR/speech-policy checks. Live
 VS Code input coverage and permission behavior still need the scripted check in
 `context.md`; automated tests install no real global input listener.
+
+VS Code may need its Electron accessibility tree enabled even after macOS grants
+permission. The opt-in collector now requests the documented `AXManualAccessibility`
+flag for foreground VS Code and restores flags it changed on normal stop. This can
+increase Electron's processing cost. Unknown focus and unverified text-field
+subroles still cause gaps; test typing in an **editor file**, not the integrated
+terminal. Specific rejection reasons are available through `status` and event gaps.
+Listener startup alone does not establish successful event collection.

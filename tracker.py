@@ -377,10 +377,14 @@ class Tracker:
             return
         monitor = self.input_monitor
         blocked = self.manual_paused or any(self.flags.values()) or self.panel.open
-        context = None if blocked else monitor.context_provider(monitor.allowed_apps)
-        if blocked or context is None:
+        if not blocked and monitor.state == "recording":
+            monitor.prepare_context()
+        context = None if blocked or monitor.state != "recording" else monitor.context_provider(monitor.allowed_apps)
+        if monitor.state != "recording" and not blocked:
+            self.input_context = None
+        elif blocked or context is None:
             monitor.set_paused(True)
-            monitor._gap("paused" if blocked else "protected_or_excluded")
+            monitor._gap("paused" if blocked else monitor.context_denial or "protected_or_excluded")
             self.input_context = None
         else:
             if self.input_context and self.input_context["id"] != context["id"]:

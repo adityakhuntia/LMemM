@@ -37,7 +37,7 @@ class InputCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as stack:
             root = Path(stack.enter_context(config.use_paths(directory)).memory_dir)
             store = InputStore("test", root)
-            import datetime, time
+            import datetime
             a = Aggregator("test", datetime.datetime.now(datetime.timezone.utc).isoformat(), 0)
             a.feed("key", 0, {"id": "context"}, {})
             store.append(a.drain(1_000_000_000))

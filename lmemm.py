@@ -6,6 +6,8 @@ LMemM - the one command.
                                       watch and remember (Ctrl-C to stop)
     lmemm.py memory [N] [--content] [--events]
                                       what's remembered + the latest session's timeline
+    lmemm.py notes [--all] [PROJECT]  pending edits (your ⌃⌥N notes) by project
+    lmemm.py notes done ID… | notes reopen ID…
     lmemm.py status | pause | resume  the running tracker
     lmemm.py pin                      force-save the current screen
     lmemm.py note                     open the note window (same as ⌃⌥N)
@@ -21,10 +23,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import config
+import notes
 import store
 import tracker
 
 USAGE = ("usage: lmemm.py [start] [--every N] [--input-events --input-app APP] | memory [N] [--content] [--events]"
+         " | notes [--all] [PROJECT] | notes done|reopen ID…"
          " | status | pause | resume | pin | note | delete-session ID (--dry-run | --confirm ID)")
 
 
@@ -50,7 +54,8 @@ def show_memory(n, show_content=False, show_events=False):
         if typed:
             print(f"{'':30}typed: {typed[-1][:80]}")
         for note_entry in i.get("notes", [])[-3:]:
-            print(f"{'':30}your note: \"{note_entry['text'][:80]}\"")
+            mark = "done" if notes.is_done(i, note_entry) else "open"
+            print(f"{'':30}your note ({mark}, {notes.note_id(note_entry)}): \"{note_entry['text'][:80]}\"")
         if show_content:
             show_excerpts(i)
     sessions = sorted(Path(config.paths().sessions_dir).glob("*.json"))
@@ -138,6 +143,59 @@ def cmd_memory(args):
     show_memory(count, show_content="--content" in args, show_events="--events" in args)
 
 
+def cmd_notes(args):
+    """The project view of pending edits, or mark some done / open again."""
+    if args and args[0] in {"done", "reopen"}:
+        ids = args[1:]
+        if not ids:
+            sys.exit("usage: lmemm.py notes done|reopen ID…")
+        done = args[0] == "done"
+        if tracker.send_control("notes_done", ids=ids, done=done):
+            print(f"sent to the running tracker: {len(ids)} note(s) → {'done' if done else 'open'}")
+            return
+        items = store.load_items()
+        found = notes.set_done(items, ids, done=done)
+        missing = sorted(set(ids) - set(found))
+        if found:
+            record_offline_change(items)
+            store.save_memory(items)
+        print(f"{len(found)} note(s) marked {'done' if done else 'open'}"
+              + (f"; not found: {', '.join(missing)}" if missing else ""))
+        return
+    include_done = "--all" in args
+    wanted = " ".join(a for a in args if a != "--all").lower()
+    view = notes.pending_view(store.load_items(), include_done=include_done)
+    projects = [p for p in view["projects"] if wanted in p["project"].lower()]
+    if not projects:
+        print("no pending edits" + (f" in '{wanted}'" if wanted else "") + ". Press ⌃⌥N while LMemM runs to add one.")
+        return
+    total = sum(p["open"] for p in projects)
+    print(f"{total} pending edit{'s' * (total != 1)}\n")
+    for p in projects:
+        print(f"{p['project']}  ({p['open']} open)")
+        for entry in p["items"]:
+            print(f"  {entry['app'][:14]:14}  {entry['what'][:70]}")
+            for n in entry["notes"]:
+                state = f"done {n['done']}" if "done" in n else n["at"]
+                print(f"      {n['id']}  {'✓' if 'done' in n else '•'} {n['text'][:90]}   ({state})")
+        print()
+    print("mark one done:  lmemm.py notes done <id>")
+
+
+def record_offline_change(items):
+    """Changing memory while the tracker is stopped: keep session provenance consistent
+    (otherwise later session deletion refuses, seeing an unexplained change)."""
+    from input_store import InputStore
+    memory_dir = Path(config.paths().memory_dir)
+    if not (memory_dir / "contributions" / "baseline.json").exists():
+        return
+    before = store.load_items()
+    evidence = InputStore("notes-" + datetime.now().strftime("%Y%m%d-%H%M%S"), memory_dir)
+    evidence.initialize_baseline(before)
+    evidence.checkpoint(items, [], [])
+    evidence.close()
+
+
 def cmd_control(action):
     pid = tracker.running_pid()
     if pid is None:
@@ -182,6 +240,8 @@ def main():
         cmd_start(rest)
     elif cmd == "memory":
         cmd_memory(rest)
+    elif cmd == "notes":
+        cmd_notes(rest)
     elif cmd in {"status", "pause", "resume"}:
         cmd_control(cmd)
     elif cmd == "pin":

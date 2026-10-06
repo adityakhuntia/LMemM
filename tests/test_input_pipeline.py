@@ -3,12 +3,10 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 import config
 import tracker
 from input_store import private_write
-from input_monitor import context_id
 
 
 class InputPipelineTests(unittest.TestCase):

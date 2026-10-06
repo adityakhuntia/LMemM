@@ -152,6 +152,13 @@ class Tracker:
     def apply_control(self, doc):
         if doc.get("action") in {"pause", "resume"}:
             self.set_manual_pause(doc["action"] == "pause")
+        elif doc.get("action") == "notes_done" and isinstance(doc.get("ids"), list):
+            with self.lock:
+                found = notes.set_done(self.items, doc["ids"], done=bool(doc.get("done", True)))
+                if found:
+                    self.save()
+            line(now_hms(), "", f"{len(found)} note{'s' * (len(found) != 1)} marked "
+                 + ("done" if doc.get("done", True) else "open"))
 
     def publish_status(self):
         private_write(self.status_file, {
@@ -497,6 +504,7 @@ class Tracker:
                    "doing": st["doing"], "activity": {}, "trigger": trigger, "_start": now}
             self.events.append(cur)
             line(t, st["app"], st["doing"] + ("  (back to it)" if item["visits"] > 1 else ""))
+            self.resurface(item, cur, meta)
         if dt:
             cur["activity"][act["category"]] = cur["activity"].get(act["category"], 0) + int(dt)
             cur["mostly"] = max(cur["activity"], key=cur["activity"].get)
@@ -517,6 +525,19 @@ class Tracker:
             self.drop_frame(meta["image"])
             self.stats["no_change"] += 1
         self.save()
+
+    def resurface(self, item, event, meta):
+        """Back on something with open notes: remind you of them (at most once per
+        RESURFACE_COOLDOWN per thing)."""
+        due = notes.due_for_resurfacing(item, meta["iso"], config.RESURFACE_COOLDOWN)
+        if not due:
+            return
+        item["resurfaced_at"] = meta["iso"]
+        event["resurfaced"] = [notes.note_id(n) for n in due]
+        what = item.get("title") or item["doing"]
+        count = f"{len(due)} pending edit{'s' * (len(due) != 1)}"
+        line(hms(meta["ts"]), "", f"  📝 {count}: " + " · ".join(n["text"][:60] for n in due[:3]))
+        macos.notify(f"LMemM · {count}", f"{what[:60]} — " + " · ".join(n["text"] for n in due[:3]))
 
     def update_item(self, item, item_id, ref, st, meta, content, pinned):
         """Create the entry, or update it in place (one screenshot per thing: the latest

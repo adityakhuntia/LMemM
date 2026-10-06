@@ -2,6 +2,7 @@
 
     data/memory/.index.json          full internal state, one entry per thing (source of truth)
     data/memory/memory.json          the same, as a person would read it
+    data/memory/pending.json         open notes (pending edits), grouped by project
     data/memory/sessions/<id>.json   one session's timeline: when you were on what
 
 Writes are atomic (temp file + rename). Schema 2; every newer field is additive.
@@ -13,6 +14,7 @@ from collections import Counter
 from datetime import datetime
 
 import config
+import notes
 
 SCHEMA = 2
 CATEGORIES = ("typing", "reading", "receiving", "focus")
@@ -81,9 +83,11 @@ def readable(i):
         if a.get("text"):
             entry["text"] = a["text"][-8:]
         acts[c] = entry
-    out = {"id": i["id"], "app": i["app"], "what": i.get("title") or i["doing"], "doing": i["doing"]}
+    out = {"id": i["id"], "app": i["app"], "project": notes.project_of(i),
+           "what": i.get("title") or i["doing"], "doing": i["doing"]}
     if i.get("notes"):
-        out["your_notes"] = [{"at": nice_time(n["at"]), "text": n["text"]} for n in i["notes"]]
+        out["your_notes"] = [{"id": notes.note_id(n), "at": nice_time(n["at"]), "text": n["text"],
+                              "status": "done" if notes.is_done(i, n) else "open"} for n in i["notes"]]
     if i.get("content"):
         out["content"] = i["content"]
     latest = {k: v for k, v in (i.get("state") or {}).items() if v != out["what"]}
@@ -114,6 +118,7 @@ def session_doc(session, events, notes):
                       "activity": e.get("activity", {}), "trigger": e.get("trigger"),
                       "app": e["app"], "doing": e["doing"],
                       **({"mostly": e["mostly"]} if e.get("mostly") else {}),
+                      **({"resurfaced": e["resurfaced"]} if e.get("resurfaced") else {}),
                       "memory": e["item"]} for e in events],
         **({"notes": [{**n, "on": n["item"]} for n in notes]} if notes else {}),
     }
@@ -122,13 +127,14 @@ def session_doc(session, events, notes):
 # ---------------------------------------------------------------- save
 
 def save_memory(items):
-    """Write the index (source of truth) and the readable view of it."""
+    """Write the index (source of truth) and the two readable views of it."""
     p = config.paths()
     ordered = sorted(items.values(), key=lambda i: i["last_seen"], reverse=True)
     write_json(p.index_file, {"schema_version": SCHEMA, "items": ordered})
     write_json(p.items_file, {"schema_version": SCHEMA,
                               "updated": nice_time(datetime.now().isoformat(timespec="seconds")),
                               "things": [readable(i) for i in ordered]})
+    write_json(p.pending_file, notes.pending_view(items))
 
 
 def save_session(session, events, notes):

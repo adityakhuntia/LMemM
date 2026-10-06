@@ -65,7 +65,7 @@ Storage: `.index.json` is the full internal item state; `memory.json` is its rea
 
 Do not mark these complete from listener startup, fake-native tests, or the basic live counts alone.
 
-## Next build — recommendation, not started
+## Next build — foreground evidence design in review
 
 **Foreground-window evidence quality is the next development increment.** The goal is to retain the actual work area consistently and keep surrounding UI from becoming memory evidence. Input is useful only if the screenshot/OCR it links to represents the correct work.
 
@@ -76,7 +76,7 @@ Proposed first slice:
 3. Use that mapping to isolate permitted source pixels before saving/processing. Treat cropping as a data/coordinate change requiring explicit design and migration-compatible metadata, not just a post-OCR filter.
 4. Validate browser body text, editor content, dialogs and display placement with controlled fixtures and a short live sequence. Unknown/changed geometry should be visible rather than silently interpreted as a full valid document.
 
-This is a recommended scope, not an approved implementation spec. Begin the appropriate Superpowers design workflow when the user chooses to build it.
+The user selected this next build. Read-only capture-path exploration is complete and the [proposed design](docs/superpowers/specs/2026-10-05-foreground-evidence-design.md) is written; product implementation has not started. The design chooses direct, verified window capture, versioned source geometry, conservative skip behavior, historical-frame compatibility, and fresh OCR across geometry boundaries. Initial support covers windows fully contained on one display; spanning/off-screen windows remain explicit skips. Written-spec review and implementation planning remain open under the Superpowers architectural workflow.
 
 ### Subsequent order
 

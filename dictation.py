@@ -29,7 +29,7 @@ from ctypes import CFUNCTYPE, POINTER, Structure, c_int32, c_uint32, c_void_p
 
 import objc
 from AppKit import (NSApp, NSApplication, NSBackingStoreBuffered, NSColor, NSFont,
-                    NSMakeRect, NSObject, NSPanel, NSRunningApplication, NSScreen,
+                    NSMakeRect, NSObject, NSPanel, NSScreen,
                     NSScrollView, NSTextField, NSTextView, NSWorkspace)
 
 # ⌃⌥N  ("note"). kVK_ANSI_N = 45; Carbon modifier bits: control 4096, option 2048

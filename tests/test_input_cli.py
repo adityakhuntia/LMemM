@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import config
 import lmemm
 import tracker
 from input_store import InputStore
@@ -34,10 +35,7 @@ class InputCliTests(unittest.TestCase):
 
     def test_events_can_be_inspected_without_recognized_memory_items(self):
         with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as stack:
-            root = Path(directory)
-            stack.enter_context(patch.object(tracker, "ITEMS_FILE", str(root / "memory.json")))
-            stack.enter_context(patch.object(tracker, "INTERNAL_FILE", str(root / ".index.json")))
-            stack.enter_context(patch.object(tracker, "SESSIONS_DIR", str(root / "sessions")))
+            root = Path(stack.enter_context(config.use_paths(directory)).memory_dir)
             store = InputStore("test", root)
             import datetime, time
             a = Aggregator("test", datetime.datetime.now(datetime.timezone.utc).isoformat(), 0)
@@ -50,18 +48,18 @@ class InputCliTests(unittest.TestCase):
             self.assertIn("1 events", output.getvalue())
 
     def test_pause_command_targets_running_pid_and_stale_status_is_rejected(self):
-        with tempfile.TemporaryDirectory() as directory, patch.object(tracker, "PIDFILE", str(Path(directory) / ".lmemm.pid")):
-            Path(tracker.PIDFILE).write_text(str(os.getpid()))
+        with tempfile.TemporaryDirectory() as directory, config.use_paths(directory) as paths:
+            Path(paths.pidfile).write_text(str(os.getpid()))
             output = io.StringIO()
             with patch("sys.argv", ["lmemm.py", "pause"]), contextlib.redirect_stdout(output):
                 lmemm.main()
-            control = Path(tracker.PIDFILE).with_suffix(".control.json")
+            control = Path(paths.control_file)
             self.assertEqual(json.loads(control.read_text()), {"pid": os.getpid(), "action": "pause"})
 
     def test_stale_status_and_mismatched_deletion_confirmation_are_rejected(self):
-        with tempfile.TemporaryDirectory() as directory, patch.object(tracker, "PIDFILE", str(Path(directory) / ".lmemm.pid")):
-            Path(tracker.PIDFILE).write_text(str(os.getpid()))
-            Path(tracker.PIDFILE).with_suffix(".status.json").write_text(json.dumps({"pid": -1}))
+        with tempfile.TemporaryDirectory() as directory, config.use_paths(directory) as paths:
+            Path(paths.pidfile).write_text(str(os.getpid()))
+            Path(paths.status_file).write_text(json.dumps({"pid": -1}))
             with patch("sys.argv", ["lmemm.py", "status"]), self.assertRaises(SystemExit):
                 lmemm.main()
             with patch("sys.argv", ["lmemm.py", "delete-session", "first", "--confirm", "second"]), self.assertRaises(SystemExit):
@@ -70,9 +68,7 @@ class InputCliTests(unittest.TestCase):
     def test_deletion_dry_run_shows_legacy_blockers_without_mutation(self):
         with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as stack:
             root = Path(directory)
-            stack.enter_context(patch.object(tracker, "ITEMS_FILE", str(root / "memory/memory.json")))
-            stack.enter_context(patch.object(tracker, "DATA_DIR", str(root)))
-            stack.enter_context(patch.object(tracker, "PIDFILE", str(root / ".lmemm.pid")))
+            stack.enter_context(config.use_paths(root))
             output = io.StringIO()
             with patch("sys.argv", ["lmemm.py", "delete-session", "legacy", "--dry-run"]), contextlib.redirect_stdout(output):
                 lmemm.main()

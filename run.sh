@@ -18,7 +18,8 @@ cd "$(dirname "$0")"
 
 PIDFILE=".lmemm.pid"
 LOGFILE="lmemm.log"
-PY="${PY:-python3}"
+# the project venv if there is one (see README), else whatever python3 is on PATH
+if [ -x .venv/bin/python ]; then PY="${PY:-.venv/bin/python}"; else PY="${PY:-python3}"; fi
 
 running() {
   [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null

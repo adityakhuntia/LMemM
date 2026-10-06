@@ -1,27 +1,17 @@
 #!/usr/bin/env python3
 """
-LMemM - object resolver (proof of concept).
+LMemM - screenshot -> on-screen objects.
 
-Takes the frames logger.py writes into ./data and resolves each screenshot
-into a structured list of on-screen objects: tabs, address bar, bookmarks,
-sidebar items, buttons, headings, text, panels - each with its text, its box
-and what it contains (emails, links, phone numbers, dates, people).
+Resolves one screenshot into a structured list of what's on screen: tabs, address
+bar, bookmarks, sidebar items, buttons, inputs, headings, text, panels - each with
+its text, its box and what it contains (emails, links, phone numbers, dates, people).
 
-Everything runs on-device through Apple's Vision framework (the same OCR
-Live Text uses). No model download, nothing leaves the machine.
+On-device through Apple's Vision framework (the OCR behind Live Text): no model
+download, nothing leaves the machine.
 
-    python3 resolver.py                  # resolve every frame not yet resolved
-    python3 resolver.py 20260926-181010  # one frame (ts or path), prints it
-    python3 resolver.py --watch          # follow the logger, resolve as frames land
-    python3 resolver.py --annotate       # also draw boxes into data/annotated/
-    python3 resolver.py --force          # redo frames already resolved
-    python3 resolver.py --report         # data/report.html: timeline of everything resolved
-
-Writes data/objects/<ts>.json. Kept out of data/*.json on purpose, so
-peek.py and run.sh keep counting only logger frames.
+    resolve(meta_path) -> {"objects": [...], "entities": {...}, "image_size": ..., ...}
 """
 
-import glob
 import json
 import os
 import re
@@ -30,26 +20,20 @@ import time
 from collections import Counter
 
 try:
-    import objc
     import Foundation
     import Vision
 except ImportError:
     sys.exit("Missing dependency. Run:  python3 -m pip install -r requirements.txt")
 
+import config
+
 
 # ---------------------------------------------------------------- config
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
-OUT_DIR = os.path.join(DATA_DIR, "objects")
-ANNOT_DIR = os.path.join(DATA_DIR, "annotated")
 FAST_OCR = False        # True = Vision's fast mode: ~3x quicker, worse on small text
 MIN_TEXT_CONF = 0.3     # drop OCR lines below this
-WATCH_POLL = 2          # seconds between checks in --watch
 
-BROWSERS = {
-    "Google Chrome", "Google Chrome Canary", "Brave Browser",
-    "Microsoft Edge", "Arc", "Safari",
-}
+from config import BROWSERS
 
 # placeholder text inside an empty input field
 INPUT_RE = re.compile(r"^(?:\W{1,3}|[QO] )?\s?(search|type a|type your|enter|write|ask|message|reply to|add a)\b", re.I)
@@ -298,7 +282,7 @@ def classify(lines, rects, meta, img_w, img_h):
 def resolve(meta_path):
     with open(meta_path) as f:
         meta = json.load(f)
-    img_path = os.path.join(DATA_DIR, meta["image"])
+    img_path = os.path.join(config.paths().data_dir, meta["image"])
     if not os.path.exists(img_path):
         raise FileNotFoundError(img_path)
 
@@ -361,258 +345,3 @@ def image_size(path):
     from AppKit import NSBitmapImageRep
     rep = NSBitmapImageRep.imageRepWithContentsOfFile_(path)
     return int(rep.pixelsWide()), int(rep.pixelsHigh())
-
-
-def add_delta(res, prev):
-    """What text appeared / vanished since the previous frame."""
-    if prev is None:
-        return
-    now = [o["text"] for o in res["objects"] if o["text"]]
-    before = [o["text"] for o in prev["objects"] if o["text"]]
-    added = [t for t in now if t not in set(before)]           # reading order
-    removed = [t for t in before if t not in set(now)]
-    res["delta"] = {
-        "prev": prev["ts"],
-        "same_as_prev": not added and not removed,
-        "added": len(added),
-        "removed": len(removed),
-        "added_text": added[:25],
-    }
-
-
-# ---------------------------------------------------------------- output
-
-COLORS = {
-    "tab": "#8e44ad", "address_bar": "#2980b9", "bookmark": "#16a085",
-    "menu_bar": "#7f8c8d", "input": "#1abc9c", "sidebar_item": "#d35400", "button": "#e74c3c",
-    "heading": "#f1c40f", "paragraph": "#95a5a6", "text": "#bdc3c7",
-    "link": "#3498db", "panel": "#2ecc71",
-}
-
-
-def annotate(res):
-    try:
-        from PIL import Image, ImageDraw
-    except ImportError:
-        print("  (skip --annotate: pip3 install pillow)")
-        return
-    img = Image.open(os.path.join(DATA_DIR, res["image"])).convert("RGB")
-    d = ImageDraw.Draw(img)
-    for o in res["objects"]:
-        x, y, w, h = o["box"]
-        c = COLORS.get(o["kind"], "#ffffff")
-        d.rectangle([x, y, x + w, y + h], outline=c, width=1 if o["kind"] == "panel" else 2)
-        if o["kind"] != "panel":
-            d.text((x, max(0, y - 10)), o["kind"], fill=c)
-    if res.get("focus"):
-        f = next(o for o in res["objects"] if o["id"] == res["focus"]["id"])
-        x, y, w, h = f["box"]
-        d.rectangle([x - 4, y - 4, x + w + 4, y + h + 4], outline="#ff00ff", width=3)
-    os.makedirs(ANNOT_DIR, exist_ok=True)
-    img.save(os.path.join(ANNOT_DIR, res["ts"] + ".jpg"), quality=80)
-
-
-def show(res):
-    c = res["context"]
-    print(f"{res['ts']}  {c['app']}  {c['site'] or ''}  {res['resolver']['seconds']}s")
-    print(f"  title    {c['title']}")
-    print(f"  scene    {', '.join(l['label'] for l in res['scene'][:4])}")
-    print(f"  objects  " + "  ".join(f"{k}={v}" for k, v in sorted(res["counts"].items())))
-    if res.get("focus"):
-        print(f"  focus    [{res['focus']['kind']}] {res['focus']['text']}")
-    for k, vs in res["entities"].items():
-        print(f"  {k:8} {' | '.join(vs[:6])}{' ...' if len(vs) > 6 else ''}")
-    if "delta" in res:
-        dl = res["delta"]
-        change = "UNCHANGED" if dl["same_as_prev"] else f"+{dl['added']} / -{dl['removed']} lines"
-        print(f"  delta    {change} vs {dl['prev']}")
-
-
-def out_path(ts):
-    return os.path.join(OUT_DIR, ts + ".json")
-
-
-def load_out(ts):
-    try:
-        with open(out_path(ts)) as f:
-            return json.load(f)
-    except Exception:
-        return None
-
-
-def frames():
-    """Logger frames (meta json) in time order."""
-    return sorted(glob.glob(os.path.join(DATA_DIR, "*.json")))
-
-
-def process(meta_paths, force=False, do_annotate=False, verbose=True):
-    os.makedirs(OUT_DIR, exist_ok=True)
-    all_ts = [os.path.basename(p)[:-5] for p in frames()]
-    done = 0
-    for p in meta_paths:
-        ts = os.path.basename(p)[:-5]
-        if not force and os.path.exists(out_path(ts)):
-            continue
-        try:
-            res = resolve(p)
-        except Exception as e:
-            print(f"  ! {ts}: {e}")
-            continue
-        i = all_ts.index(ts) if ts in all_ts else -1
-        add_delta(res, load_out(all_ts[i - 1]) if i > 0 else None)
-        with open(out_path(ts), "w") as f:
-            json.dump(res, f, indent=1, ensure_ascii=False)
-        if do_annotate:
-            annotate(res)
-        if verbose:
-            show(res)
-            print()
-        done += 1
-    return done
-
-
-# ---------------------------------------------------------------- report
-
-REPORT_CSS = """
-:root{--bg:#f7f7f5;--card:#fff;--fg:#1d1d1f;--mute:#6e6e73;--line:#e3e3e0;--chip:#eef1f6;--accent:#2f6fde}
-@media (prefers-color-scheme:dark){:root{--bg:#141415;--card:#1e1e20;--fg:#ececee;--mute:#9a9aa0;--line:#2e2e32;--chip:#2a2f3a;--accent:#7aa7ff}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 -apple-system,system-ui,sans-serif}
-main{max-width:1100px;margin:0 auto;padding:24px 16px 64px}h1{font-size:22px;margin:0 0 4px}
-.mute{color:var(--mute)}.stats{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 24px}
-.stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px}
-.stat b{display:block;font-size:20px}.sec{margin:28px 0 10px;font-size:15px}
-.frame{display:grid;grid-template-columns:260px 1fr;gap:16px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px}
-.frame img{width:100%;border-radius:6px;border:1px solid var(--line);display:block}
-.frame h3{margin:0 0 2px;font-size:14px}.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
-.chip{background:var(--chip);border-radius:6px;padding:1px 7px;font-size:12px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.chip i{color:var(--mute);font-style:normal;margin-right:4px}
-.same{font-size:12px;color:var(--mute);padding:4px 12px 12px}
-details summary{cursor:pointer;color:var(--accent);font-size:12px;margin-top:6px}
-details ul{margin:6px 0 0;padding-left:18px;font-size:12px}
-@media (max-width:700px){.frame{grid-template-columns:1fr}}
-"""
-
-
-def esc(t):
-    return (str(t).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            .replace('"', "&quot;"))
-
-
-def report(since=None, path=None):
-    """HTML timeline of resolved frames (from `since` on, if given). Returns its path."""
-    rows = [r for r in (load_out(os.path.basename(p)[:-5]) for p in frames()
-                        if not since or os.path.basename(p)[:-5] >= since) if r]
-    if not rows:
-        print("nothing resolved yet. Run:  python3 lmemm.py")
-        return None
-
-    apps = Counter(r["context"]["site"] or r["context"]["app"] or "?" for r in rows)
-    unchanged = sum(1 for r in rows if r.get("delta", {}).get("same_as_prev"))
-    ents = {}
-    for r in rows:
-        for k, vs in r["entities"].items():
-            c = ents.setdefault(k, Counter())
-            for v in vs:
-                c[v] += 1
-
-    def iso(ts):
-        return f"{ts[9:11]}:{ts[11:13]}:{ts[13:15]}"
-
-    h = [f"<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
-         f"<title>LMemM Session Report</title><style>{REPORT_CSS}</style><main>",
-         f"<h1>What the resolver saw</h1><div class=mute>{iso(rows[0]['ts'])} to {iso(rows[-1]['ts'])}"
-         f" on {rows[0]['ts'][:4]}-{rows[0]['ts'][4:6]}-{rows[0]['ts'][6:8]}</div>",
-         "<div class=stats>"]
-    for label, val in [("frames", len(rows)),
-                       ("unchanged", f"{unchanged} ({100 * unchanged // max(len(rows), 1)}%)"),
-                       ("objects / frame", sum(len(r["objects"]) for r in rows) // len(rows)),
-                       ("sec / frame", round(sum(r["resolver"]["seconds"] for r in rows) / len(rows), 2))]:
-        h.append(f"<div class=stat><b>{esc(val)}</b><span class=mute>{label}</span></div>")
-    h.append("</div><h2 class=sec>Where the time went</h2><div class=chips>")
-    for a, n in apps.most_common(12):
-        h.append(f"<span class=chip>{esc(a)} <i>{n}</i></span>")
-    h.append("</div><h2 class=sec>Things it picked up across the session</h2>")
-    for k in ("person", "email", "url", "date", "time", "phone", "money", "path"):
-        if k in ents:
-            h.append(f"<div class=chips><span class=chip><i>{k}</i></span>")
-            for v, n in ents[k].most_common(15):
-                h.append(f"<span class=chip>{esc(v)}{f' <i>×{n}</i>' if n > 1 else ''}</span>")
-            h.append("</div>")
-
-    h.append("<h2 class=sec>Timeline</h2>")
-    skipped = 0
-    for r in rows:
-        if r.get("delta", {}).get("same_as_prev"):
-            skipped += 1
-            continue
-        if skipped:
-            h.append(f"<div class=same>… {skipped} unchanged frame(s)</div>")
-            skipped = 0
-        c = r["context"]
-        img = f"annotated/{r['ts']}.jpg" if os.path.exists(os.path.join(ANNOT_DIR, r["ts"] + ".jpg")) else r["image"]
-        heads = [o["text"] for o in r["objects"] if o["kind"] == "heading"][:3]
-        h.append(f"<div class=frame><a href='{img}'><img loading=lazy src='{img}'></a><div>"
-                 f"<h3>{iso(r['ts'])} · {esc(c['site'] or c['app'] or '?')}</h3>"
-                 f"<div class=mute>{esc(c['title'] or '')}</div><div class=chips>")
-        if r.get("focus"):
-            h.append(f"<span class=chip><i>cursor on {r['focus']['kind']}</i>{esc(r['focus']['text'])}</span>")
-        for t in heads:
-            h.append(f"<span class=chip><i>heading</i>{esc(t)}</span>")
-        for k, vs in r["entities"].items():
-            for v in vs[:4]:
-                h.append(f"<span class=chip><i>{k}</i>{esc(v)}</span>")
-        h.append("</div>")
-        if "delta" in r:
-            d = r["delta"]
-            h.append(f"<details><summary>+{d['added']} / −{d['removed']} lines since {iso(d['prev'])}</summary><ul>"
-                     + "".join(f"<li>{esc(t)}</li>" for t in d["added_text"]) + "</ul></details>")
-        counts = "  ".join(f"{k} {v}" for k, v in sorted(r["counts"].items()))
-        h.append(f"<div class=mute style='font-size:12px;margin-top:6px'>{esc(counts)}</div></div></div>")
-    if skipped:
-        h.append(f"<div class=same>… {skipped} unchanged frame(s)</div>")
-    h.append("</main>")
-
-    path = path or os.path.join(DATA_DIR, "report.html")
-    with open(path, "w") as f:
-        f.write("".join(h).replace("src='", f"src='{os.path.relpath(DATA_DIR, os.path.dirname(path))}/")
-                .replace("href='", f"href='{os.path.relpath(DATA_DIR, os.path.dirname(path))}/"))
-    print(f"wrote {path}")
-    return path
-
-
-def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    force = "--force" in sys.argv
-    ann = "--annotate" in sys.argv
-
-    if args:
-        paths = []
-        for a in args:
-            ts = os.path.basename(a).split(".")[0]
-            p = os.path.join(DATA_DIR, ts + ".json")
-            if not os.path.exists(p):
-                sys.exit(f"no logger frame {ts} in {DATA_DIR}")
-            paths.append(p)
-        process(paths, force=True, do_annotate=ann)
-        return
-
-    if "--report" in sys.argv:
-        report()
-        return
-
-    if "--watch" in sys.argv:
-        sys.stdout.reconfigure(line_buffering=True)     # readable when piped / nohup'd
-        print(f"LMemM resolver watching {DATA_DIR}  (Ctrl-C to stop)\n")
-        while True:
-            process(frames(), force=False, do_annotate=ann)
-            time.sleep(WATCH_POLL)
-
-    n = process(frames(), force=force, do_annotate=ann)
-    print(f"resolved {n} frame(s) -> {OUT_DIR}")
-
-
-if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\nstopped.")

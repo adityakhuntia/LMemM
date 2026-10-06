@@ -1,5 +1,4 @@
 import unittest
-import tracker
 from unittest.mock import patch
 
 from input_events import Aggregator
@@ -143,7 +142,7 @@ class InputMonitorTests(unittest.TestCase):
             return {"AXFocusedUIElement": (0, "element"), "AXRole": (0, "AXTextArea"), "AXSubrole": (-25205, None)}[name]
         native = SimpleNamespace(AXIsProcessTrusted=lambda: True, AXUIElementCreateSystemWide=lambda: "system",
                                  AXUIElementCopyAttributeValue=attributes, AXUIElementGetPid=lambda *args: (0, 42))
-        with patch.dict(sys.modules, {"ApplicationServices": native}), patch("tracker.front", return_value=foreground), patch("input_monitor.secure_input_enabled", return_value=False):
+        with patch.dict(sys.modules, {"ApplicationServices": native}), patch("macos.front", return_value=foreground), patch("input_monitor.secure_input_enabled", return_value=False):
             self.assertIsNotNone(permitted_context({"com.microsoft.VSCode"}))
             for owner in ((0, 43), (-1, 42)):
                 native.AXUIElementGetPid = lambda *args: owner
@@ -180,7 +179,7 @@ class InputMonitorTests(unittest.TestCase):
         def attributes(element, name, unused):
             return {"AXFocusedUIElement": (0, "element"), "AXRole": (0, "AXTextArea"), "AXSubrole": (-25212, None)}[name]
         native = SimpleNamespace(AXIsProcessTrusted=lambda: True, AXUIElementCreateSystemWide=lambda: "system", AXUIElementCopyAttributeValue=attributes, AXUIElementGetPid=lambda *args: (0, 42))
-        with patch.dict(sys.modules, {"ApplicationServices": native}), patch("tracker.front", return_value=foreground), patch("input_monitor.secure_input_enabled", return_value=False):
+        with patch.dict(sys.modules, {"ApplicationServices": native}), patch("macos.front", return_value=foreground), patch("input_monitor.secure_input_enabled", return_value=False):
             self.assertIsNotNone(permitted_context({"com.microsoft.VSCode"}))
 
     def test_only_allowlisted_tab_shortcuts_emit_classified_steps_without_raw_keys(self):

@@ -91,7 +91,7 @@ def memory(n, show_content=False, show_events=False):
             doc = json.loads(path.read_text())
             cutoff = datetime.now(timezone.utc) - timedelta(hours=min(doc.get("retention_hours", 24), 24))
             events = [e for e in doc["events"] if datetime.fromisoformat(e["end_utc"]) >= cutoff]
-            print(f"\ninput session {doc['session']}: {len(events)} events; {doc['status']}; expired: {doc.get('expired', 0)}")
+            print(f"\ninput session {doc['session']}: {len(events)} events; {doc['status']}; expired: {doc.get('expired', 0)}; capacity dropped: {doc.get('dropped_capacity', 0)}")
             for event in events[-n:]:
                 label = event["kind"].replace("_", " ")
                 print(f"  {event['start_utc']}  {label}: {event['payload']}")

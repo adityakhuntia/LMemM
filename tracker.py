@@ -572,7 +572,7 @@ class Tracker:
             if permitted and permitted["id"] == input_hooks.context_id(f) and permitted["bounds"] == f["bounds"] and after and input_hooks.context_id(after) == permitted["id"] and after["bounds"] == f["bounds"]:
                 meta["input_context_id"] = permitted["id"]
                 with self.lock:
-                    self.input_store.link_capture(ts, permitted["id"], meta["capture_start_offset_ns"], meta["capture_end_offset_ns"])
+                    meta["input_event_ids"] = self.input_store.link_capture(ts, permitted["id"], meta["capture_start_offset_ns"], meta["capture_end_offset_ns"])
                     self.input_store.keep_capture(ts, img)
         meta_path = os.path.join(DATA_DIR, ts + ".json")
         self.last_ts = ts

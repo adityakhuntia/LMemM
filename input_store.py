@@ -126,7 +126,7 @@ class InputStore:
 
     def link_capture(self, capture_id, context_id, start_ns, end_ns, item_id=None):
         if self.closed:
-            return
+            return []
         for event in self.doc["events"]:
             if event["context_id"] != context_id or event["end_offset_ns"] > start_ns or event.get("link_status") == "gap":
                 continue
@@ -143,6 +143,7 @@ class InputStore:
             self.doc["captures"].append({"id": capture_id, "context_id": context_id, "start_ns": start_ns, "end_ns": end_ns, "at": self.clock()})
         self.doc["captures"] = self.doc["captures"][-4096:]
         self._save()
+        return [e["event_id"] for e in self.doc["events"] if e.get("after_capture") == capture_id]
 
     def keep_capture(self, capture_id, path):
         if not re.fullmatch(r"\d{8}-\d{6}", capture_id):

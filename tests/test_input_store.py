@@ -25,7 +25,8 @@ class InputStoreTests(unittest.TestCase):
     def test_private_store_retention_and_capture_link(self):
         store = InputStore("first", self.root, clock=lambda: self.now)
         store.append(self.click())
-        store.link_capture("capture", "context", 10, 20, "document-example")
+        linked = store.link_capture("capture", "context", 10, 20, "document-example")
+        self.assertEqual(linked, ["first:1"])
         events = store.read()["events"]
         self.assertEqual(events[0]["after_capture"], "capture")
         self.assertEqual(events[0]["item"], "document-example")

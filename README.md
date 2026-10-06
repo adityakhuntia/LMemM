@@ -42,7 +42,7 @@ python3 lmemm.py notes done n-3f9a1c  # tick one off (reopen: notes reopen ID)
 
 | Command | What it does |
 |---|---|
-| `lmemm.py [start] [--every N]` | watch and remember; capture every N s on the same window (default 5) |
+| `lmemm.py [start] [--every N] [--no-widget]` | watch and remember; capture every N s on the same window (default 5) |
 | `lmemm.py memory [N] [--content] [--events]` | latest N things; `--content` adds kept excerpts, `--events` the input timeline |
 | `lmemm.py notes [--all] [PROJECT]` | open notes grouped project → thing; `--all` includes done ones |
 | `lmemm.py notes done ID…` / `notes reopen ID…` | mark notes done / open again |
@@ -92,6 +92,21 @@ Q3 plan  (1 open)
   Google Docs     Q3 plan
       n-3f9a1c  • add a pricing table   (2026-10-06 10:02)
 ```
+
+## The pill
+
+A tiny translucent bar sits at the bottom of your screen, like Wispr Flow. It never
+takes focus and shows over every app, Space and full-screen window. An orange dot
+means the thing you're on has edits left.
+
+Click it for a small card about the project of whatever you're on:
+
+- **Left** shows the edits still to do, with this thing's first. Tick one and it's done,
+  so next time you only see what's left.
+- **Plan** shows every note on the project (open, then done, each with when) and its
+  history: notes added and ticked off, newest first.
+
+Click the pill again, or ×, to close it. Start with `--no-widget` to hide it.
 
 ## What it remembers
 
@@ -165,7 +180,7 @@ deletion works are in [docs/input-timeline.md](docs/input-timeline.md).
 ## Develop
 
 ```bash
-python3 -m unittest discover -s tests      # 100 tests, incl. real on-device OCR
+python3 -m unittest discover -s tests      # 104 tests, incl. real on-device OCR
 ```
 
 [ARCHITECTURE.md](ARCHITECTURE.md) covers how the modules fit and where to extend it.

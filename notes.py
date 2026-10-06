@@ -139,3 +139,35 @@ def pending_view(items, include_done=False):
     ordered.sort(key=lambda p: p["items"][0]["notes"][0]["at"], reverse=True)
     return {"updated": datetime.now().isoformat(timespec="seconds").replace("T", " ")[:16],
             "open": sum(p["open"] for p in ordered), "projects": ordered}
+
+
+def card(items, item_id):
+    """What the on-screen widget shows for the thing in front: the edits left on its
+    project (this thing's first), and the project's plan: every note, open then done,
+    plus its history (notes written / ticked off, newest first)."""
+    item = items.get(item_id)
+    if item is None:
+        return None
+    project = project_of(item)
+    members = [i for i in items.values() if project_of(i) == project]
+    left, plan, history = [], [], []
+    for i in sorted(members, key=lambda i: (i["id"] != item_id, i["last_seen"]), reverse=False):
+        what = i.get("title") or i["doing"]
+        for n in i.get("notes", []):
+            nid = note_id(n)
+            done_at = i.get("notes_done", {}).get(nid)
+            row = {"id": nid, "text": n["text"], "at": n["at"], "on": what,
+                   "here": i["id"] == item_id, "done": done_at}
+            plan.append(row)
+            if not done_at:
+                left.append(row)
+            history.append({"at": n["at"], "event": "added", "text": n["text"], "on": what})
+            if done_at:
+                history.append({"at": done_at, "event": "done", "text": n["text"], "on": what})
+    left.sort(key=lambda r: (not r["here"], r["at"]))
+    plan.sort(key=lambda r: (bool(r["done"]), r["at"]))
+    history.sort(key=lambda h: h["at"], reverse=True)
+    return {"title": item.get("title") or item["doing"], "app": item["app"], "project": project,
+            "left": left, "plan": plan, "history": history,
+            "things": len(members), "visits": sum(i.get("visits", 0) for i in members),
+            "seconds": sum(i.get("seconds", 0) for i in members)}

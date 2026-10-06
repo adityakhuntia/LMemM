@@ -2,7 +2,7 @@
 """
 LMemM - the one command.
 
-    lmemm.py [start] [--every N] [--input-events --input-app com.microsoft.VSCode]
+    lmemm.py [start] [--every N] [--no-widget] [--input-events --input-app com.microsoft.VSCode]
                                       watch and remember (Ctrl-C to stop)
     lmemm.py memory [N] [--content] [--events]
                                       what's remembered + the latest session's timeline
@@ -121,13 +121,14 @@ def cmd_start(args):
     parser.add_argument("--input-events", action="store_true")
     parser.add_argument("--input-app", action="append", default=[])
     parser.add_argument("--input-retention-hours", type=float, default=24)
+    parser.add_argument("--no-widget", action="store_true", help="don't show the on-screen pill")
     opts = parser.parse_args(args)
     if opts.every <= 0 or not 0 < opts.input_retention_hours <= 24:
         parser.error("positive capture interval and input retention of at most 24 hours required")
     if opts.input_events != bool(opts.input_app) or not set(opts.input_app) <= SUPPORTED_INPUT_APPS:
         parser.error("input monitoring requires --input-events --input-app com.microsoft.VSCode")
     tracker.Tracker(every=opts.every, input_apps=set(opts.input_app) or None,
-                    input_retention_hours=opts.input_retention_hours).run()
+                    input_retention_hours=opts.input_retention_hours, show_widget=not opts.no_widget).run()
 
 
 def cmd_memory(args):

@@ -83,6 +83,40 @@ class NoteModelTests(unittest.TestCase):
         self.assertEqual(notes.due_for_resurfacing(a, "2026-10-06T12:00:00", 600), [])
 
 
+class WidgetCardTests(unittest.TestCase):
+    """notes.card: what the on-screen pill shows for the thing in front."""
+
+    def setUp(self):
+        self.items = {
+            "here": item("here", kind="code_file", app="VS Code", title="tracker.py",
+                         state={"file": "tracker.py", "project": "LMemM"}, note_texts=["split capture", "add tests"]),
+            "there": item("there", kind="code_file", app="VS Code", title="store.py",
+                          state={"file": "store.py", "project": "LMemM"}, note_texts=["atomic writes"]),
+            "elsewhere": item("elsewhere", note_texts=["unrelated doc note"]),
+        }
+        notes.set_done(self.items, [notes.note_id(self.items["here"]["notes"][1])], at="2026-10-06T11:00:00")
+
+    def test_left_shows_only_open_edits_of_the_project_with_this_thing_first(self):
+        card = notes.card(self.items, "here")
+        self.assertEqual(card["project"], "LMemM")
+        self.assertEqual([n["text"] for n in card["left"]], ["split capture", "atomic writes"])
+        self.assertEqual([n["here"] for n in card["left"]], [True, False])
+
+    def test_plan_has_every_note_open_first_and_history_newest_first(self):
+        card = notes.card(self.items, "here")
+        self.assertEqual([(n["text"], bool(n["done"])) for n in card["plan"]],
+                         [("split capture", False), ("atomic writes", False), ("add tests", True)])
+        self.assertEqual(card["history"][0], {"at": "2026-10-06T11:00:00", "event": "done",
+                                              "text": "add tests", "on": "tracker.py"})
+        self.assertEqual(card["things"], 2)
+
+    def test_ticking_in_the_card_leaves_only_what_is_left(self):
+        card = notes.card(self.items, "here")
+        notes.set_done(self.items, [card["left"][0]["id"]])
+        self.assertEqual([n["text"] for n in notes.card(self.items, "here")["left"]], ["atomic writes"])
+        self.assertIsNone(notes.card(self.items, "missing"))
+
+
 class ResurfaceOnReopenTests(unittest.TestCase):
     """A note on A, a visit to B, back to A -> one reminder; back again soon -> none."""
 
@@ -129,6 +163,15 @@ class ResurfaceOnReopenTests(unittest.TestCase):
         pending = json.loads(Path(config.paths().pending_file).read_text())
         self.assertEqual(pending["open"], 1)
         self.assertEqual(pending["projects"][0]["items"][0]["notes"][0]["text"], "add a pricing table")
+
+    def test_widget_card_follows_the_thing_in_front_and_ticks_save(self):
+        ts = self.visit("Q3 plan", "Pricing section goes here")
+        self.capture.save_note(("frame", ts), "add a pricing table")
+        card = self.capture.widget_card()
+        self.assertEqual([n["text"] for n in card["left"]], ["add a pricing table"])
+        self.capture.widget_tick([card["left"][0]["id"]], True)
+        self.assertEqual(self.capture.widget_card()["left"], [])
+        self.assertEqual(json.loads(Path(config.paths().pending_file).read_text())["open"], 0)
 
     def test_done_note_does_not_resurface(self):
         ts = self.visit("Q3 plan", "Pricing section goes here")

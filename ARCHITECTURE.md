@@ -29,6 +29,7 @@ One process, two threads, plain files.
 | `notes.py` | notes: record/attach, ids, done-state, resurfacing rule, project view | no |
 | `store.py` | load/save `.index.json`, readable `memory.json` / `pending.json`, sessions | no |
 | `dictation.py` + `listen/` | ⌃⌥N hotkey (Carbon), note window, on-device speech helper app | **yes** |
+| `widget.py` | the on-screen pill and its Left / Plan card (non-activating panels) | **yes** |
 | `input_monitor.py` | opt-in listen-only event tap + privacy gate | **yes** |
 | `input_events.py` | input summaries, ordering, context boundaries | no |
 | `input_store.py` | input files, capture links, provenance, session deletion | no |
@@ -36,7 +37,7 @@ One process, two threads, plain files.
 
 Rules that keep this cohesive:
 
-- Only `macos.py`, `dictation.py`, `input_monitor.py` and `resolver.py` touch macOS APIs,
+- Only `macos.py`, `dictation.py`, `widget.py`, `input_monitor.py` and `resolver.py` touch macOS APIs,
   so everything else is testable with plain data.
 - Nothing imports `tracker` or `lmemm`. Dependencies point inward toward `config`.
 - Paths come from `config.paths()` at call time, never module globals. Tests point
@@ -75,6 +76,18 @@ Rules that keep this cohesive:
   its lock). If the tracker is stopped, it writes `.index.json` directly and records a
   provenance contribution so session deletion stays consistent.
 
+## The pill (widget.py)
+
+- It runs inside the tracker process, on the main thread. Its panels are borderless and
+  non-activating, at status-window level, on all Spaces, so clicking them never takes
+  focus from the app you're in.
+- `Tracker.widget_card()` hands it `notes.card(items, current item)` for the last thing
+  you were on. That gives the project, the **left** edits (this thing first), the full
+  **plan** (open, then done) and the **history** (added / done, newest first). Ticking a
+  box calls `Tracker.widget_tick`, which runs `notes.set_done` and saves under the lock.
+- `tick()` refreshes the pill's dot about once a second. While the card is open, it skips
+  capture, so the card never gets OCR'd into memory.
+
 ## Talking to a running tracker
 
 `.lmemm.pid` names the process. `lmemm.py pause|resume|notes done` write a PID-scoped
@@ -93,7 +106,7 @@ Rules that keep this cohesive:
 
 ## Testing
 
-`python3 -m unittest discover -s tests` runs 100 tests: real Vision OCR on generated
+`python3 -m unittest discover -s tests` runs 104 tests: real Vision OCR on generated
 images, identity, content, migration, notes/resurfacing/project view, the CLI, input
 events with fake native data, retention and deletion recovery. No test uses the real
 microphone, input tap or your data.

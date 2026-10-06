@@ -41,6 +41,7 @@ import notes
 import resolver
 import store
 import understand
+import widget
 from input_events import Aggregator
 from input_store import InputStore, private_write
 from memory_content import extract_content, remember_content, visible_window_region
@@ -64,7 +65,7 @@ def line(t, app, msg):
 
 
 class Tracker:
-    def __init__(self, every=config.EVERY, input_apps=None, input_retention_hours=24):
+    def __init__(self, every=config.EVERY, input_apps=None, input_retention_hours=24, show_widget=True):
         p = config.paths()
         self.every = every
         self.session = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -89,6 +90,9 @@ class Tracker:
         self.last_poll = 0.0
         self.last_frame = None               # previous frame (pixels + OCR) for change tracking
         self.panel = dictation.NotePanel()
+        self.show_widget = show_widget
+        self.widget = None                   # the on-screen pill (widget.py), made in run()
+        self.last_widget_refresh = 0.0
         self.control_file = Path(p.control_file)
         self.status_file = Path(p.status_file)
 
@@ -245,8 +249,14 @@ class Tracker:
         """One pass of the main loop (~4x a second)."""
         self.process_control()
         self.poll_input()
+        if self.widget and time.time() - self.last_widget_refresh >= 1:
+            self.last_widget_refresh = time.time()
+            self.widget.refresh()
         if self.manual_paused:
             return
+        if self.widget and self.widget.card_open:
+            self.close_interval()
+            return                      # the card is open: don't capture it into memory
         if any(self.flags.values()):
             self.note_request = False
             if self.panel.open:
@@ -416,6 +426,21 @@ class Tracker:
             item = notes.record(self.items, self.frame_item, self.notes, target, text, at)
             self.save()
         line(at[11:19], (item or {}).get("app", "?"), "note saved" + (" (awaiting context)" if item is None else ""))
+
+    # ------------------------------------------------------------ the on-screen pill
+
+    def widget_card(self):
+        """What the pill's card shows: the project of the thing you're on right now."""
+        with self.lock:
+            cur = self.events[-1] if self.events else None
+            return notes.card(self.items, cur["item"]) if cur else None
+
+    def widget_tick(self, ids, done):
+        with self.lock:
+            found = notes.set_done(self.items, ids, done=done)
+            if found:
+                self.save()
+        line(now_hms(), "", f"{len(found)} note{'s' * (len(found) != 1)} marked {'done' if done else 'open'}")
 
     # ------------------------------------------------------------ resolver thread
 
@@ -649,6 +674,8 @@ class Tracker:
         app = dictation.start_app()
         hotkey_ok = dictation.register_hotkey(lambda: setattr(self, "note_request", True))
         dictation.ensure_listener()        # build the speech helper now, not on first ⌃⌥N
+        if self.show_widget:
+            self.widget = widget.Widget(self.widget_card, self.widget_tick)
         if self.input_monitor:
             self.input_monitor.start(request_permission=True)
             say(f"Input monitoring: {self.input_monitor.status()['state']} · allowed app: VS Code · no key values recorded")

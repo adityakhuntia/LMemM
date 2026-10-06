@@ -12,12 +12,13 @@ and it shows on every Space and over full-screen apps. Data comes from
 notes.card(); ticking a box calls back into the tracker, which saves under its lock.
 """
 
+import json
 from datetime import datetime
 
 import objc
-from AppKit import (NSBackingStoreBuffered, NSBezierPath, NSButton, NSColor, NSFont,
+from AppKit import (NSAppearance, NSBackingStoreBuffered, NSBezierPath, NSButton, NSColor, NSFont,
                     NSMakeRect, NSObject, NSPanel, NSScreen, NSScrollView, NSSegmentedControl,
-                    NSTextField, NSTrackingArea, NSView, NSVisualEffectView)
+                    NSTextField, NSTrackingArea, NSView)
 
 BORDERLESS, NONACTIVATING = 0, 1 << 7
 # all Spaces, stationary, over full-screen apps, not in the window cycle
@@ -66,6 +67,18 @@ class _Flipped(NSView):
         return True
 
 
+class _CardBackground(NSView):
+    """Solid dark rounded card (drawn, so no Core Graphics colour objects needed)."""
+
+    def drawRect_(self, rect):
+        path = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(self.bounds(), 12, 12)
+        NSColor.colorWithWhite_alpha_(0.09, 0.96).setFill()
+        path.fill()
+        NSColor.colorWithWhite_alpha_(1.0, 0.12).setStroke()
+        path.setLineWidth_(1)
+        path.stroke()
+
+
 class _PillView(NSView):
     def initWithWidget_(self, widget):
         self = objc.super(_PillView, self).initWithFrame_(NSMakeRect(0, 0, *PILL_HOVER))
@@ -81,9 +94,9 @@ class _PillView(NSView):
         bw, bh = self.bounds().size.width, self.bounds().size.height
         r = NSMakeRect((bw - w) / 2, (bh - h) / 2, w, h)
         path = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(r, h / 2, h / 2)
-        NSColor.colorWithWhite_alpha_(0.08, 0.85 if self.hover or self.widget.card_open else 0.45).setFill()
+        NSColor.colorWithWhite_alpha_(0.06, 0.95 if self.hover or self.widget.card_open else 0.8).setFill()
         path.fill()
-        NSColor.colorWithWhite_alpha_(1.0, 0.28 if self.hover else 0.16).setStroke()
+        NSColor.colorWithWhite_alpha_(1.0, 0.45 if self.hover else 0.3).setStroke()
         path.setLineWidth_(0.5)
         path.stroke()
         if self.badge:                                   # edits left on what you're on
@@ -120,6 +133,7 @@ class _Actions(NSObject):
 
     def mode_(self, sender):
         self.widget.mode = "left" if sender.selectedSegment() == 0 else "plan"
+        self.widget.scroll = None                     # a different view starts at the top
         self.widget.render()
 
     def close_(self, sender):
@@ -136,6 +150,8 @@ class Widget:
         self.card_open = False
         self.mode = "left"
         self.rows = []                      # tag -> note id
+        self.shown = None                   # what the open card currently shows
+        self.scroll = None
         self.actions = _Actions.alloc().initWithWidget_(self)
         self.pill = _panel(*PILL_HOVER)
         self.pill_view = _PillView.alloc().initWithWidget_(self)
@@ -160,13 +176,14 @@ class Widget:
         if badge != self.pill_view.badge:
             self.pill_view.badge = badge
             self.pill_view.setNeedsDisplay_(True)
-        if self.card_open:
-            self.render(data)
+        if self.card_open and json.dumps([data, self.mode], sort_keys=True, default=str) != self.shown:
+            self.render(data)               # only when something changed: keeps your scroll position
 
     def toggle_card(self):
         self.card_open = not self.card_open
         if self.card_open:
             self.mode = "left"
+            self.scroll = None
             self.render()
             self.card.orderFrontRegardless()
         else:
@@ -182,14 +199,12 @@ class Widget:
 
     def render(self, data=None):
         data = data if data is not None else self.provider()
+        self.shown = json.dumps([data, self.mode], sort_keys=True, default=str)
+        kept = self.scroll.contentView().bounds().origin.y if self.scroll is not None else 0
         self.rows = []
-        content = NSVisualEffectView.alloc().initWithFrame_(NSMakeRect(0, 0, CARD_W, 100))
-        content.setMaterial_(13)            # hudWindow
-        content.setBlendingMode_(0)         # behind window
-        content.setState_(1)                # active
-        content.setWantsLayer_(True)
-        content.layer().setCornerRadius_(12)
-        content.layer().setMasksToBounds_(True)
+        # solid dark card (not see-through), dark appearance so text is light
+        content = _CardBackground.alloc().initWithFrame_(NSMakeRect(0, 0, CARD_W, 100))
+        content.setAppearance_(NSAppearance.appearanceNamed_("NSAppearanceNameDarkAqua"))
 
         body = _Flipped.alloc().initWithFrame_(NSMakeRect(0, 0, CARD_W, 10))
         y = 12
@@ -231,6 +246,10 @@ class Widget:
         content.setFrame_(NSMakeRect(0, 0, CARD_W, height))
         content.addSubview_(scroll)
         self.card.setContentView_(content)
+        if kept and y > height:                       # stay where you had scrolled to
+            scroll.contentView().scrollToPoint_((0, min(kept, y - height)))
+            scroll.reflectScrolledClipView_(scroll.contentView())
+        self.scroll = scroll
         pill = self.pill.frame()
         self.card.setFrame_display_(NSMakeRect(pill.origin.x + pill.size.width / 2 - CARD_W / 2,
                                                pill.origin.y + pill.size.height + 8, CARD_W, height), True)

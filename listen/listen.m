@@ -10,15 +10,28 @@
 //     stops when <out-file>.stop appears, after 120 s, or on SIGTERM;
 //     the last write before exiting is followed by <out-file>.done
 //
-// Recognition is on-device when the Mac supports it (requiresOnDeviceRecognition).
+// Recognition is strictly on-device. Unsupported Macs/locales use typed notes.
 
 #import <Foundation/Foundation.h>
 #import <Speech/Speech.h>
 #import <AVFoundation/AVFoundation.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 static NSString *outPath;
 static NSString *latest = @"";
 static volatile sig_atomic_t stopRequested = 0;
+
+static BOOL cancelled(void) {
+    return stopRequested || ![[NSFileManager defaultManager] fileExistsAtPath:[outPath stringByDeletingLastPathComponent]]
+        || [[NSFileManager defaultManager] fileExistsAtPath:[outPath stringByAppendingString:@".stop"]];
+}
+
+static BOOL configureLocalRecognition(SFSpeechRecognizer *rec, SFSpeechAudioBufferRecognitionRequest *req) {
+    if (!rec || !rec.supportsOnDeviceRecognition) return NO;
+    req.requiresOnDeviceRecognition = YES;
+    return YES;
+}
 
 static void writeText(NSString *text) {
     latest = text ?: @"";
@@ -40,11 +53,25 @@ static void fail(NSString *why) {
 
 static void onTerm(int sig) { stopRequested = 1; }
 
+static void waitForPermission(dispatch_semaphore_t semaphore) {
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:60];
+    while (dispatch_semaphore_wait(semaphore, DISPATCH_TIME_NOW) != 0) {
+        if (cancelled()) finish(0);
+        if ([deadline timeIntervalSinceNow] <= 0) fail(@"Permission request timed out; type your note instead");
+        [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+    }
+    if (cancelled()) finish(0);
+}
+
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
         if (argc < 2) { fprintf(stderr, "usage: listen <out-file>\n"); return 2; }
         outPath = [NSString stringWithUTF8String:argv[1]];
+        umask(0077);
         signal(SIGTERM, onTerm);
+        if (cancelled()) return 0;
+        [[NSString stringWithFormat:@"%d", getpid()] writeToFile:[outPath stringByAppendingString:@".pid"]
+            atomically:YES encoding:NSUTF8StringEncoding error:nil];
         writeText(@"");
 
         // 1. permissions (asked once; macOS remembers)
@@ -53,27 +80,28 @@ int main(int argc, const char *argv[]) {
         [SFSpeechRecognizer requestAuthorization:^(SFSpeechRecognizerAuthorizationStatus st) {
             speech = st; dispatch_semaphore_signal(s1);
         }];
-        dispatch_semaphore_wait(s1, DISPATCH_TIME_FOREVER);
+        waitForPermission(s1);
         if (speech != SFSpeechRecognizerAuthorizationStatusAuthorized)
             fail(@"Speech Recognition permission denied: System Settings > Privacy & Security > Speech Recognition > LMemM Listen");
+
+        // Check local support before requesting microphone access. No server fallback.
+        SFSpeechRecognizer *rec = [[SFSpeechRecognizer alloc] initWithLocale:[NSLocale currentLocale]];
+        if (!rec || !rec.isAvailable || !rec.supportsOnDeviceRecognition)
+            rec = [[SFSpeechRecognizer alloc] initWithLocale:[NSLocale localeWithLocaleIdentifier:@"en-US"]];
+        if (!rec || !rec.isAvailable) fail(@"Local speech recognition unavailable; type your note instead");
+        SFSpeechAudioBufferRecognitionRequest *req = [[SFSpeechAudioBufferRecognitionRequest alloc] init];
+        if (!configureLocalRecognition(rec, req))
+            fail(@"On-device speech recognition unsupported; type your note instead");
+        req.shouldReportPartialResults = YES;
+        if (@available(macOS 13.0, *)) req.addsPunctuation = YES;
 
         __block BOOL mic = NO;
         dispatch_semaphore_t s2 = dispatch_semaphore_create(0);
         [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL ok) {
             mic = ok; dispatch_semaphore_signal(s2);
         }];
-        dispatch_semaphore_wait(s2, DISPATCH_TIME_FOREVER);
+        waitForPermission(s2);
         if (!mic) fail(@"Microphone permission denied: System Settings > Privacy & Security > Microphone > LMemM Listen");
-
-        // 2. recognizer: system language, on-device if possible
-        SFSpeechRecognizer *rec = [[SFSpeechRecognizer alloc] initWithLocale:[NSLocale currentLocale]];
-        if (!rec || !rec.isAvailable) rec = [[SFSpeechRecognizer alloc] initWithLocale:[NSLocale localeWithLocaleIdentifier:@"en-US"]];
-        if (!rec || !rec.isAvailable) fail(@"Speech recognition isn't available on this Mac right now");
-
-        SFSpeechAudioBufferRecognitionRequest *req = [[SFSpeechAudioBufferRecognitionRequest alloc] init];
-        req.shouldReportPartialResults = YES;
-        if (rec.supportsOnDeviceRecognition) req.requiresOnDeviceRecognition = YES;
-        if (@available(macOS 13.0, *)) req.addsPunctuation = YES;
 
         // 3. microphone -> recognizer
         AVAudioEngine *engine = [[AVAudioEngine alloc] init];
@@ -87,15 +115,17 @@ int main(int argc, const char *argv[]) {
         if (![engine startAndReturnError:&err]) fail([NSString stringWithFormat:@"Couldn't start the microphone: %@", err.localizedDescription]);
 
         __block BOOL ended = NO;
+        __block NSString *recognitionError = nil;
         [rec recognitionTaskWithRequest:req resultHandler:^(SFSpeechRecognitionResult *r, NSError *e) {
             if (r) writeText(r.bestTranscription.formattedString);
+            if (e) recognitionError = e.localizedDescription;
             if (e || r.isFinal) ended = YES;
         }];
 
         // 4. run until asked to stop, then let the last words come through
         NSString *stopPath = [outPath stringByAppendingString:@".stop"];
         NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:120];
-        while (!stopRequested && !ended && [deadline timeIntervalSinceNow] > 0
+        while (!cancelled() && !ended && [deadline timeIntervalSinceNow] > 0
                && ![[NSFileManager defaultManager] fileExistsAtPath:stopPath]) {
             [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
         }
@@ -105,6 +135,7 @@ int main(int argc, const char *argv[]) {
         NSDate *grace = [NSDate dateWithTimeIntervalSinceNow:1.5];
         while (!ended && [grace timeIntervalSinceNow] > 0)
             [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+        if (recognitionError && !cancelled()) fail(@"Local speech recognition failed; type your note instead");
         finish(0);
     }
     return 0;

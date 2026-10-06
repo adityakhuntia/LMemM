@@ -27,7 +27,7 @@ def permitted_context(allowed_apps):
     if secure_input_enabled() is not False:
         return None
     try:
-        import Quartz as q
+        import ApplicationServices as q
         import tracker
         if not q.AXIsProcessTrusted():
             return None
@@ -40,16 +40,19 @@ def permitted_context(allowed_apps):
         err, element = q.AXUIElementCopyAttributeValue(system, "AXFocusedUIElement", None)
         if err or element is None:
             return None
+        pid_err, focus_pid = q.AXUIElementGetPid(element, None)
+        if pid_err or focus_pid != f["pid"]:
+            return None
         err, role = q.AXUIElementCopyAttributeValue(element, "AXRole", None)
         if err or role not in {"AXTextArea", "AXTextField", "AXOutline", "AXButton", "AXGroup", "AXScrollArea"}:
             return None
         sub_err, subrole = q.AXUIElementCopyAttributeValue(element, "AXSubrole", None)
-        if subrole == "AXSecureTextField" or role == "AXTextField" and (sub_err or subrole is None):
+        if subrole == "AXSecureTextField" or sub_err not in (0, -25205) or role == "AXTextField" and (sub_err or subrole is None):
             return None
         after = tracker.front()
         if after is None or any(after.get(k) != f.get(k) for k in ("pid", "win_id", "window", "bounds")):
             return None
-        return {"id": context_id(f), "bundle_id": f["bundle_id"], "window_id": f["win_id"], "bounds": f["bounds"]}
+        return {"id": context_id(f), "bundle_id": f["bundle_id"], "window_id": f["win_id"], "bounds": f["bounds"], "pid": f["pid"]}
     except Exception:
         return None
 
@@ -71,7 +74,11 @@ class InputMonitor:
             raise ValueError("initial input monitoring supports only com.microsoft.VSCode")
         if native is None:
             import Quartz
-            native = Quartz
+            import ApplicationServices
+            class Bindings:
+                def __getattr__(self, name):
+                    return getattr(ApplicationServices if name.startswith("AX") else Quartz, name)
+            native = Bindings()
         self.native = native
         self.aggregator = aggregator
         self.allowed_apps = allowed_apps
@@ -83,6 +90,8 @@ class InputMonitor:
         self.paused = False
         self.offset_ns = 0
         self.gate = None
+        self.verified_context = None
+        self.verified_since_ns = 0
 
     def _gap(self, reason):
         if self.gate != reason:
@@ -109,7 +118,8 @@ class InputMonitor:
                  q.kCGEventRightMouseDown, q.kCGEventOtherMouseDown, q.kCGEventLeftMouseDragged,
                  q.kCGEventRightMouseDragged, q.kCGEventOtherMouseDragged, q.kCGEventScrollWheel)
         self.offset_ns = self.clock() - self.native_clock()
-        self.tap = q.CGEventTapCreate(q.kCGSessionEventTap, q.kCGHeadInsertEventTap,
+        self.verify_context(self.context_provider(self.allowed_apps))
+        self.tap = q.CGEventTapCreate(q.kCGAnnotatedSessionEventTap, q.kCGHeadInsertEventTap,
                                     q.kCGEventTapOptionListenOnly, sum(1 << t for t in types),
                                     self.callback, None)
         if self.tap is None:
@@ -123,9 +133,20 @@ class InputMonitor:
         self.state = "recording"
         return True
 
+    def verify_context(self, context):
+        if context != self.verified_context:
+            self.verified_context = context
+            self.verified_since_ns = self.clock()
+
+    def invalidate_boundary(self):
+        self.verified_context = None
+        self.verified_since_ns = self.clock()
+        self._gap("context_boundary")
+
     def set_paused(self, paused):
         if paused and not self.paused:
             self._gap("paused")
+            self.verify_context(None)
         self.paused = paused
 
     def stop(self):
@@ -159,12 +180,24 @@ class InputMonitor:
             context = self.context_provider(self.allowed_apps)
             if context is None or context.get("bundle_id") not in self.allowed_apps:
                 self._gap("protected_or_excluded")
+                self.verify_context(None)
+                return event
+            self.verify_context(context)
+            if ns < self.verified_since_ns:
+                self._gap("event_before_context")
+                return event
+            target_pid = q.CGEventGetIntegerValueField(event, q.kCGEventTargetUnixProcessID)
+            if not context.get("pid") or target_pid != context["pid"]:
+                self._gap("unknown_or_different_target")
                 return event
             if kind == q.kCGEventKeyDown:
                 name, payload = "key", {}
             else:
                 point = q.CGEventGetLocation(event)
                 b = context["bounds"]
+                if not (b["X"] <= point.x < b["X"] + b["Width"] and b["Y"] <= point.y < b["Y"] + b["Height"]):
+                    self._gap("pointer_outside_window")
+                    return event
                 x = int(3 * (point.x - b["X"]) / b["Width"])
                 y = int(3 * (point.y - b["Y"]) / b["Height"])
                 region = ("top", "middle", "bottom")[y] + "-" + ("left", "center", "right")[x] if 0 <= x < 3 and 0 <= y < 3 else "unknown"

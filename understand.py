@@ -241,9 +241,15 @@ def browser_page(res, meta, app):
                      details={"query": query}, evidence=["YouTube search URL"])
     if site in ("Google Docs", "Google Sheets") or "/document/" in u.path or "/spreadsheets/" in u.path:
         doc = re.search(r"/d/([\w-]{10,})", u.path)
-        return state(site, "editing_document", f'Working on "{short(title, 70)}"',
-                     target=doc.group(1) if doc else title,
-                     details={"document": title}, evidence=["Docs URL"])
+        result = state(site, "editing_document", f'Working on "{short(title, 70)}"',
+                       target=doc.group(1) if doc else title,
+                       details={"document": title}, evidence=["Docs URL"])
+        # A source document ID survives edits, renames, scrolling and app restarts.
+        # Title-only references and arbitrary sites with similar paths do not.
+        result["stable_identity"] = bool(
+            u.hostname == "docs.google.com" and doc
+            and re.match(r"^/document/(?:u/\d+/)?d/[\w-]{10,}(?:/|$)", u.path))
+        return result
     if site == "Google Meet":
         return state(site, "in_meeting", "In a Google Meet call", target=u.path,
                      evidence=["Meet URL"])
@@ -289,4 +295,3 @@ def ref(s):
     """Stable identity of the thing on screen: the same draft, document, chat or
     page gets the same ref every time you come back to it, however it has changed."""
     return f'{s["app"]}|{s["kind"]}|{s["target"] or ""}'
-

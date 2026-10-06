@@ -7,6 +7,8 @@ from input_monitor import InputMonitor, permitted_context
 
 class Native:
     kCGSessionEventTap = 1
+    kCGAnnotatedSessionEventTap = 2
+    kCGEventTargetUnixProcessID = 40
     kCGHeadInsertEventTap = 0
     kCGEventTapOptionListenOnly = 1
     kCGEventKeyDown = 10
@@ -41,11 +43,12 @@ class Native:
     def CGEventGetTimestamp(self, event): return event["time"]
     def CGEventGetLocation(self, event): return type("Point", (), {"x": 50, "y": 50})()
     def CGEventGetIntegerValueField(self, event, field):
+        if field == 40: return 42
         if field not in (11, 12): raise AssertionError("key field read")
         return -5 if field == 11 else 0
 
 
-CTX = {"id": "context", "bundle_id": "com.microsoft.VSCode", "window_id": 7,
+CTX = {"id": "context", "bundle_id": "com.microsoft.VSCode", "window_id": 7, "pid": 42,
        "bounds": {"X": 0, "Y": 0, "Width": 100, "Height": 100}}
 
 
@@ -107,3 +110,43 @@ class InputMonitorTests(unittest.TestCase):
     def test_browser_and_unsupported_allowlists_are_rejected(self):
         with self.assertRaises(ValueError):
             InputMonitor(self.a, {"com.apple.Safari"}, lambda apps: dict(CTX), self.gaps.append)
+
+    def test_pointer_just_outside_window_is_rejected(self):
+        self.mon.start()
+        self.native.CGEventGetLocation = lambda event: type("Point", (), {"x": -0.1, "y": 50})()
+        self.mon.callback(None, 1, {"time": 1_000_000_000}, None)
+        self.assertTrue(all(e["kind"] == "gap" for e in self.a.drain(2_000_000_000)))
+
+    def test_target_process_mismatch_is_never_attributed_to_foreground(self):
+        self.mon.start()
+        original = self.native.CGEventGetIntegerValueField
+        self.native.CGEventGetIntegerValueField = lambda event, field: 999 if field == 40 else original(event, field)
+        self.mon.callback(None, 10, {"time": 1_000_000_000}, None)
+        self.assertTrue(all(e["kind"] == "gap" for e in self.a.drain(2_000_000_000)))
+
+    def test_event_predating_verified_window_boundary_is_discarded(self):
+        self.mon.start()
+        self.mon.clock = lambda: 1_050_000_000
+        changed = dict(CTX, id="new-window", window_id=8)
+        self.mon.verify_context(changed)
+        self.mon.context_provider = lambda apps: changed
+        self.mon.callback(None, 10, {"time": 1_000_000_000}, None)
+        self.assertTrue(all(e["kind"] == "gap" for e in self.a.drain(2_000_000_000)))
+
+    def test_focus_inspection_rejects_secure_missing_owner_and_unknown_role(self):
+        import sys
+        from types import SimpleNamespace
+        foreground = {"pid": 42, "win_id": 7, "window": "Project", "bundle_id": "com.microsoft.VSCode", "bounds": CTX["bounds"]}
+        def attributes(element, name, unused):
+            return {"AXFocusedUIElement": (0, "element"), "AXRole": (0, "AXTextArea"), "AXSubrole": (-25205, None)}[name]
+        native = SimpleNamespace(AXIsProcessTrusted=lambda: True, AXUIElementCreateSystemWide=lambda: "system",
+                                 AXUIElementCopyAttributeValue=attributes, AXUIElementGetPid=lambda *args: (0, 42))
+        with patch.dict(sys.modules, {"ApplicationServices": native}), patch("tracker.front", return_value=foreground), patch("input_monitor.secure_input_enabled", return_value=False):
+            self.assertIsNotNone(permitted_context({"com.microsoft.VSCode"}))
+            for owner in ((0, 43), (-1, 42)):
+                native.AXUIElementGetPid = lambda *args: owner
+                self.assertIsNone(permitted_context({"com.microsoft.VSCode"}))
+            native.AXUIElementGetPid = lambda *args: (0, 42)
+            for role, sub in (("AXTextField", "AXSecureTextField"), ("unknown", None), (None, None)):
+                native.AXUIElementCopyAttributeValue = lambda element, name, unused: (0, "element" if name == "AXFocusedUIElement" else role if name == "AXRole" else sub)
+                self.assertIsNone(permitted_context({"com.microsoft.VSCode"}))

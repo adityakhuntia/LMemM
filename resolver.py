@@ -32,8 +32,9 @@ from collections import Counter
 try:
     import objc
     import Foundation
+    import Vision
 except ImportError:
-    sys.exit("Missing dependency. Run:  pip3 install pyobjc-framework-Cocoa")
+    sys.exit("Missing dependency. Run:  python3 -m pip install -r requirements.txt")
 
 
 # ---------------------------------------------------------------- config
@@ -69,10 +70,11 @@ _VN = {}
 
 
 def vision():
-    """Load Vision.framework through pyobjc-core (no extra pip package)."""
+    """Use the framework wrapper so PyObjC knows struct and out-argument types."""
     if not _VN:
-        objc.loadBundle("Vision", _VN,
-                        bundle_path="/System/Library/Frameworks/Vision.framework")
+        for name in ("VNImageRequestHandler", "VNRecognizeTextRequest",
+                     "VNDetectRectanglesRequest", "VNClassifyImageRequest"):
+            _VN[name] = getattr(Vision, name)
     return _VN
 
 
@@ -83,7 +85,10 @@ def run_vision(path, w, h):
     """
     vn = vision()
     url = Foundation.NSURL.fileURLWithPath_(path)
-    handler = vn["VNImageRequestHandler"].alloc().initWithURL_options_(url, {})
+    # Vision probes optional keys; use a native dictionary rather than the
+    # Python mapping proxy, which can raise for missing keys on this path.
+    handler = vn["VNImageRequestHandler"].alloc().initWithURL_options_(
+        url, Foundation.NSDictionary.dictionary())
 
     ocr = vn["VNRecognizeTextRequest"].alloc().init()
     ocr.setRecognitionLevel_(1 if FAST_OCR else 0)      # 0 accurate, 1 fast
@@ -97,21 +102,25 @@ def run_vision(path, w, h):
 
     scene = vn["VNClassifyImageRequest"].alloc().init()
 
-    if not handler.performRequests_error_([ocr, rects, scene], None):
-        # Vision's accurate OCR occasionally refuses an image outright (seen on a
-        # Google Sheets screen). Don't lose the frame: redo the parts separately, retry
-        # with automatic language detection (reads it fine), then fast OCR as a last resort.
-        handler.performRequests_error_([rects, scene], None)
+    success, error = handler.performRequests_error_([ocr, rects, scene], None)
+    if not success:
+        # Retry OCR separately, preserving the native dictionary and NSError tuple
+        # handling required by the official PyObjC Vision bindings.
+        geometry_ok, _ = handler.performRequests_error_([rects, scene], None)
+        if not geometry_ok:
+            rects, scene = None, None
         for level, auto in ((0, True), (1, False)):
             ocr = vn["VNRecognizeTextRequest"].alloc().init()
             ocr.setRecognitionLevel_(level)
             ocr.setUsesLanguageCorrection_(level == 0)
             ocr.setAutomaticallyDetectsLanguage_(auto)
-            if vn["VNImageRequestHandler"].alloc().initWithURL_options_(url, {}) \
-                    .performRequests_error_([ocr], None):
+            retry = vn["VNImageRequestHandler"].alloc().initWithURL_options_(
+                url, Foundation.NSDictionary.dictionary())
+            success, error = retry.performRequests_error_([ocr], None)
+            if success:
                 break
         else:
-            raise RuntimeError(f"Vision failed on {path}")
+            raise RuntimeError(f"Vision failed on {path}: {error or 'no error details returned'}")
 
     def px(b):
         # Vision: normalised, bottom-left origin -> pixels, top-left origin
@@ -129,9 +138,9 @@ def run_vision(path, w, h):
         lines.append({"text": c.string().strip(), "conf": round(c.confidence(), 2),
                       "box": px(o.boundingBox())})
 
-    boxes = [px(o.boundingBox()) for o in rects.results() or []]
+    boxes = [px(o.boundingBox()) for o in (rects.results() or [])] if rects else []
     labels = [{"label": o.identifier(), "conf": round(o.confidence(), 2)}
-              for o in scene.results() or [] if o.confidence() > 0.1][:8]
+              for o in (scene.results() or []) if o.confidence() > 0.1][:8] if scene else []
     return lines, boxes, labels
 
 

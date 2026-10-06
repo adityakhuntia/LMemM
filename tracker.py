@@ -41,7 +41,8 @@ import threading
 import time
 from collections import Counter
 from difflib import SequenceMatcher
-from datetime import datetime
+from datetime import datetime, timezone
+from pathlib import Path
 
 try:
     import objc
@@ -54,6 +55,10 @@ import activity
 import dictation
 import resolver
 import understand
+from memory_content import extract_content, remember_content, visible_window_region
+import input_monitor as input_hooks
+from input_events import Aggregator
+from input_store import InputStore, private_write as private_control
 
 
 # ---------------------------------------------------------------- config
@@ -282,7 +287,7 @@ def quiet_system_logs():
 
 
 class Tracker:
-    def __init__(self, every=EVERY):
+    def __init__(self, every=EVERY, input_apps=None, input_retention_hours=24):
         self.every = every
         self.flags = {"asleep": False, "display_off": False, "locked": False}
         self.pending = None            # (trigger, due, first_seen)
@@ -304,10 +309,110 @@ class Tracker:
         self.stats = Counter()
         self.session = datetime.now().strftime("%Y%m%d-%H%M%S")
         self.running = True
+        self.manual_paused = False
+        self.control_file = Path(PIDFILE).with_suffix(".control.json")
+        self.status_file = Path(PIDFILE).with_suffix(".status.json")
+        self.input_aggregator = self.input_monitor = self.input_store = None
+        self.input_context = None
+        self.last_input_status = None
+        self.last_input_prune = 0.0
+        self.origin_ns = time.monotonic_ns()
+        if input_apps:
+            self.input_aggregator = Aggregator(self.session, datetime.now(timezone.utc).isoformat(), self.origin_ns)
+            self.input_monitor = input_hooks.InputMonitor(self.input_aggregator, set(input_apps))
+            self.input_store = InputStore(self.session, Path(ITEMS_FILE).parent, input_retention_hours)
+            self.input_store.initialize_baseline(self.items)
+        elif (Path(ITEMS_FILE).parent / "contributions" / "baseline.json").exists():
+            # Once provenance starts, later capture-only sessions remain reconstructable.
+            self.input_store = InputStore(self.session, Path(ITEMS_FILE).parent)
+            self.input_store.initialize_baseline(self.items)
+
+    def close_interval(self):
+        if self.events and not self.events[-1].get("_closed"):
+            self.events[-1]["_closed"] = True
+        self.last_frame = None
+
+    def set_manual_pause(self, paused):
+        self.manual_paused = paused
+        self.pending = None
+        self.pin = False
+        self.note_request = False
+        self.close_interval()
+        if self.panel.open:
+            self.panel.close(save=False)
+        if self.input_monitor:
+            self.input_monitor.set_paused(paused)
+            if not paused and self.input_monitor.state in {"disabled", "unavailable"}:
+                self.input_monitor.stop()
+                self.input_monitor.start(request_permission=False)
+        if self.input_store:
+            with self.lock:
+                self.input_store.invalidate_context("paused" if paused else "resumed")
+        if not paused:
+            self.trigger("resume")
+        self.publish_status()
+
+    def process_control(self):
+        if self.control_file.exists():
+            try:
+                doc = json.loads(self.control_file.read_text())
+                if doc.get("pid") == os.getpid() and doc.get("action") in {"pause", "resume"}:
+                    self.set_manual_pause(doc["action"] == "pause")
+            except (OSError, ValueError, TypeError):
+                say("Ignored invalid tracker control file")
+            finally:
+                self.control_file.unlink(missing_ok=True)
+
+    def publish_status(self):
+        status = {"pid": os.getpid(), "session": self.session, "paused": self.manual_paused,
+                  "input": self.input_monitor.status() if self.input_monitor else {"state": "off"}}
+        private_control(self.status_file, status)
+
+    def poll_input(self):
+        if self.input_store and time.monotonic() - self.last_input_prune >= 60:
+            with self.lock:
+                self.input_store.read()
+            self.last_input_prune = time.monotonic()
+        if self.input_monitor is None:
+            return
+        monitor = self.input_monitor
+        blocked = self.manual_paused or any(self.flags.values()) or self.panel.open
+        context = None if blocked else monitor.context_provider(monitor.allowed_apps)
+        if blocked or context is None:
+            monitor.set_paused(True)
+            monitor._gap("paused" if blocked else "protected_or_excluded")
+            self.input_context = None
+        else:
+            if self.input_context and self.input_context["id"] != context["id"]:
+                previous = self.input_context["id"]
+                self.input_aggregator.clear("context_change")
+                ns = time.monotonic_ns()
+                self.input_aggregator._record("context_transition", ns, ns,
+                                              {"from": previous, "to": context["id"]}, context["id"])
+                with self.lock:
+                    self.input_store.invalidate_context("context_change")
+            monitor.set_paused(False)
+            self.input_context = context
+        monitor.verify_context(context)
+        summaries = self.input_aggregator.drain(time.monotonic_ns())
+        with self.lock:
+            if summaries:
+                self.input_store.append(summaries)
+            status = monitor.status()
+            if status != self.last_input_status:
+                self.input_store.set_status(status)
+                if status.get("gap"):
+                    self.input_store.invalidate_context(status["gap"])
+                self.last_input_status = status
+                self.publish_status()
+        if not blocked and context and monitor.state == "recording" and any(e["kind"] in {"keyboard_activity", "click", "scroll"} for e in summaries):
+            self.trigger("input_activity")
 
     # -- events in
 
     def trigger(self, why):
+        if self.input_monitor and why in {"app_switch", "window_change", "tab_change"}:
+            self.input_monitor.invalidate_boundary()
         now = time.time()
         if self.pending:
             first = self.pending[2]
@@ -318,13 +423,26 @@ class Tracker:
 
     def set_flag(self, k, v):
         self.flags[k] = v
+        if v:
+            self.close_interval()
+            if self.input_monitor:
+                self.input_monitor.set_paused(True)
         if not v:
             self.trigger("wake")
 
     # -- main loop
 
     def tick(self):
+        self.process_control()
+        self.poll_input()
+        if self.manual_paused:
+            return
+        if any(self.flags.values()):
+            self.note_request = False
+            if self.panel.open:
+                self.panel.close(save=False)
         if self.panel.open:
+            self.close_interval()
             self.panel.poll()           # starts Dictation once the window is really in front
             return                      # you're dictating: don't capture the note window
         if self.note_request:
@@ -344,6 +462,7 @@ class Tracker:
         if reason is None and idle_seconds() > IDLE:
             reason = "idle"
         if reason:
+            self.close_interval()
             if self.paused != reason:
                 line(datetime.now().strftime("%H:%M:%S"), "", f"paused ({reason})")
                 self.paused = reason
@@ -379,6 +498,8 @@ class Tracker:
                 self.stats["backlog_skip"] += 1
 
     def capture(self, trigger, pinned=False):
+        if self.manual_paused or any(self.flags.values()):
+            return
         self.last_capture = time.time()
         f = front()
         if f is None:
@@ -392,6 +513,7 @@ class Tracker:
                 else "sensitive site" if url and SKIP_SITES.search(url)
                 else None)
         if skip:
+            self.close_interval()
             self.stats["skipped"] += 1
             line(datetime.now().strftime("%H:%M:%S"), f["app"], f"skipped: {skip}")
             return
@@ -403,7 +525,9 @@ class Tracker:
         img = os.path.join(DATA_DIR, ts + ".jpg")
         if os.path.exists(img):          # two captures in one second
             return
+        capture_start_ns = time.monotonic_ns()
         screenshot(img, display)
+        capture_end_ns = time.monotonic_ns()
         if not os.path.exists(img):
             say(f"  ! screenshot failed (Screen Recording permission?)")
             return
@@ -414,6 +538,18 @@ class Tracker:
             os.remove(img)
             self.trigger("app_switch" if after["pid"] != f["pid"] else "window_change")
             return
+        if trigger == "note":
+            if after is None or any(after.get(key) != f.get(key)
+                                    for key in ("app", "bundle_id", "window", "bounds")):
+                os.remove(img)
+                self.trigger("window_change")
+                return
+            # A tab can switch without changing the containing window's ID/title.
+            after_url, after_title, after_private = browser_info(f["app"])
+            if (after_url, after_title, after_private) != (url, tab_title, private):
+                os.remove(img)
+                self.trigger("tab_change")
+                return
         meta = {
             "ts": ts, "iso": datetime.now().isoformat(timespec="seconds"),
             "app": f["app"], "bundle_id": f["bundle_id"], "window": f["window"],
@@ -423,12 +559,28 @@ class Tracker:
             "trigger": trigger, "pinned": pinned, "session": self.session,
             "inputs": inputs, "pointer": pointer,
         }
+        screens = NSScreen.screens()
+        frame = screens[display - 1].frame()
+        display_bounds = {"X": frame.origin.x,
+                          "Y": screens[0].frame().size.height - frame.origin.y - frame.size.height,
+                          "Width": frame.size.width, "Height": frame.size.height}
+        meta["window_region"] = visible_window_region(f["bounds"], display_bounds)
+        meta["capture_start_offset_ns"] = capture_start_ns - self.origin_ns
+        meta["capture_end_offset_ns"] = capture_end_ns - self.origin_ns
+        if self.input_monitor and self.input_monitor.state == "recording" and not self.input_monitor.paused:
+            permitted = self.input_monitor.context_provider(self.input_monitor.allowed_apps)
+            if permitted and permitted["id"] == input_hooks.context_id(f) and permitted["bounds"] == f["bounds"] and after and input_hooks.context_id(after) == permitted["id"] and after["bounds"] == f["bounds"]:
+                meta["input_context_id"] = permitted["id"]
+                with self.lock:
+                    self.input_store.link_capture(ts, permitted["id"], meta["capture_start_offset_ns"], meta["capture_end_offset_ns"])
+                    self.input_store.keep_capture(ts, img)
         meta_path = os.path.join(DATA_DIR, ts + ".json")
         self.last_ts = ts
         with open(meta_path, "w") as fh:
             json.dump(meta, fh, indent=2)
         self.stats["captured"] += 1
         self.q.put((meta_path, meta, trigger, pinned))
+        return meta
 
     # -- resolver thread
 
@@ -438,20 +590,17 @@ class Tracker:
         """Hotkey pressed: open the note window for whatever is in front RIGHT NOW,
         in any app. If memory hasn't caught up with it yet (you just switched),
         take a screenshot first; the note is attached once that's resolved."""
-        f = front() or {}
-        with self.lock:
-            cur = self.events[-1] if self.events else None
-            item = self.items.get(cur["item"]) if cur else None
-            known = cur is not None and cur.get("_raw") == (f.get("app"), f.get("window"))
-        if known:
-            label, target = item["doing"], ("item", item["id"])
-        else:
-            n = self.stats["captured"]
-            self.capture("note", pinned=True)
-            ts = self.last_ts if self.stats["captured"] > n else None
-            label = f"{f.get('app', 'this screen')}" + (f": {f['window']}" if f.get("window") else "")
-            target = ("frame", ts) if ts else ("item", item["id"] if item else None)
+        if self.manual_paused or any(self.flags.values()):
+            return False
+        meta = self.capture("note", pinned=True)
+        if meta is None:
+            line(datetime.now().strftime("%H:%M:%S"), "", "note unavailable: current context could not be captured")
+            return False
+        label = meta["app"] + (f": {meta['tab_title'] or meta['window']}" if meta.get("tab_title") or meta.get("window") else "")
+        target = ("frame", meta["ts"])
         self.panel.show(label, lambda text: self.save_note(target, text))
+        self.poll_input()
+        return True
 
     def save_note(self, target, text):
         if not text:
@@ -459,24 +608,31 @@ class Tracker:
             return
         at = datetime.now().isoformat(timespec="seconds")
         kind, key = target
-        if kind == "frame":
-            # wait (briefly) for the resolver to turn that screenshot into a memory entry
-            deadline = time.time() + 30
-            while key not in self.frame_item and time.time() < deadline:
-                time.sleep(0.2)
-            item_id = self.frame_item.get(key)
-        else:
-            item_id = key
         with self.lock:
+            item_id = self.frame_item.get(key) if kind == "frame" else key
             item = self.items.get(item_id)
             note = {"at": at, "text": text}
             if item:
                 note["while"] = item["doing"]
                 item.setdefault("notes", []).append(note)
                 item["last_seen"] = at
-            self.notes.append({"item": item_id, **note})
+            self.notes.append({"item": item["id"] if item else None, **note,
+                               "frame": key if kind == "frame" else None,
+                               "status": "attached" if item else "pending" if kind == "frame" and key not in self.frame_item else "unresolved"})
             self.save()
-        line(at[11:19], (item or {}).get("app", "?"), f'note: "{text[:90]}"')
+        line(at[11:19], (item or {}).get("app", "?"), "note saved" + (" (awaiting context)" if item is None else ""))
+
+    def attach_pending_notes(self):
+        """Called under the memory lock; never wait on the UI thread for OCR."""
+        for note in self.notes:
+            if note.get("status") != "pending":
+                continue
+            item_id = self.frame_item.get(note.get("frame"))
+            item = self.items.get(item_id)
+            if item is not None:
+                item.setdefault("notes", []).append({"at": note["at"], "text": note["text"], "while": item["doing"]})
+                item["last_seen"] = max(item["last_seen"], note["at"])
+                note.update(item=item_id, status="attached")
 
     def worker(self):
         while True:
@@ -485,10 +641,17 @@ class Tracker:
                 return
             meta_path, meta, trigger, pinned = item
             try:
-                with objc.autorelease_pool(), self.lock:
+                with objc.autorelease_pool():
                     self.handle(meta_path, meta, trigger, pinned)
             except Exception as e:
                 say(f"  ! {meta['ts']}: {e}")
+                with self.lock:
+                    for note in self.notes:
+                        if note.get("frame") == meta["ts"] and note.get("status") == "pending":
+                            note["status"] = "unresolved"
+                    self.frame_item[meta["ts"]] = None
+                    if self.running and not (self.input_store and self.input_store.closed):
+                        self.save()
             finally:
                 self.q.task_done()
 
@@ -508,8 +671,18 @@ class Tracker:
             res = resolver.resolve(meta_path)
             st = understand.describe(res, meta)
 
+        content = extract_content(res, meta)
+
+        # OCR runs outside the memory lock so note saves never wait for Vision.
+        with self.lock:
+            self._remember_frame(meta, trigger, pinned, now, img, last, change, res, st, content)
+
+    def _remember_frame(self, meta, trigger, pinned, now, img, last, change, res, st, content):
+        if not self.running or self.input_store and self.input_store.closed:
+            return
+        sig = (meta.get("app"), meta.get("window"), meta.get("url"))
         # 2. which thing is this?
-        cur = self.events[-1] if self.events else None
+        cur = self.events[-1] if self.events and not self.events[-1].get("_closed") else None
         scrolled = bool(change and change["scroll"]) or (meta.get("inputs") or {}).get("scroll", 1e9) < 3 * self.every
         item_id, ref = self.item_for(st, cur, res, trigger, scrolled)
         item = self.items.get(item_id)
@@ -544,10 +717,12 @@ class Tracker:
                 "screenshot": meta["image"], "content_hash": state_hash, "ref": ref, "refs": [ref]}
             frame_used = True
             self.stats["new_items"] += 1
+            remember_content(item, content)
         else:
             item["last_seen"] = meta["iso"]
             item["doing"] = st["doing"]
-            if state_hash != item["content_hash"] or pinned:
+            new_content = remember_content(item, content)
+            if state_hash != item["content_hash"] or new_content or pinned:
                 # same thing, new content (the draft grew, the doc changed): update it in
                 # place and swap its one screenshot for the newer one
                 item.update(state=st["details"] or item["state"], title=st["title"] or item["title"],
@@ -603,6 +778,11 @@ class Tracker:
             line(t, "", f"  {act['category']}: {act['new_text'][0][:80]}")
 
         self.frame_item[meta["ts"]] = item_id
+        if self.input_store:
+            self.input_store.observe(item_id, content, meta, pinned, ref)
+            if meta.get("input_context_id"):
+                self.input_store.link_capture(meta["ts"], meta["input_context_id"], meta["capture_start_offset_ns"], meta["capture_end_offset_ns"], item_id)
+        self.attach_pending_notes()
         cur["_raw"] = (meta.get("app"), meta.get("window"))
         if not frame_used:
             self.drop_frame(meta["image"])
@@ -626,7 +806,10 @@ class Tracker:
 
     def item_for(self, st, cur, res, trigger, scrolled):
         """
-        Which memory item this screen belongs to -> (item id, ref). Same rule for every app.
+        Which memory item this screen belongs to -> (item id, ref).
+
+        A verified source document ID is authoritative: missing visible text cannot
+        split it, and shared text cannot alias a different document ID to it.
 
         The ref (understand.py) names WHERE you are: a URL, a window, a draft slot.
         What you TYPED there tells instances apart:
@@ -647,6 +830,12 @@ class Tracker:
         cur_item = self.items.get(cur["item"]) if cur else None
 
         instances = [i for i in self.items.values() if ref in i.get("refs", [i.get("ref")])]
+        if st.get("stable_identity"):
+            # Reuse existing IDs, including legacy items, without merging history.
+            # A new session creates a new timeline visit, not a new document.
+            if instances:
+                return max(instances, key=lambda i: i["last_seen"])["id"], ref
+            return make_id(st, ref), ref
         if instances:
             # back on a place we know: which instance is on screen?
             for inst in sorted(instances, key=lambda i: i["last_seen"], reverse=True):
@@ -676,6 +865,8 @@ class Tracker:
         ev["seconds"], ev["to"] = secs, t
 
     def drop_frame(self, image):
+        if not image:
+            return
         for p in (os.path.join(DATA_DIR, image), os.path.join(DATA_DIR, image[:-4] + ".json")):
             try:
                 os.remove(p)
@@ -683,23 +874,29 @@ class Tracker:
                 pass
 
     def save(self):
+        if self.input_store:
+            self.input_store.checkpoint(self.items, self.events, self.notes)
         items = sorted(self.items.values(), key=lambda i: i["last_seen"], reverse=True)
         # the bookkeeping (refs, hashes, typing area) lives in its own file;
         # memory.json is only what's worth reading
-        write_json(INTERNAL_FILE, {"items": items})
-        write_json(ITEMS_FILE, {"updated": nice_time(datetime.now().isoformat(timespec="seconds")),
+        write_json(INTERNAL_FILE, {"schema_version": 2, "items": items})
+        write_json(ITEMS_FILE, {"schema_version": 2, "updated": nice_time(datetime.now().isoformat(timespec="seconds")),
                                 "things": [readable(i) for i in items]})
         by_app = Counter()
         for e in self.events:
             by_app[e["app"]] += e["seconds"]
         write_json(os.path.join(SESSIONS_DIR, self.session + ".json"), {
+            "schema_version": 2,
             "session": self.session,
+            "seconds_by_app": dict(by_app.most_common()),
             "time_by_app": {a: duration(s) for a, s in by_app.most_common()},
             "timeline": [{"from": e["from"], "to": e["to"], "for": duration(e["seconds"]),
+                          "seconds": e["seconds"], "item": e["item"],
+                          "activity": e.get("activity", {}), "trigger": e.get("trigger"),
                           "app": e["app"], "doing": e["doing"],
                           **({"mostly": e["mostly"]} if e.get("mostly") else {}),
                           "memory": e["item"]} for e in self.events],
-            **({"notes": [{"at": nice_time(n["at"]), "on": n["item"], "text": n["text"]}
+            **({"notes": [{**n, "on": n["item"]}
                           for n in self.notes]} if self.notes else {}),
         })
 
@@ -724,6 +921,12 @@ class Tracker:
         app = dictation.start_app()
         hotkey_ok = dictation.register_hotkey(lambda: setattr(self, "note_request", True))
         dictation.ensure_listener()        # build the speech helper now, not on first ⌃⌥N
+        if self.input_monitor:
+            self.input_monitor.start(request_permission=True)
+            say(f"Input monitoring: {self.input_monitor.status()['state']} · allowed app: VS Code · no key values recorded")
+            if self.input_monitor.state == "unavailable":
+                say("Enable Input Monitoring and Accessibility for the launching app in System Settings, then restart; capture still works.")
+        self.publish_status()
 
         events = Events.alloc().initWithTracker_(self)
         subscribe(events)
@@ -755,9 +958,21 @@ class Tracker:
             self.finish()
 
     def finish(self):
+        if self.input_monitor:
+            self.poll_input()
+            self.input_monitor.stop()
+        if self.panel.open:
+            self.panel.close(save=False)
         say("\nstopping…")
         self.q.put(None)
         self.thread.join(timeout=60)
+        with self.lock:
+            self.running = False
+        if self.input_store:
+            with self.lock:
+                self.input_store.set_status({"state": "off"})
+                self.input_store.close()
+        self.status_file.unlink(missing_ok=True)
         try:
             if open(PIDFILE).read().strip() == str(os.getpid()):
                 os.remove(PIDFILE)
@@ -841,16 +1056,27 @@ SESSIONS_DIR = os.path.join(MEMORY_DIR, "sessions")
 
 
 def load_items():
+    from input_store import recover_deletion
+    recover_deletion(Path(ITEMS_FILE).parent)
+    src = INTERNAL_FILE if os.path.exists(INTERNAL_FILE) else ITEMS_FILE
+    if not os.path.exists(src):
+        return {}
     try:
-        src = INTERNAL_FILE if os.path.exists(INTERNAL_FILE) else ITEMS_FILE   # older runs: memory.json
         with open(src) as fh:
-            items = {i["id"]: i for i in json.load(fh)["items"]}
+            doc = json.load(fh)
+        if not isinstance(doc, dict) or not isinstance(doc.get("items"), list):
+            raise ValueError("missing full internal items; restore .index.json rather than replacing readable memory")
+        if doc.get("schema_version", 1) not in (1, 2):
+            raise ValueError("unsupported memory schema version")
+        items = {i["id"]: i for i in doc["items"]}
+        if len(items) != len(doc["items"]):
+            raise ValueError("duplicate stored item IDs")
         for i in items.values():          # entries written before activity tracking existed
             i.setdefault("activity", {c: {"seconds": 0, "text": []} for c in CATEGORIES})
             i.setdefault("mostly", None)
         return items
-    except (OSError, ValueError, KeyError):
-        return {}
+    except (ValueError, KeyError, TypeError) as error:
+        raise ValueError(f"Cannot load memory from {src}: {error}") from error
 
 
 def nice_time(iso):
@@ -882,6 +1108,8 @@ def readable(i):
     }
     if i.get("notes"):
         out["your_notes"] = [{"at": nice_time(n["at"]), "text": n["text"]} for n in i["notes"]]
+    if i.get("content"):
+        out["content"] = i["content"]
     latest = {k: v for k, v in (i.get("state") or {}).items() if v != out["what"]}
     if latest:                                   # e.g. an email's to / subject / draft
         out["latest"] = latest

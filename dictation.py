@@ -20,6 +20,8 @@ time, macOS asks to allow Microphone and Speech Recognition for "LMemM Listen".
 
 import ctypes
 import os
+import shutil
+import signal
 import subprocess
 import tempfile
 import time
@@ -110,6 +112,10 @@ class _Keys(NSObject):
             return True
         return False
 
+    def windowShouldClose_(self, window):
+        self.panel.close(save=False)
+        return False
+
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LISTEN_APP = os.path.join(HERE, "bin", "LMemM Listen.app")
@@ -139,6 +145,7 @@ class Listener:
 
     def __init__(self):
         self.out = None
+        self.process = None
 
     def start(self):
         if not ensure_listener():
@@ -146,7 +153,12 @@ class Listener:
         self.out = os.path.join(tempfile.mkdtemp(prefix="lmemm-"), "transcript.txt")
         # `open` makes macOS treat it as its own app (its own permissions); -g keeps
         # it in the background, -n allows a fresh instance each time
-        subprocess.Popen(["open", "-n", "-g", LISTEN_APP, "--args", self.out])
+        try:
+            self.process = subprocess.Popen(["open", "-W", "-n", "-g", LISTEN_APP, "--args", self.out],
+                                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError:
+            self.stop(wait=0)
+            return False
         return True
 
     def text(self):
@@ -167,13 +179,33 @@ class Listener:
         """Ask it to stop and wait (briefly) for the last words. Returns the final text."""
         if not self.out:
             return ""
-        open(self.out + ".stop", "w").close()
-        deadline = time.time() + wait
-        while time.time() < deadline and not os.path.exists(self.out + ".done"):
-            time.sleep(0.05)
-        text = self.text()
-        self.out = None
-        return text
+        directory = os.path.dirname(self.out)
+        try:
+            open(self.out + ".stop", "w").close()
+            deadline = time.monotonic() + wait
+            while time.monotonic() < deadline and not os.path.exists(self.out + ".done"):
+                time.sleep(0.05)
+            text = self.text()
+            if not os.path.exists(self.out + ".done"):
+                try:
+                    with open(self.out + ".pid") as fh:
+                        pid = int(fh.read())
+                    if pid > 1:
+                        os.kill(pid, signal.SIGTERM)
+                except (OSError, ValueError):
+                    pass
+            return text
+        finally:
+            # Removing the private directory also tells a late-starting helper to
+            # exit before opening the microphone; it must never recreate it.
+            self.out = None
+            shutil.rmtree(directory)
+            if self.process is not None:
+                try:
+                    self.process.wait(timeout=0.2)
+                except subprocess.TimeoutExpired:
+                    self.process.terminate()
+                self.process = None
 
 
 class NotePanel:
@@ -218,6 +250,7 @@ class NotePanel:
         err = self.listener.error()
         if err:
             self.status.setStringValue_(f"⚠️  {err}"[:120])
+            self.listener.stop(wait=0)
             return
         said = self.listener.text()
         current = self.text.string()
@@ -262,6 +295,7 @@ class NotePanel:
         self.text.setRichText_(False)
         self.keys = _Keys.alloc().initWithPanel_(self)
         self.text.setDelegate_(self.keys)
+        self.win.setDelegate_(self.keys)
         scroll.setDocumentView_(self.text)
         content.addSubview_(scroll)
         self.status = NSTextField.labelWithString_("")

@@ -7,3 +7,6 @@ archive/
 *.log
 .*.pid
 bin/
+
+.*.control.json
+.*.status.json

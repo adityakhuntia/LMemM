@@ -1,6 +1,6 @@
 # Keyboard and cursor timeline — first increment
 
-Status: proposed design for user review; no new input monitor implemented or enabled.
+Status: design and Native implementation approved; first collector implemented and automatically verified. Live monitoring has not been enabled by the agent; scripted user validation is pending.
 
 ## Intent and acceptance
 
@@ -19,8 +19,8 @@ Installed Quartz bindings expose the needed event-tap, permission, timestamp and
 ## Collection and permissions
 
 - Add `--input-events` opt-in and a required explicit app allowlist, e.g. `--input-app com.microsoft.VSCode`. Normal startup remains capture-only. The first live target is VS Code; browser input remains excluded in this first increment because reliable private-tab context requires additional work. Existing browser screenshot behavior is not newly validated by this feature.
-- Use a session `CGEventTap` with `listenOnly`; never alter, suppress or synthesize events. Handle Input Monitoring access explicitly; lack of access leaves the existing capture flow working and clearly reports collector unavailability.
-- Read only key-down occurrence, mouse action type, pointer position and scroll deltas. Do not call APIs that extract characters, keycodes, arbitrary modifiers, clipboard or AX values. Treat a key burst as keyboard activity, not proof of typing text or a specific shortcut.
+- Use an annotated-session `CGEventTap` with `listenOnly`; never alter, suppress or synthesize events. Handle Input Monitoring access explicitly; lack of access leaves the existing capture flow working and clearly reports collector unavailability.
+- Read only key-down occurrence, mouse action type, pointer position, scroll deltas and event target-process metadata needed for attribution. Do not call APIs that extract characters, keycodes, arbitrary modifiers, clipboard or AX values. Treat a key burst as keyboard activity, not proof of typing text or a specific shortcut.
 - Accessibility inspection is limited to focused element role/subrole and window context; secure-field detection and global secure-input checks gate detail collection. Missing required inspection access or indeterminate protection state disables detailed collection. No root or permission bypass.
 - The callback does minimal reduction/enqueue work; OCR, file writes, AppleScript and interpretation run elsewhere. Keep the queue bounded; overflow produces an explicit gap rather than silent time extrapolation.
 

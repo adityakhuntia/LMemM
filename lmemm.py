@@ -92,9 +92,17 @@ def memory(n, show_content=False, show_events=False):
             cutoff = datetime.now(timezone.utc) - timedelta(hours=min(doc.get("retention_hours", 24), 24))
             events = [e for e in doc["events"] if datetime.fromisoformat(e["end_utc"]) >= cutoff]
             print(f"\ninput session {doc['session']}: {len(events)} events; {doc['status']}; expired: {doc.get('expired', 0)}; capacity dropped: {doc.get('dropped_capacity', 0)}")
+            navigation = [e for e in events if e["kind"] == "navigation_shortcut"]
+            for action in ("tab_switch", "app_switch"):
+                for direction in ("forward", "backward"):
+                    steps = sum(e["payload"]["count"] for e in navigation if e["payload"]["action"] == action and e["payload"]["direction"] == direction)
+                    if steps:
+                        print(f"  {action} {direction}: {steps} observed shortcut steps (not window distance)")
             for event in events[-n:]:
                 label = event["kind"].replace("_", " ")
                 print(f"  {event['start_utc']}  {label}: {event['payload']}")
+                if event.get("observed_result"):
+                    print(f"    observed result: {event['observed_result']} — {event['observed_transition']}")
                 if event.get("after_capture"):
                     print(f"    after: {event['after_capture']}  item: {event.get('item', 'pending OCR')}")
                 if event.get("before_capture"):

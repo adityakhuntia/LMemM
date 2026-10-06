@@ -383,8 +383,14 @@ class Tracker:
         if monitor.state != "recording" and not blocked:
             self.input_context = None
         elif blocked or context is None:
+            prior = self.input_context
             monitor.set_paused(True)
             monitor._gap("paused" if blocked else monitor.context_denial or "protected_or_excluded")
+            if prior and not blocked:
+                foreground = front()
+                if foreground and foreground.get("bundle_id") not in monitor.allowed_apps:
+                    ns = time.monotonic_ns()
+                    self.input_aggregator._record("context_exit", ns, ns, {"from": prior["id"]}, prior["id"])
             self.input_context = None
         else:
             if self.input_context and self.input_context["id"] != context["id"]:
@@ -402,6 +408,7 @@ class Tracker:
         with self.lock:
             if summaries:
                 self.input_store.append(summaries)
+                self.input_store.confirm_navigation(summaries)
             status = monitor.status()
             if status != self.last_input_status:
                 self.input_store.set_status(status)
@@ -409,7 +416,7 @@ class Tracker:
                     self.input_store.invalidate_context(status["gap"])
                 self.last_input_status = status
                 self.publish_status()
-        if not blocked and context and monitor.state == "recording" and any(e["kind"] in {"keyboard_activity", "click", "scroll"} for e in summaries):
+        if not blocked and context and monitor.state == "recording" and any(e["kind"] in {"keyboard_activity", "click", "scroll", "navigation_shortcut"} for e in summaries):
             self.trigger("input_activity")
 
     # -- events in

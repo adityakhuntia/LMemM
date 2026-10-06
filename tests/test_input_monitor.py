@@ -13,6 +13,7 @@ class Native:
     kCGHeadInsertEventTap = 0
     kCGEventTapOptionListenOnly = 1
     kCGEventKeyDown = 10
+    kCGKeyboardEventKeycode = 9
     kCGEventMouseMoved = 5
     kCGEventLeftMouseDown = 1
     kCGEventRightMouseDown = 3
@@ -181,3 +182,29 @@ class InputMonitorTests(unittest.TestCase):
         native = SimpleNamespace(AXIsProcessTrusted=lambda: True, AXUIElementCreateSystemWide=lambda: "system", AXUIElementCopyAttributeValue=attributes, AXUIElementGetPid=lambda *args: (0, 42))
         with patch.dict(sys.modules, {"ApplicationServices": native}), patch("tracker.front", return_value=foreground), patch("input_monitor.secure_input_enabled", return_value=False):
             self.assertIsNotNone(permitted_context({"com.microsoft.VSCode"}))
+
+    def test_only_allowlisted_tab_shortcuts_emit_classified_steps_without_raw_keys(self):
+        self.mon.start()
+        self.native.CGEventGetFlags = lambda event: 1 << 18
+        original = self.native.CGEventGetIntegerValueField
+        self.native.CGEventGetIntegerValueField = lambda event, field: 48 if field == 9 else original(event, field)
+        self.mon.callback(None, 10, {"time": 1_000_000_000}, None)
+        events = self.a.drain(2_000_000_000)
+        shortcut = next(e for e in events if e['kind'] == 'navigation_shortcut')
+        self.assertEqual(shortcut['payload'], {'action':'tab_switch','direction':'forward','count':1})
+        self.assertNotIn('keycode', str(shortcut))
+        self.native.CGEventGetFlags = lambda event: (1 << 20) | (1 << 17)
+        self.mon.callback(None, 10, {"time": 1_000_000_000}, None)
+        shortcut = next(e for e in self.a.drain(2_000_000_000) if e['kind'] == 'navigation_shortcut')
+        self.assertEqual(shortcut['payload']['action'], 'app_switch')
+        self.assertEqual(shortcut['payload']['direction'], 'backward')
+
+    def test_non_tab_command_has_no_navigation_or_raw_key_payload(self):
+        self.mon.start()
+        self.native.CGEventGetFlags=lambda event:1 << 20
+        original=self.native.CGEventGetIntegerValueField
+        self.native.CGEventGetIntegerValueField=lambda event,field:0 if field==9 else original(event,field)
+        self.mon.callback(None,10,{'time':1_000_000_000},None)
+        events=self.a.drain(2_000_000_000)
+        self.assertEqual([e['kind'] for e in events],['keyboard_activity'])
+        self.assertEqual(events[0]['payload'],{'count':1})

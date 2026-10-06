@@ -56,3 +56,14 @@ Scripted live check: edit VS Code, scroll, click between panes, switch to an exc
 ## Scope boundary
 
 Do not fold semantic recall, raw text logging, all-app browser monitoring, window-close inference, a full SQLite migration, or autonomous decisions into this increment. The collector improves observed interaction evidence; capture geometry and activity attribution defects remain subsequent work. If this privacy/control scope exceeds the remaining time budget, deliver a smaller reviewed first slice rather than silently enabling an incomplete monitor.
+
+## Authorized navigation amendment — 2026-10-05
+
+The user requested navigation recognition and clarified Ctrl+Tab / Cmd+Tab (Shift
+reverse). The adapter may transiently inspect modifier masks and Tab identity for
+these two shortcut families only. Persist classified action/direction/step counts,
+never raw keycodes/modifiers or characters. Counts cover accepted permitted focus
+and may omit switcher-owned input; do not equate them with window list distance.
+Observed transitions may link after a shortcut, but correlation must not cross
+pause/security gaps or overwrite an earlier confirmation. Retain original
+permission, focus, target-process, delay and retention boundaries.

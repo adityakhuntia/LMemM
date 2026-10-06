@@ -86,3 +86,25 @@ class InputEventTests(unittest.TestCase):
         events = self.a.drain(2_000_000_000)
         self.assertEqual(events[0]["start_utc"], "2026-10-05T09:00:01+00:00")
         self.assertLess(events[0]["sequence"], events[1]["sequence"])
+
+    def test_gap_clock_does_not_make_later_native_event_out_of_order(self):
+        self.a.feed("click", 1_000_000_000, CTX, {"region": "center", "button": "left"})
+        self.a.last_ns = 1_100_000_000  # poll-time boundary is later than event delivery time
+        self.a.clear("paused")
+        self.a.feed("key", 1_050_000_000, CTX, {})
+        events = self.a.drain(2_000_000_000)
+        self.assertTrue(any(e["kind"] == "keyboard_activity" for e in events))
+
+    def test_confirmed_shortcut_steps_survive_context_boundary_without_raw_keys(self):
+        for ns in (0,100_000_000,200_000_000):
+            self.a.feed('navigation', ns, CTX, {'action':'app_switch','direction':'forward','count':1})
+        self.a.clear('context_change')
+        events = self.a.drain(300_000_000)
+        shortcuts = [e for e in events if e['kind']=='navigation_shortcut']
+        self.assertEqual(sum(e['payload']['count'] for e in shortcuts), 3)
+        self.assertTrue(all(e['context_id']==CTX['id'] for e in shortcuts))
+
+    def test_navigation_expiry_does_not_preserve_old_shortcuts(self):
+        self.a.feed('navigation', 0, CTX, {'action':'tab_switch','direction':'forward','count':1})
+        events = self.a.drain(31_000_000_000)
+        self.assertTrue(all(e['kind']=='gap' for e in events))

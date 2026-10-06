@@ -117,11 +117,28 @@ class InputStore:
                 raise ValueError("unknown interaction fields")
             payloads = {"keyboard_activity": {"count"}, "pointer_movement": {"from", "to", "drag"},
                         "click": {"region", "button"}, "scroll": {"direction", "magnitude"}, "gap": {"reason"},
-                        "context_transition": {"from", "to"}}
+                        "context_transition": {"from", "to"}, "context_exit": {"from"},
+                        "navigation_shortcut": {"action", "direction", "count"}}
             if event["kind"] not in payloads or set(event["payload"]) != payloads[event["kind"]]:
                 raise ValueError("unknown interaction payload")
         self.doc["events"].extend(copy.deepcopy(summaries))
         self._prune()
+        self._save()
+
+    def confirm_navigation(self, transitions):
+        for transition in transitions:
+            if transition["kind"] not in {"context_transition", "context_exit"}:
+                continue
+            for event in self.doc["events"]:
+                age = transition["start_offset_ns"] - event["end_offset_ns"]
+                if event["kind"] == "navigation_shortcut" and "observed_transition" not in event and event["context_id"] == transition["payload"]["from"] and 0 <= age <= 2_000_000_000:
+                    allowed_gaps = {"context_change", "context_boundary"}
+                    if transition["kind"] == "context_exit":
+                        allowed_gaps.add("excluded_or_missing_window")
+                    if any(e["kind"] == "gap" and event["sequence"] < e["sequence"] < transition["sequence"] and e["payload"]["reason"] not in allowed_gaps for e in self.doc["events"]):
+                        continue
+                    event["observed_transition"] = transition["event_id"]
+                    event["observed_result"] = "left_allowed_app" if transition["kind"] == "context_exit" else "allowed_context_changed"
         self._save()
 
     def link_capture(self, capture_id, context_id, start_ns, end_ns, item_id=None):

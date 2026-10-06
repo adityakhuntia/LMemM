@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 
 REGIONS = {f"{y}-{x}" for y in ("top", "middle", "bottom") for x in ("left", "center", "right")} | {"center", "unknown"}
-KINDS = {"key": set(), "move": {"region"}, "drag": {"region"},
+KINDS = {"navigation": {"action", "direction", "count"}, "key": set(), "move": {"region"}, "drag": {"region"},
          "click": {"region", "button"}, "scroll": {"direction", "magnitude"}}
 
 
@@ -20,6 +20,7 @@ class Aggregator:
         self.ttl_ns = int(transient_seconds * 1e9)
         self.max_summaries = max_summaries
         self.last_ns = origin_ns
+        self.last_event_ns = origin_ns
         self.context_id = None
         self.pending = {}
         self.ready = []
@@ -41,7 +42,7 @@ class Aggregator:
 
     def clear(self, reason):
         self.pending.clear()
-        self.ready.clear()
+        self.ready = [e for e in self.ready if e["kind"] == "navigation_shortcut"] if reason != "expired" else []
         self.context_id = None
         self._record("gap", self.last_ns, self.last_ns, {"reason": reason})
 
@@ -63,17 +64,23 @@ class Aggregator:
         if kind == "scroll" and (payload["direction"] not in {"up", "down", "left", "right", "mixed"}
                                  or payload["magnitude"] not in {"small", "medium", "large"}):
             raise ValueError("invalid scroll category")
-        if event_ns < self.last_ns:
+        if kind == "navigation" and (payload["action"] not in {"tab_switch", "app_switch"} or payload["direction"] not in {"forward", "backward"} or payload["count"] != 1):
+            raise ValueError("invalid navigation category")
+        if event_ns < self.last_event_ns:
             self.clear("out_of_order")
             return
         if self.context_id is not None and self.context_id != context["id"]:
             self.clear("context_change")
         self.context_id = context["id"]
-        self.last_ns = event_ns
+        self.last_event_ns = event_ns
+        self.last_ns = max(self.last_ns, event_ns)
         for key, burst in list(self.pending.items()):
             threshold = 1_000_000_000 if key == "pointer_movement" else 750_000_000
             if event_ns - burst["end"] >= threshold or key == "pointer_movement" and event_ns - burst["start"] >= threshold:
                 self._flush(key)
+        if kind == "navigation":
+            self._record("navigation_shortcut", event_ns, event_ns, payload, self.context_id)
+            return
         if kind == "click":
             self._record("click", event_ns, event_ns, payload, self.context_id)
             return

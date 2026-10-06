@@ -227,7 +227,9 @@ be retried with `resume`, which checks permissions again.
 
 The collector stores timestamped keyboard **counts**, coarse 3×3 cursor regions,
 click categories, scroll buckets and verified allowed-window transitions. It
-never reads characters, keycodes, modifiers, clipboard or editable AX values.
+never reads characters, clipboard or editable AX values. The explicitly requested
+Ctrl+Tab/Cmd+Tab shortcut classifier transiently checks modifiers and Tab identity;
+no raw keycodes or modifiers are stored.
 Keyboard activity is not proof of authored text, Cmd-Tab, a closed window or a
 specific tab action. Target-process metadata and context timestamps reject
 ambiguous attribution; missing target metadata also causes a gap. See [Apple's
@@ -273,3 +275,23 @@ increase Electron's processing cost. Unknown focus and unverified text-field
 subroles still cause gaps; test typing in an **editor file**, not the integrated
 terminal. Specific rejection reasons are available through `status` and event gaps.
 Listener startup alone does not establish successful event collection.
+
+### Navigation shortcut evidence
+
+Ctrl+Tab / Ctrl+Shift+Tab records forward/backward **tab-switch steps**;
+Cmd+Tab / Cmd+Shift+Tab records forward/backward **app-switch steps**. Each accepted
+Tab key-down contributes one classified step. `memory --events` shows counts by
+action/direction and related observed allowed-context changes or departures.
+Shortcuts remain evidence of a requested action, not proof a tab/window changed.
+Correlation never crosses a pause/security gap or replaces an earlier confirmation.
+
+Counts cover accepted input from permitted VS Code focus only. The macOS switcher
+can own focus or event targets, so held/repeated Cmd+Tab events may be omitted.
+Counts are not a reliable distance through a list of windows; Cmd+Tab switches apps,
+and layouts, ordering, reverse steps and custom keybindings vary. No browser input
+or unrestricted key logging was added. Validate these shortcuts with a live run.
+
+Ordering now compares native events against the previous native event, separately
+from polling/gap timestamps. This removes false `out_of_order` rejection after a
+gap. Truly delayed events still produce visible gaps; the 100ms privacy guard has
+not been relaxed just to increase recorded counts.

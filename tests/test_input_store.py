@@ -222,3 +222,34 @@ class InputStoreTests(unittest.TestCase):
         self.assertFalse((paths["memory_dir"] / ".deletion.json").exists())
         delete_session("second", paths)
         self.assertEqual(json.loads((paths["memory_dir"] / ".index.json").read_text())["items"][0]["seconds"], 0)
+
+    def test_navigation_counts_link_to_observed_changes_only_for_same_source(self):
+        store = InputStore('first', self.root, clock=lambda: self.now)
+        self.a.feed('navigation', 0, self.ctx, {'action':'tab_switch','direction':'forward','count':1})
+        self.a._record('context_transition', 100, 100, {'from':'other','to':'new'}, 'new')
+        events=self.a.drain(100)
+        store.append(events)
+        store.confirm_navigation(events)
+        self.assertNotIn('observed_result',store.read()['events'][0])
+        self.a._record('context_transition', 200, 200, {'from':'context','to':'new'}, 'new')
+        transitions=self.a.drain(200)
+        store.append(transitions)
+        store.confirm_navigation(transitions)
+        self.assertEqual(store.read()['events'][0]['observed_result'],'allowed_context_changed')
+
+    def test_navigation_confirmation_is_not_overwritten_or_bridged_across_pause(self):
+        store=InputStore('first',self.root,clock=lambda:self.now)
+        self.a.feed('navigation',0,self.ctx,{'action':'tab_switch','direction':'forward','count':1})
+        self.a._record('context_transition',100,100,{'from':'context','to':'first-target'},'first-target')
+        records=self.a.drain(100);store.append(records);store.confirm_navigation(records)
+        confirmed=store.read()['events'][0]['observed_transition']
+        self.a._record('context_transition',200,200,{'from':'context','to':'second-target'},'second-target')
+        records=self.a.drain(200);store.append(records);store.confirm_navigation(records)
+        self.assertEqual(store.read()['events'][0]['observed_transition'],confirmed)
+        self.a.feed('navigation',300,self.ctx,{'action':'tab_switch','direction':'forward','count':1})
+        records=self.a.drain(300);store.append(records)
+        self.a.clear('paused')
+        self.a._record('context_transition',400,400,{'from':'context','to':'after-resume'},'after-resume')
+        records=self.a.drain(400);store.append(records);store.confirm_navigation(records)
+        shortcuts=[e for e in store.read()['events'] if e['kind']=='navigation_shortcut']
+        self.assertNotIn('observed_transition',shortcuts[-1])

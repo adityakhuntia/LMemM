@@ -1,4 +1,8 @@
-"""Opt-in listen-only adapter. No key values or accessibility text values are read."""
+"""Opt-in listen-only adapter; only authorized Tab shortcuts are classified.
+
+Typed characters and AX text values are never read. Shortcut keycode/modifiers
+are transient and never serialized.
+"""
 
 import ctypes
 import hashlib
@@ -251,6 +255,14 @@ class InputMonitor:
                 return event
             if kind == q.kCGEventKeyDown:
                 name, payload = "key", {}
+                flags_reader = getattr(q, "CGEventGetFlags", None)
+                flags = int(flags_reader(event)) if flags_reader else 0
+                control, command, option, shift = 1 << 18, 1 << 20, 1 << 19, 1 << 17
+                modifier = flags & (control | command | option)
+                # Query a keycode only for the two explicitly authorized shortcut families.
+                if modifier in (control, command) and q.CGEventGetIntegerValueField(event, q.kCGKeyboardEventKeycode) == 48:
+                    name, payload = "navigation", {"action": "tab_switch" if modifier == control else "app_switch",
+                                                  "direction": "backward" if flags & shift else "forward", "count": 1}
             else:
                 point = q.CGEventGetLocation(event)
                 b = context["bounds"]

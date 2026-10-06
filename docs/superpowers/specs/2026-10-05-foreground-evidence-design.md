@@ -1,6 +1,6 @@
 # Foreground-window evidence quality
 
-Date: 2026-10-05. Status: proposed design; implementation not started.
+Date: 2026-10-05. Status: written spec approved by user; implementation not started.
 
 ## Purpose and success criteria
 

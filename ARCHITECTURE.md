@@ -68,8 +68,11 @@ Rules that keep this cohesive:
 - A note never changes after it's written. Done-state lives in `item.notes_done`
   (`{note id: when}`), because provenance (`input_store`) matches notes by value.
   Note ids are `sha1(at|text)`, so old notes get them without migration.
-- `notes.due_for_resurfacing` gates reminders: open notes exist, and none was shown for
-  this item within `RESURFACE_COOLDOWN`. The tracker calls it when a visit starts.
+- Reminders fire only when you **come back**. When a timeline stretch starts, the
+  tracker checks the previous stretch. If it was this same thing, split only by the note
+  window, the card, a pause or a lock, that's not a return. `notes.due_for_resurfacing`
+  then needs open notes, and either no reminder within `RESURFACE_COOLDOWN` or a note
+  added since the last reminder.
 - `notes.project_of` derives the project. `notes.pending_view` builds the grouped view
   for both the CLI and `pending.json`.
 - `lmemm.py notes done` goes through the running tracker's control file (applied under

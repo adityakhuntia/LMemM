@@ -6,6 +6,7 @@ import json
 import os
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -78,6 +79,9 @@ class NoteModelTests(unittest.TestCase):
         self.assertEqual(len(notes.due_for_resurfacing(a, "2026-10-06T11:00:00", 600)), 1)
         a["resurfaced_at"] = "2026-10-06T10:55:00"
         self.assertEqual(notes.due_for_resurfacing(a, "2026-10-06T11:00:00", 600), [])
+        a["notes"].append({"at": "2026-10-06T10:58:00", "text": "new since the last reminder"})
+        self.assertEqual(len(notes.due_for_resurfacing(a, "2026-10-06T11:00:00", 600)), 2)
+        a["notes"].pop()
         self.assertEqual(len(notes.due_for_resurfacing(a, "2026-10-06T11:06:00", 600)), 1)
         notes.set_done({"a": a}, [notes.note_id(a["notes"][0])])
         self.assertEqual(notes.due_for_resurfacing(a, "2026-10-06T12:00:00", 600), [])
@@ -132,11 +136,20 @@ class ResurfaceOnReopenTests(unittest.TestCase):
         self.stack.enter_context(patch.object(macos, "notify", side_effect=lambda *a: self.notified.append(a)))
         self.capture = tracker.Tracker()
         self.second = 0
+        self.start = datetime(2026, 10, 6, 10, 0, 0)
+
+    def note(self, ts, text):
+        """Dictate a note right after frame `ts` (the tracker's clock pinned to then)."""
+        at = datetime.strptime(ts, "%Y%m%d-%H%M%S") + timedelta(seconds=1)
+        fixed = type("Clock", (datetime,), {"now": classmethod(lambda cls, tz=None: at)})
+        with patch.object(tracker, "datetime", fixed):
+            self.capture.save_note(("frame", ts), text)
 
     def visit(self, window, text):
+        # frames on the real clock, a few seconds apart, so they line up with note times
         self.second += 5
-        ts = f"20261006-1000{self.second:02d}" if self.second < 60 else f"20261006-10{self.second // 60:02d}{self.second % 60:02d}"
-        iso = f"2026-10-06T{ts[9:11]}:{ts[11:13]}:{ts[13:15]}"
+        when = self.start + timedelta(seconds=self.second)
+        ts, iso = when.strftime("%Y%m%d-%H%M%S"), when.isoformat(timespec="seconds")
         res, meta = observation(text, window=window, iso=iso)
         meta.update(ts=ts, image=ts + ".jpg", screen={"w": 1000, "h": 800})
         path = self.root / (ts + ".json")
@@ -146,9 +159,32 @@ class ResurfaceOnReopenTests(unittest.TestCase):
             self.capture.handle(str(path), meta, "app_switch", False)
         return ts
 
+    def test_no_reminder_right_after_dictating_only_when_you_come_back(self):
+        ts = self.visit("Q3 plan", "Pricing section goes here")
+        self.note(ts, "add a pricing table")
+        self.capture.close_interval()                         # the note window split the stretch
+        self.visit("Q3 plan", "Pricing section goes here")   # still on the doc after saving
+        self.visit("Q3 plan", "Pricing section goes here")
+        self.assertEqual(self.notified, [])
+        self.visit("Inbox", "Unrelated email list")
+        self.visit("Q3 plan", "Pricing section goes here")   # now you came back
+        self.assertEqual(len(self.notified), 1)
+
+    def test_a_new_note_shows_next_time_even_inside_the_cooldown(self):
+        ts = self.visit("Q3 plan", "Pricing section goes here")
+        self.note(ts, "add a pricing table")
+        self.visit("Inbox", "Unrelated email list")
+        ts = self.visit("Q3 plan", "Pricing section goes here")
+        self.assertEqual(len(self.notified), 1)
+        self.note(ts, "and a comparison chart")
+        self.visit("Inbox", "Unrelated email list")
+        self.visit("Q3 plan", "Pricing section goes here")
+        self.assertEqual(len(self.notified), 2)
+        self.assertIn("comparison chart", self.notified[1][1])
+
     def test_note_resurfaces_once_when_you_come_back(self):
         ts = self.visit("Q3 plan", "Pricing section goes here")
-        self.capture.save_note(("frame", ts), "add a pricing table")
+        self.note(ts, "add a pricing table")
         self.assertEqual(self.notified, [])                   # not while you're writing it
         self.visit("Inbox", "Unrelated email list")
         self.visit("Q3 plan", "Pricing section goes here")
@@ -166,7 +202,7 @@ class ResurfaceOnReopenTests(unittest.TestCase):
 
     def test_widget_card_follows_the_thing_in_front_and_ticks_save(self):
         ts = self.visit("Q3 plan", "Pricing section goes here")
-        self.capture.save_note(("frame", ts), "add a pricing table")
+        self.note(ts, "add a pricing table")
         card = self.capture.widget_card()
         self.assertEqual([n["text"] for n in card["left"]], ["add a pricing table"])
         self.capture.widget_tick([card["left"][0]["id"]], True)
@@ -175,7 +211,7 @@ class ResurfaceOnReopenTests(unittest.TestCase):
 
     def test_done_note_does_not_resurface(self):
         ts = self.visit("Q3 plan", "Pricing section goes here")
-        self.capture.save_note(("frame", ts), "add a pricing table")
+        self.note(ts, "add a pricing table")
         nid = notes.note_id(next(i for i in self.capture.items.values() if i.get("notes"))["notes"][0])
         self.capture.apply_control({"action": "notes_done", "ids": [nid], "done": True})
         self.visit("Inbox", "Unrelated email list")

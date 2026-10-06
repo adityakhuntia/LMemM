@@ -104,10 +104,14 @@ def set_done(items, ids, done=True, at=None):
 
 
 def due_for_resurfacing(item, now_iso, cooldown):
-    """Open notes to remind you of when you come back to this item, or []."""
+    """Open notes to remind you of when you come back to this item, or []. A note you
+    added since the last reminder always shows next time; otherwise at most once per
+    `cooldown` seconds."""
     pending = open_notes(item)
     last = item.get("resurfaced_at")
-    if not pending or (last and _seconds_between(last, now_iso) < cooldown):
+    if not pending:
+        return []
+    if last and _seconds_between(last, now_iso) < cooldown and not any(n["at"] > last for n in pending):
         return []
     return pending
 

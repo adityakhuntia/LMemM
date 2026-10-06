@@ -75,8 +75,10 @@ speak. You can type or fix words too. **Return** saves, **Esc** cancels.
   observed. If OCR hasn't caught up yet, it waits for that screen; it never lands on
   the previous thing.
 - Every note is a **pending edit** until you mark it done.
-- **Resurfacing:** when you come back to a thing with open notes, LMemM shows a macOS
-  notification and a terminal line, at most once every 10 minutes per thing.
+- **Resurfacing:** the next time you come back to that thing (after being somewhere
+  else), LMemM shows a macOS notification and a terminal line. You never get one right
+  after dictating. After that it reminds you at most every 10 minutes per thing, unless
+  you've added a note since the last reminder.
 - **Project view:** `lmemm.py notes` lists open edits by project: a code file's project
   folder, a document, `Email`, `Chats`, `AI chats`, a website, or the app. The same view
   is written to `data/memory/pending.json`.

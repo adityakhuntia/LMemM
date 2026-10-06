@@ -524,12 +524,18 @@ class Tracker:
         else:
             if cur:
                 self.close_event(cur, last, now, t)
+            # Did you come BACK to it? Not if the previous stretch was this same thing and
+            # only got split by the note window, the pill's card, a pause or a lock.
+            prev = self.events[-1] if self.events else None
+            came_back = prev is None or prev["item"] != item_id \
+                or now - (prev["_start"] + prev["seconds"]) > config.RESURFACE_COOLDOWN
             item["visits"] += 1
             cur = {"from": t, "to": t, "seconds": 0, "item": item_id, "app": st["app"],
                    "doing": st["doing"], "activity": {}, "trigger": trigger, "_start": now}
             self.events.append(cur)
-            line(t, st["app"], st["doing"] + ("  (back to it)" if item["visits"] > 1 else ""))
-            self.resurface(item, cur, meta)
+            line(t, st["app"], st["doing"] + ("  (back to it)" if came_back and item["visits"] > 1 else ""))
+            if came_back:
+                self.resurface(item, cur, meta)
         if dt:
             cur["activity"][act["category"]] = cur["activity"].get(act["category"], 0) + int(dt)
             cur["mostly"] = max(cur["activity"], key=cur["activity"].get)

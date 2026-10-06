@@ -1,5 +1,7 @@
 # Keyboard and Cursor Timeline Implementation Plan
 
+**Status: CLOSED — all five implementation tasks completed and pushed.** Final product-code verification: 89 tests passed at f148813; README/handover published in 5197c4d. Basic live input/linkage passed; remaining QA is tracked separately below.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Record opt-in, privacy-gated keyboard/cursor summaries and connect them to captures in an inspectable session timeline.
@@ -13,7 +15,7 @@
 ## Global Constraints
 
 - Explicit `--input-events` and at least one `--input-app` are required; initial supported allowlist is `com.microsoft.VSCode`. Reject unsupported/browser bundles with an actionable error rather than silently broadening scope.
-- Never read or persist characters, keycodes, arbitrary modifiers, clipboard or AX editable values. Do not intercept or synthesize input.
+- Never read characters, clipboard or AX editable values, or persist raw keys/modifiers. The later user-authorized Ctrl+Tab/Cmd+Tab amendment permits only transient Tab/modifier classification; ordinary input stays counts. Do not intercept or synthesize input.
 - Require listen permission, Accessibility inspection, known non-secure focus and global secure-input availability; otherwise collect no detail. Default capture retains its existing permission behavior.
 - Keep 30 seconds maximum transient context and 24 hours maximum persisted summaries by default; configuration may shorten either. Pause, exclusions and gaps clear ambiguous transient evidence.
 - Capture/OCR, existing notes/content, Google Docs identity and old/new memory loading remain compatible. No live input/audio monitoring during automated tests.
@@ -90,7 +92,8 @@
 - [x] Write failing CLI tests for required allowlist, unsupported bundle rejection, `--input-retention-hours` validation, `memory --events` with old/new stores, visible unavailable/paused status, and `delete-session <id> --dry-run` / `--confirm <id>` (confirmation must exactly match the planned inactive session).
 - [x] Implement startup arguments `--input-events --input-app com.microsoft.VSCode`, optional shortened retention, and event rendering independent of OCR activity. Preserve `memory --content` and notes. Display keyboard activity without claiming typed content or shortcuts; mark uncertain navigation and coverage gaps explicitly.
 - [x] Run `.venv/bin/python -m unittest discover -s tests -v` with macOS graphics-service access for existing native OCR tests. Native adapter tests remain permission-free and do not install a real listener.
-- [ ] Pending user-scripted live validation: run native lifecycle smoke only if monitoring is explicitly enabled and permissions granted. User-scripted check: edit/scroll/click in VS Code, switch to excluded app, return, open/cancel note panel, pause/resume and stop. Record real coverage and unsupported contexts separately; do not infer live validation from tests.
+- [x] Basic user-scripted live acceptance: after permissions and the Electron AX repair, VS Code retained keyboard/cursor/scroll/click summaries with capture/item links. See the closure evidence below.
+- [ ] Follow-up QA-1/QA-2: repeat the latest shortcut/timing cleanup and the complete exclusion/pause/note/lock/sleep lifecycle script; basic recording is not proof of the full sequence.
 - [x] Review whole change using superpowers' code-review step; fix concrete important findings, rerun relevant checks, then update README/context with implemented versus pending behavior and commit task-scoped files. Do not push without user instruction.
 
 ## Execution and time boundary
@@ -101,10 +104,30 @@ Recommend **Native** execution: implement in this session, then one independent 
 
 Spec coverage: Tasks 1–2 cover collection/privacy/aggregation; Tasks 3–4 cover linkage, controls, retention and deletion; Task 5 covers visible output and live/automated validation. Review Focus cases are assigned above. Interfaces and defaults agree across tasks. Remaining live permissions are explicit external prerequisites, not proof supplied by unit tests.
 
-## Execution result
+## Execution result and closure
 
-All five implementation tasks completed on `feat/input-timeline`. Final full suite:
-79 tests passed (macOS graphics access; no real input listener or microphone).
-Independent whole-change review completed; important findings fixed with regression
-coverage. Live permission/coverage acceptance remains unchecked above. See
-`context.md` for implemented scope, privacy limits, review decisions and next steps.
+All five implementation tasks are **closed** on `feat/input-timeline`. Independent
+reviews completed and important findings were fixed with regression coverage.
+The final full suite at f148813 passed **89 tests** (macOS graphics access);
+automated input tests installed no real listener or microphone. User-driven live
+session 20261005-220033 retained 6 keyboard bursts / 56 accepted presses,
+4 movement summaries, 3 clicks and 3 scroll summaries. 11 summaries linked to
+captures/items, 8 with before-images. False ordering gaps found in that run were
+subsequently repaired; the repair and new shortcut recognition need live repeat.
+
+Implementation was pushed through f148813 and README/handover through 5197c4d.
+It is not merged into main. The remaining open checkbox is follow-up acceptance,
+not an incomplete implementation task; do not rerun finished implementation work.
+
+## Follow-up queue (not implementation blockers)
+
+- [ ] QA-1: latest navigation/timing live repeat, including reverse shortcuts and switcher coverage limitations.
+- [ ] QA-2: full privacy/lifecycle live script including pause, note panel, exclusions, lock/sleep/resume.
+- [ ] QA-3: real Google Docs two-session identity acceptance.
+- [ ] QA-4: live speech/hotkey accuracy and permission behavior.
+- [ ] QA-5: longer/multi-display sessions.
+- [ ] INT-1: feature review and merge into main when requested.
+
+The canonical status/evidence and recommended next geometry increment are in
+[context.md](../../../context.md). Existing scope boundaries still apply; closing
+this plan does not authorize all-app input, browser monitoring or semantic recall.

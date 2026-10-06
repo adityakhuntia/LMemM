@@ -1,6 +1,6 @@
 # Keyboard and cursor timeline — first increment
 
-Status: design and Native implementation approved; first collector implemented and automatically verified. Live monitoring has not been enabled by the agent; scripted user validation is pending.
+Status: **CLOSED — implementation/review complete and pushed** through f148813; README/handover published in 5197c4d. Basic live input/capture linkage passed after the AX repair. Latest shortcut/timing and full lifecycle acceptance remain follow-up QA, not unfinished implementation.
 
 ## Intent and acceptance
 
@@ -20,8 +20,8 @@ Installed Quartz bindings expose the needed event-tap, permission, timestamp and
 
 - Add `--input-events` opt-in and a required explicit app allowlist, e.g. `--input-app com.microsoft.VSCode`. Normal startup remains capture-only. The first live target is VS Code; browser input remains excluded in this first increment because reliable private-tab context requires additional work. Existing browser screenshot behavior is not newly validated by this feature.
 - Use an annotated-session `CGEventTap` with `listenOnly`; never alter, suppress or synthesize events. Handle Input Monitoring access explicitly; lack of access leaves the existing capture flow working and clearly reports collector unavailability.
-- Read only key-down occurrence, mouse action type, pointer position, scroll deltas and event target-process metadata needed for attribution. Do not call APIs that extract characters, keycodes, arbitrary modifiers, clipboard or AX values. Treat a key burst as keyboard activity, not proof of typing text or a specific shortcut.
-- Accessibility inspection is limited to focused element role/subrole and window context; secure-field detection and global secure-input checks gate detail collection. Missing required inspection access or indeterminate protection state disables detailed collection. No root or permission bypass.
+- Read only key-down occurrence, mouse action type, pointer position, scroll deltas and event target-process metadata needed for attribution. Never extract characters, clipboard or editable AX values. Ordinary keyboard activity does not inspect keys; the authorized navigation amendment below narrowly permits transient modifier/Tab classification without raw storage. Treat a key burst as keyboard activity, not proof of typing text or a specific shortcut.
+- Accessibility inspection reads focused element role/subrole and window context; the implemented VS Code compatibility layer also requests/restores its documented AXManualAccessibility flag on the main loop; secure-field detection and global secure-input checks gate detail collection. Missing required inspection access or indeterminate protection state disables detailed collection. No root or permission bypass.
 - The callback does minimal reduction/enqueue work; OCR, file writes, AppleScript and interpretation run elsewhere. Keep the queue bounded; overflow produces an explicit gap rather than silent time extrapolation.
 
 ## Aggregation and context
@@ -42,7 +42,9 @@ Installed Quartz bindings expose the needed event-tap, permission, timestamp and
 
 ## Files and isolation
 
-- New `input_events.py`: pure aggregation/schema plus a small macOS event-tap adapter with explicit start/stop/status.
+- `input_events.py`: pure aggregation/schema and native-event ordering.
+- `input_monitor.py`: native event-tap adapter, permission/focus/target gates and explicit start/stop/status.
+- `input_store.py`: retention, links, contributions and safe deletion/recovery.
 - `tracker.py`: opt-in lifecycle, context/privacy gates, pause handling, capture triggers and late capture/item linkage.
 - `lmemm.py`: opt-in flags, event inspection and pause/resume controls.
 - Tests separate pure aggregation, timestamp/context boundaries, native adapter permission/lifecycle behavior and tracker persistence. Existing content, notes, document identity and both old/new memory formats must remain working.
@@ -67,3 +69,19 @@ and may omit switcher-owned input; do not equate them with window list distance.
 Observed transitions may link after a shortcut, but correlation must not cross
 pause/security gaps or overwrite an earlier confirmation. Retain original
 permission, focus, target-process, delay and retention boundaries.
+
+## Closure record — 2026-10-05
+
+- [x] Design/Native execution approved; first input increment implemented.
+- [x] Aggregation, adapter, tracker, store, CLI, pause/retention/deletion delivered.
+- [x] Independent reviews completed; important findings repaired with regressions.
+- [x] VS Code Electron focus blocker diagnosed and repaired; basic live recording/linkage passed.
+- [x] Authorized navigation amendment and false ordering repair implemented/tested.
+- [x] Final product-code suite: **89 tests passed**; feature branch pushed.
+- [x] README and HANDOVER.md published.
+
+Follow-up acceptance remains open: [context.md](../../../context.md) QA-1 through
+QA-5. Main-branch merge is INT-1. Capture geometry, authored-text quality, browser
+adapters, semantic recall and agent APIs are later increments, not hidden tasks
+inside this closed implementation. Full privacy/complete navigation coverage is
+not claimed by closure.

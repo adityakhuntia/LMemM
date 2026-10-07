@@ -171,6 +171,37 @@ One entry looks like:
 }
 ```
 
+## Context export: handing this to an AI
+
+`memory.json` and the session files are LMemM's own working data — every visit,
+trigger and activity second, kept because the tracker needs them. That's the wrong
+thing to hand an AI. `lmemm.py context` distills it down to what you did and why:
+
+```bash
+python3 lmemm.py context              # the latest session
+python3 lmemm.py context SESSION_ID   # one session by id
+python3 lmemm.py context --days 2     # everything touched in the last 2 days
+```
+
+Grouped by project, newest first. Each thing has only its app, title, a one-line
+status, **when** as a plain span ("6 Oct, 23:49–23:51 (7 visits)") instead of a
+timeline, your notes with open/done, and the real content it saw — UI chrome like
+menu bars stripped out, deduplicated. A thing with no note and no real content isn't
+included at all:
+
+```json
+{"project": "Q3 plan", "things": [
+  {"app": "Google Docs", "what": "Q3 plan", "doing": "Working on \"Q3 plan\"",
+   "when": "6 Oct, 23:49–23:51 (7 visits)",
+   "notes": [{"text": "add a pricing table", "status": "open"}],
+   "content": ["Pricing section goes here, three tiers ..."]}
+]}
+```
+
+No screenshots, ids, triggers, per-visit timing or activity seconds. Saved to
+`data/memory/context/<session or range>.json`, and also printed to stdout, so you can
+pipe it straight to another tool.
+
 ## Input timeline (opt-in, VS Code only)
 
 ```bash
@@ -196,7 +227,7 @@ deletion works are in [docs/input-timeline.md](docs/input-timeline.md).
 ## Develop
 
 ```bash
-python3 -m unittest discover -s tests      # 127 tests, incl. real on-device OCR
+python3 -m unittest discover -s tests      # 142 tests, incl. real on-device OCR
 ```
 
 [ARCHITECTURE.md](ARCHITECTURE.md) covers how the modules fit and where to extend it.

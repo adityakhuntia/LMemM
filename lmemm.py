@@ -12,6 +12,9 @@ LMemM - the one command.
     lmemm.py pin                      force-save the current screen
     lmemm.py note                     open the note window (same as ⌃⌥N)
     lmemm.py delete-session ID (--dry-run | --confirm ID)
+    lmemm.py context [SESSION] [--days N]
+                                      a clean export for handing to an AI: what you did
+                                      and why, grouped by project, with no operational detail
 
 How it fits together: see ARCHITECTURE.md.
 """
@@ -24,6 +27,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import config
+import context as context_mod
 import notes
 import store
 import tracker
@@ -215,6 +219,21 @@ def cmd_control(action):
         print(f"{action} requested; use status to check acknowledgement")
 
 
+def cmd_context(args):
+    parser = argparse.ArgumentParser(prog="lmemm.py context")
+    parser.add_argument("session", nargs="?")
+    parser.add_argument("--days", type=float)
+    opts = parser.parse_args(args)
+    if opts.session and opts.days is not None:
+        parser.error("give a session or --days, not both")
+    try:
+        doc, path = context_mod.export(session_id=opts.session, days=opts.days)
+    except ValueError as error:
+        sys.exit(str(error))
+    print(json.dumps(doc, indent=1, ensure_ascii=False))
+    print(f"\n{doc['things']} things, {doc['notes_open']} open notes -> {path}", file=sys.stderr)
+
+
 def cmd_delete_session(args):
     from input_store import delete_session, plan_session_deletion
     parser = argparse.ArgumentParser(prog="lmemm.py delete-session")
@@ -252,6 +271,8 @@ def main():
         tracker.note()
     elif cmd == "delete-session":
         cmd_delete_session(rest)
+    elif cmd == "context":
+        cmd_context(rest)
     else:
         sys.exit(USAGE)
 

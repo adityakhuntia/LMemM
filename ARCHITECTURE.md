@@ -28,6 +28,7 @@ One process, two threads, plain files.
 | `memory_content.py` | bounded excerpts + unverified decision quotes | no |
 | `notes.py` | notes: record/attach, ids, done-state, resurfacing rule, project view | no |
 | `store.py` | load/save `.index.json`, readable `memory.json` / `pending.json`, sessions | no |
+| `context.py` | distills memory into a clean export for an AI: notes + real content, no operational detail | no |
 | `dictation.py` + `listen/` | ⌃⌥N hotkey (Carbon), note window, on-device speech helper app | **yes** |
 | `widget.py` | the on-screen pill and its Left / Plan card (non-activating panels) | **yes** |
 | `input_monitor.py` | opt-in listen-only event tap + privacy gate | **yes** |
@@ -109,6 +110,26 @@ All the knobs are in `config.py`.
 - `tick()` refreshes the pill's dot about once a second. While the card is open, it skips
   capture, so the card never gets OCR'd into memory.
 
+## Context export (context.py)
+
+`memory.json` and the session files are the tracker's own working data (every visit,
+trigger, activity second — it needs all of it to decide identity and timing). `context.py`
+builds a separate, much smaller document for anything that should only see *what you did
+and why*:
+
+- `distill(item)`: one thing → `{app, what, doing, when, notes, content, details}`, or
+  `None` if it has neither a note nor kept content — nothing to tell an AI, so it's left
+  out entirely. `when` collapses first/last/visits into one sentence.
+- `_content(item)`: excerpts, deduplicated after stripping UI chrome (menu bars etc. that
+  slipped past `memory_content`'s own filter) with `_clean`.
+- `by_project` / `for_session` / `since`: group distilled things by `notes.project_of`,
+  scoped to one session's timeline or a day range.
+- `export()` / `lmemm.py context`: builds the document, writes it to
+  `data/memory/context/<session or range>.json`, and returns it for printing.
+
+No screenshots, item ids, triggers, per-visit timing or activity-category seconds appear
+anywhere in the output.
+
 ## Talking to a running tracker
 
 `.lmemm.pid` names the process. `lmemm.py pause|resume|notes done` write a PID-scoped
@@ -127,7 +148,7 @@ All the knobs are in `config.py`.
 
 ## Testing
 
-`python3 -m unittest discover -s tests` runs 127 tests: real Vision OCR on generated
+`python3 -m unittest discover -s tests` runs 142 tests: real Vision OCR on generated
 images, identity, content, migration, notes/resurfacing/project view, the CLI, input
 events with fake native data, retention and deletion recovery. No test uses the real
 microphone, input tap or your data.

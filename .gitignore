@@ -7,6 +7,8 @@ archive/
 *.log
 .*.pid
 bin/
+.worktrees/
+.superpowers/
 
 .*.control.json
 .*.status.json

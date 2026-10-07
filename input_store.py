@@ -347,10 +347,10 @@ def recover_deletion(root):
     for path in doc["files"]:
         if not Path(path).resolve().is_relative_to(data):
             raise ValueError("invalid deletion manifest path")
-    import tracker
+    import store
     items = sorted(doc["items"].values(), key=lambda i: i["last_seen"], reverse=True)
     private_write(root / ".index.json", {"schema_version": 2, "items": items})
-    private_write(root / "memory.json", {"schema_version": 2, "things": [tracker.readable(i) for i in items], "updated": _now()})
+    private_write(root / "memory.json", {"schema_version": 2, "things": [store.readable(i) for i in items], "updated": _now()})
     for source in (root / "contributions").glob("*.json"):
         if source.name == "baseline.json" or source.stem == doc["session"]:
             continue

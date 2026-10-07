@@ -37,13 +37,14 @@ def permitted_context(allowed_apps, on_denied=None):
         return deny("secure_input_unknown" if secure is None else "secure_input_active")
     try:
         import ApplicationServices as q
-        import tracker
+        import config
+        import macos
         if not q.AXIsProcessTrusted():
             return deny("accessibility_permission")
-        f = tracker.front()
+        f = macos.front()
         if not f or f.get("bundle_id") not in allowed_apps or not f.get("bounds") or not f.get("win_id"):
             return deny("excluded_or_missing_window")
-        if tracker.SKIP_TITLES.search(f.get("window") or ""):
+        if config.SKIP_TITLES.search(f.get("window") or ""):
             return deny("excluded_window")
         system = q.AXUIElementCreateSystemWide()
         err, element = q.AXUIElementCopyAttributeValue(system, "AXFocusedUIElement", None)
@@ -60,7 +61,7 @@ def permitted_context(allowed_apps, on_denied=None):
             return deny("secure_text_field")
         if sub_err not in (0, -25205, -25212) or role == "AXTextField" and (sub_err or subrole is None):
             return deny("unverified_focus_subrole")
-        after = tracker.front()
+        after = macos.front()
         if after is None or any(after.get(k) != f.get(k) for k in ("pid", "win_id", "window", "bounds")):
             return deny("focus_context_changed")
         return {"id": context_id(f), "bundle_id": f["bundle_id"], "window_id": f["win_id"], "bounds": f["bounds"], "pid": f["pid"]}
@@ -190,8 +191,8 @@ class InputMonitor:
     def prepare_context(self):
         # Only the main loop calls this; no AX writes in the native callback.
         try:
-            import tracker
-            self.accessibility_support.ensure(tracker.front(), self.allowed_apps)
+            import macos
+            self.accessibility_support.ensure(macos.front(), self.allowed_apps)
         except Exception:
             pass
 

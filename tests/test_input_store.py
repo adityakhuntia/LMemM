@@ -198,7 +198,8 @@ class InputStoreTests(unittest.TestCase):
 
     def test_interrupted_deletion_recovers_on_memory_load_before_new_session(self):
         from unittest.mock import patch
-        import tracker
+        import config
+        import store as memstore
         baseline = item()
         paths = {"data_dir": self.root, "memory_dir": self.root / "memory", "pidfile": self.root / "pid"}
         current = {baseline["id"]: baseline}
@@ -216,8 +217,8 @@ class InputStoreTests(unittest.TestCase):
             return unlink(path, *args, **kwargs)
         with patch.object(Path, "unlink", interrupted), self.assertRaises(OSError):
             delete_session("first", paths)
-        with patch.object(tracker, "ITEMS_FILE", str(paths["memory_dir"] / "memory.json")), patch.object(tracker, "INTERNAL_FILE", str(paths["memory_dir"] / ".index.json")):
-            restored = tracker.load_items()
+        with config.use_paths(paths["data_dir"]):
+            restored = memstore.load_items()
         self.assertEqual(restored[baseline["id"]]["seconds"], 10)
         self.assertFalse((paths["memory_dir"] / ".deletion.json").exists())
         delete_session("second", paths)

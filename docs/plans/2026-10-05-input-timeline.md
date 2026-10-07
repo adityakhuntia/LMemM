@@ -129,5 +129,5 @@ not an incomplete implementation task; do not rerun finished implementation work
 - [ ] INT-1: feature review and merge into main when requested.
 
 The canonical status/evidence and recommended next geometry increment are in
-[context.md](../../../context.md). Existing scope boundaries still apply; closing
+[context](../history/2026-10-05-context.md). Existing scope boundaries still apply; closing
 this plan does not authorize all-app input, browser monitoring or semantic recall.

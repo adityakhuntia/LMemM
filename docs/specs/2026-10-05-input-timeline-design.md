@@ -80,7 +80,7 @@ permission, focus, target-process, delay and retention boundaries.
 - [x] Final product-code suite: **89 tests passed**; feature branch pushed.
 - [x] README and HANDOVER.md published.
 
-Follow-up acceptance remains open: [context.md](../../../context.md) QA-1 through
+Follow-up acceptance remains open: [context](../history/2026-10-05-context.md) QA-1 through
 QA-5. Main-branch merge is INT-1. Capture geometry, authored-text quality, browser
 adapters, semantic recall and agent APIs are later increments, not hidden tasks
 inside this closed implementation. Full privacy/complete navigation coverage is

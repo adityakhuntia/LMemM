@@ -10,8 +10,11 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from PIL import Image, ImageDraw
 
+import config
 import lmemm
+import macos
 import resolver
+import store
 import tracker
 
 from test_content import observation
@@ -28,17 +31,15 @@ class MemoryPipelineTests(unittest.TestCase):
                       dict(window, bounds={"X": 100, "Y": 80, "Width": 600, "Height": 640})]:
             with self.subTest(after=after), tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as stack:
                 root = Path(directory)
-                stack.enter_context(patch.object(tracker, "DATA_DIR", directory))
-                stack.enter_context(patch.object(tracker, "ITEMS_FILE", str(root / "memory.json")))
-                stack.enter_context(patch.object(tracker, "INTERNAL_FILE", str(root / ".index.json")))
-                stack.enter_context(patch.object(tracker, "front", side_effect=[window, after]))
-                stack.enter_context(patch.object(tracker, "browser_info", return_value=(None, None, False)))
-                stack.enter_context(patch.object(tracker, "display_for", return_value=(1, screen)))
-                stack.enter_context(patch.object(tracker, "input_ages", return_value={}))
-                stack.enter_context(patch.object(tracker, "pointer_on", return_value=None))
-                screens = stack.enter_context(patch.object(tracker, "NSScreen"))
+                stack.enter_context(config.use_paths(directory))
+                stack.enter_context(patch.object(macos, "front", side_effect=[window, after]))
+                stack.enter_context(patch.object(macos, "browser_info", return_value=(None, None, False)))
+                stack.enter_context(patch.object(macos, "display_for", return_value=(1, screen)))
+                stack.enter_context(patch.object(macos, "input_ages", return_value={}))
+                stack.enter_context(patch.object(macos, "pointer_on", return_value=None))
+                screens = stack.enter_context(patch.object(macos, "NSScreen"))
                 screens.screens.return_value = [SimpleNamespace(frame=lambda: screen)]
-                stack.enter_context(patch.object(tracker, "screenshot",
+                stack.enter_context(patch.object(macos, "screenshot",
                                     side_effect=lambda path, display: Path(path).write_bytes(b"image")))
                 capture = tracker.Tracker()
                 self.assertIsNone(capture.capture("note", pinned=True))
@@ -53,17 +54,15 @@ class MemoryPipelineTests(unittest.TestCase):
                   "win_id": 7, "window": "Project plan",
                   "bounds": {"X": 200, "Y": 80, "Width": 600, "Height": 640}}
         with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as stack:
-            stack.enter_context(patch.object(tracker, "DATA_DIR", directory))
-            stack.enter_context(patch.object(tracker, "ITEMS_FILE", str(Path(directory) / "memory.json")))
-            stack.enter_context(patch.object(tracker, "INTERNAL_FILE", str(Path(directory) / ".index.json")))
-            stack.enter_context(patch.object(tracker, "front", return_value=window))
-            stack.enter_context(patch.object(tracker, "browser_info", return_value=(None, None, False)))
-            stack.enter_context(patch.object(tracker, "display_for", return_value=(1, screen)))
-            stack.enter_context(patch.object(tracker, "input_ages", return_value={"key": 50, "scroll": 50, "click": 50}))
-            stack.enter_context(patch.object(tracker, "pointer_on", return_value={"x": 300, "y": 200}))
-            screens = stack.enter_context(patch.object(tracker, "NSScreen"))
+            stack.enter_context(config.use_paths(directory))
+            stack.enter_context(patch.object(macos, "front", return_value=window))
+            stack.enter_context(patch.object(macos, "browser_info", return_value=(None, None, False)))
+            stack.enter_context(patch.object(macos, "display_for", return_value=(1, screen)))
+            stack.enter_context(patch.object(macos, "input_ages", return_value={"key": 50, "scroll": 50, "click": 50}))
+            stack.enter_context(patch.object(macos, "pointer_on", return_value={"x": 300, "y": 200}))
+            screens = stack.enter_context(patch.object(macos, "NSScreen"))
             screens.screens.return_value = [SimpleNamespace(frame=lambda: screen)]
-            stack.enter_context(patch.object(tracker, "screenshot",
+            stack.enter_context(patch.object(macos, "screenshot",
                                             side_effect=lambda path, display: Path(path).write_bytes(b"image")))
             capture = tracker.Tracker()
             capture.capture("timer")
@@ -76,12 +75,7 @@ class MemoryPipelineTests(unittest.TestCase):
     def test_content_changes_under_same_title_survive_reload_and_cli(self):
         with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as stack:
             root = Path(directory)
-            memory = root / "memory.json"
-            sessions = root / "sessions"
-            stack.enter_context(patch.object(tracker, "DATA_DIR", directory))
-            stack.enter_context(patch.object(tracker, "ITEMS_FILE", str(memory)))
-            stack.enter_context(patch.object(tracker, "INTERNAL_FILE", str(Path(directory) / ".index.json")))
-            stack.enter_context(patch.object(tracker, "SESSIONS_DIR", str(sessions)))
+            sessions = Path(stack.enter_context(config.use_paths(directory)).sessions_dir)
             stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
             capture = tracker.Tracker()
             for second, text in [(0, "We chose SQLite because the data stays local."),
@@ -99,7 +93,7 @@ class MemoryPipelineTests(unittest.TestCase):
                 with patch.object(resolver, "resolve", return_value=res):
                     capture.handle(str(path), meta, "timer", False)
 
-            items = tracker.load_items()
+            items = store.load_items()
             self.assertEqual(len(items), 1)
             item = next(iter(items.values()))
             excerpts = item.get("content", {}).get("excerpts", [])

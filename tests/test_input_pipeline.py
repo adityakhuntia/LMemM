@@ -3,10 +3,10 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
+import config
 import tracker
-from input_monitor import context_id
+from input_store import private_write
 
 
 class InputPipelineTests(unittest.TestCase):
@@ -16,14 +16,13 @@ class InputPipelineTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.stack = contextlib.ExitStack()
         self.addCleanup(self.stack.close)
-        for name, path in (("ITEMS_FILE", "memory.json"), ("INTERNAL_FILE", ".index.json"),
-                           ("SESSIONS_DIR", "sessions"), ("PIDFILE", ".lmemm.pid")):
-            self.stack.enter_context(patch.object(tracker, name, str(self.root / path)))
+        self.stack.enter_context(config.use_paths(self.root))
+        self.mem = Path(config.paths().memory_dir)
 
     def test_default_capture_does_not_create_monitor_or_input_store(self):
         capture = tracker.Tracker()
         self.assertIsNone(capture.input_monitor)
-        self.assertFalse((self.root / "inputs").exists())
+        self.assertFalse((self.mem / "inputs").exists())
 
     def test_input_summaries_trigger_debounced_capture_and_persist(self):
         capture = tracker.Tracker(input_apps={"com.microsoft.VSCode"})
@@ -65,14 +64,14 @@ class InputPipelineTests(unittest.TestCase):
 
     def test_control_file_is_pid_scoped(self):
         capture = tracker.Tracker()
-        tracker.private_control(capture.control_file, {"pid": -1, "action": "pause"})
+        private_write(capture.control_file, {"pid": -1, "action": "pause"})
         capture.process_control()
         self.assertFalse(capture.manual_paused)
 
     def test_closed_session_drops_late_ocr_before_any_memory_mutation(self):
         capture = tracker.Tracker(input_apps={"com.microsoft.VSCode"})
         capture.input_store.close()
-        capture._remember_frame({}, "timer", False, 0, None, None, None, None, None, None)
+        capture.remember({}, "timer", False, 0, None, None, None, None, None, None)
         self.assertEqual(capture.items, {})
         self.assertEqual(capture.events, [])
 

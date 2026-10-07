@@ -97,7 +97,6 @@ def gmail(res, meta):
     url = meta.get("url") or ""
     frag = urlparse(url).fragment
     objs = lines(res)
-    texts = [o["text"] for o in objs]
 
     anchor = next((o for o in objs if re.fullmatch(r"(New Message|Draft saved|Saving…?|Saved)", o["text"])), None)
     send = next((o for o in objs if o["kind"] == "button" and o["text"].lower().startswith("send")), None)
@@ -181,8 +180,6 @@ def chat(res, meta, app):
         who = head["text"] if head else None
     else:
         who = meta.get("window") if meta.get("window") not in (None, app) else None
-    placeholder = any(o["kind"] == "input" and PLACEHOLDER.match(o["text"]) for o in objs) or \
-        any(PLACEHOLDER.match(o["text"]) and o["box"][1] > res["image_size"]["h"] * 0.8 for o in objs)
     ev = [f"open chat header: {who}" if who else "no chat header found"]
     if not who:
         return state(app, "browsing_chats", f"Looking through chats in {app}", target=None, evidence=ev)
@@ -195,8 +192,6 @@ def ai(res, meta, app):
                         "ChatGPT", "Claude")
     if title == app:
         title = None
-    objs = lines(res)
-    empty = any(PLACEHOLDER.match(o["text"]) for o in objs)
     path = urlparse(meta.get("url") or "").path
     conv = re.search(r"/(?:app|c|chat)/([\w-]{6,})", path)
     about = f' about "{short(title, 70)}"' if title else ""
@@ -276,7 +271,7 @@ def describe(res, meta):
         return editor(res, meta, "VS Code" if "vscode" in bundle.lower() else app)
     if TERMINALS.search(app):
         t = meta.get("window")
-        return state(app, "using_terminal", f"In the terminal" + (f": {short(t, 60)}" if t else ""),
+        return state(app, "using_terminal", "In the terminal" + (f": {short(t, 60)}" if t else ""),
                      target=t, evidence=["terminal app"])
     if app == "Finder":
         t = meta.get("window")

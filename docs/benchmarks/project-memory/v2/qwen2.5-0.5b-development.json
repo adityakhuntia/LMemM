@@ -1,0 +1,393 @@
+{
+  "corpus_version": 2,
+  "corpus_hash": "bc09c809c6d220155cb468bf2a2614116881ab9a7feabfb4d4b343e2e02ba81d",
+  "assertion_metrics": {
+    "claim_precision": 0,
+    "claim_recall": 0.0,
+    "true_positive": 0,
+    "false_positive": 0,
+    "false_negative": 12,
+    "unsupported_assertions": 0,
+    "invalid_citations": 0,
+    "invalid_grounding": 0
+  },
+  "privacy_metrics": {
+    "forbidden_source_leaks": 0,
+    "probes": 10,
+    "scope": "empty caller scope, browser revocation, all-source deletion, citation resolution on the evaluated fixture store"
+  },
+  "fixture_quality_pass": false,
+  "split": "development",
+  "synthetic_corpus": true,
+  "actual_local_model": true,
+  "model": "qwen2.5:0.5b",
+  "manifest_hash": "a8b0c51577010a279d933d14c2a8ab4b268079d44c5c8830c0a93900f1827c67",
+  "extractor_version": "indexed-source-selection-v2",
+  "metrics": {
+    "claim_precision": 0,
+    "claim_recall": 0.0,
+    "unsupported_assertions": 0,
+    "true_positive": 0,
+    "false_positive": 0,
+    "false_negative": 14,
+    "association_precision": 0,
+    "artifact_recall": 0.0,
+    "association_true_positive": 0,
+    "association_false_positive": 0,
+    "association_false_negative": 14
+  },
+  "quality_pass": false,
+  "classification_gate_pass": false,
+  "acceptance_incomplete": [
+    "real-session representativeness",
+    "full enabled-worker resources"
+  ],
+  "metric_scope": "metrics is candidate-type classification; assertion_metrics scores exact gold quote/reason/state and citations on stored claims; privacy_metrics probes evaluated-store boundaries",
+  "rows": [
+    {
+      "gold": [
+        {
+          "kind": "observation",
+          "statement": "Updated storage.py to use SQLite transactions.",
+          "reason": null,
+          "task_state": null
+        }
+      ],
+      "evidence": {
+        "evidence-be69bf26f387859176b609d1": "Updated storage.py to use SQLite transactions."
+      },
+      "assertions": [],
+      "id": "code_one",
+      "expected": "observation",
+      "predicted": [],
+      "supported_claims": [],
+      "error": "ValueError",
+      "seconds": 1.8498247081879526,
+      "output": null
+    },
+    {
+      "gold": [
+        {
+          "kind": "observation",
+          "statement": "Updated cache.py to use immutable cache keys.",
+          "reason": null,
+          "task_state": null
+        }
+      ],
+      "evidence": {
+        "evidence-9b42b0f7faf93eba532735d5": "Updated cache.py to use immutable cache keys."
+      },
+      "assertions": [],
+      "id": "code_two",
+      "expected": "observation",
+      "predicted": [],
+      "supported_claims": [],
+      "error": "ValueError",
+      "seconds": 0.43417645804584026,
+      "output": null
+    },
+    {
+      "gold": [
+        {
+          "kind": "decision",
+          "statement": "We decided to use SQLite transactions in project one because partial writes must be avoided.",
+          "reason": "partial writes must be avoided.",
+          "task_state": null
+        }
+      ],
+      "evidence": {
+        "evidence-0bee2110279a05bb4b38e44c": "We decided to use SQLite transactions in project one because partial writes must be avoided."
+      },
+      "assertions": [],
+      "id": "decision_one",
+      "expected": "decision",
+      "predicted": [],
+      "supported_claims": [],
+      "error": "ValueError",
+      "seconds": 0.2990304999984801,
+      "output": null
+    },
+    {
+      "gold": [
+        {
+          "kind": "decision",
+          "statement": "We decided to invalidate cache keys in project two because old values were returned.",
+          "reason": "old values were returned.",
+          "task_state": null
+        }
+      ],
+      "evidence": {
+        "evidence-96516880d4e621fb8ca49803": "We decided to invalidate cache keys in project two because old values were returned."
+      },
+      "assertions": [],
+      "id": "decision_two",
+      "expected": "decision",
+      "predicted": [],
+      "supported_claims": [],
+      "error": "ValueError",
+      "seconds": 0.3312280410900712,
+      "output": null
+    },
+    {
+      "gold": [
+        {
+          "kind": "task",
+          "statement": "Next task for project one: add a rollback test.",
+          "reason": null,
+          "task_state": "open"
+        }
+      ],
+      "evidence": {
+        "evidence-abd592e042ac9b1f7bd33e85": "Next task for project one: add a rollback test."
+      },
+      "assertions": [],
+      "id": "task_one",
+      "expected": "task",
+      "predicted": [],
+      "supported_claims": [],
+      "error": "ValueError",
+      "seconds": 0.7338231669273227,
+      "output": null
+    },
+    {
+      "gold": [
+        {
+          "kind": "task",
+          "statement": "Next task for project two: benchmark the cache eviction path.",
+          "reason": null,
+          "task_state": "open"
+        }
+      ],
+      "evidence": {
+        "evidence-cd40ccb34405fe211ac8b7e8": "Next task for project two: benchmark the cache eviction path."
+      },
+      "assertions": [],
+      "id": "task_two",
+      "expected": "task",
+      "predicted": [],
+      "supported_claims": [],
+      "error": "ValueError",
+      "seconds": 0.27555408398620784,
+      "output": null
+    },
+    {
+      "gold": [
+        {
+          "kind": "suggestion",
+          "statement": "AI suggestion: replace SQLite with a hosted database. This has not been adopted.",
+          "reason": null,
+          "task_state": null
+        }
+      ],
+      "evidence": {
+        "evidence-f86d156638a51d453d84b3ac": "AI suggestion: replace SQLite with a hosted database. This has not been adopted."
+      },
+      "assertions": [],
+      "id": "suggestion_one",
+      "expected": "suggestion",
+      "predicted": [],
+      "supported_claims": [],
+      "error": "ValueError",
+      "seconds": 0.2774964158888906,
+      "output": null
+    },
+    {
+      "gold": [
+        {
+          "kind": "suggestion",
+          "statement": "AI suggestion: remove the cache; this is not a user decision.",
+          "reason": null,
+          "task_state": null
+        }
+      ],
+      "evidence": {
+        "evidence-968b0c5411d06342ae7bf6ab": "AI suggestion: remove the cache; this is not a user decision."
+      },
+      "assertions": [],
+      "id": "suggestion_two",
+      "expected": "suggestion",
+      "predicted": [],
+      "supported_claims": [],
+      "error": "ValueError",
+      "seconds": 0.2641808749176562,
+      "output": null
+    },
+    {
+      "gold": [],
+      "evidence": {
+        "evidence-226cf997a698538176917553": "SQLite transaction reference for /projects/one/storage.py."
+      },
+      "assertions": [],
+      "id": "reference_one",
+      "expected": "belongs_to",
+      "predicted": [],
+      "supported_claims": [],
+      "error": "ValueError",
+      "seconds": 0.27226645802147686,
+      "output": null
+    },
+    {
+      "gold": [],
+      "evidence": {
+        "evidence-1cee93ee8da0fdabec4a6483": "Cache key reference for /projects/two/cache.py."
+      },
+      "assertions": [],
+      "id": "reference_two",
+      "expected": "belongs_to",
+      "predicted": [],
+      "supported_claims": [],
+      "error": "ValueError",
+      "seconds": 0.29585216590203345,
+      "output": null
+    },
+    {
+      "gold": [],
+      "evidence": {
+        "evidence-0d3a92479694d79a3ddcc954": "Weather forecast: rain tomorrow in London."
+      },
+      "assertions": [],
+      "id": "unrelated_weather",
+      "expected": "none",
+      "predicted": [],
+      "supported_claims": [],
+      "error": "ValueError",
+      "seconds": 0.2896976249758154,
+      "output": null
+    },
+    {
+      "gold": [],
+      "evidence": {
+        "evidence-de8c8692ec053379f89de6cd": "Music charts and upcoming concerts."
+      },
+      "assertions": [],
+      "id": "unrelated_music",
+      "expected": "none",
+      "predicted": [],
+      "supported_claims": [],
+      "error": "ValueError",
+      "seconds": 4.836240125121549,
+      "output": null
+    },
+    {
+      "gold": [
+        {
+          "kind": "decision",
+          "statement": "We decided to keep the existing database. No reason was recorded.",
+          "reason": null,
+          "task_state": null
+        }
+      ],
+      "evidence": {
+        "evidence-11ca98c793efd66129c30f24": "We decided to keep the existing database. No reason was recorded."
+      },
+      "assertions": [],
+      "id": "unknown_reason",
+      "expected": "decision",
+      "predicted": [],
+      "supported_claims": [],
+      "error": "ValueError",
+      "seconds": 0.2644113751593977,
+      "output": null
+    },
+    {
+      "gold": [
+        {
+          "kind": "observation",
+          "statement": "Completed the rollback test task for project one.",
+          "reason": null,
+          "task_state": null
+        }
+      ],
+      "evidence": {
+        "evidence-d049a412263313eb314eb442": "Completed the rollback test task for project one."
+      },
+      "assertions": [],
+      "id": "done_task",
+      "expected": "observation",
+      "predicted": [],
+      "supported_claims": [],
+      "error": "ValueError",
+      "seconds": 0.5376062910072505,
+      "output": null
+    },
+    {
+      "gold": [
+        {
+          "kind": "observation",
+          "statement": "Reopen the rollback test task for project one; it still fails.",
+          "reason": null,
+          "task_state": null
+        }
+      ],
+      "evidence": {
+        "evidence-c1ba5c44c0b1cc9439794d91": "Reopen the rollback test task for project one; it still fails."
+      },
+      "assertions": [],
+      "id": "reopen_task",
+      "expected": "observation",
+      "predicted": [],
+      "supported_claims": [],
+      "error": "ValueError",
+      "seconds": 0.29067358397878706,
+      "output": null
+    },
+    {
+      "gold": [
+        {
+          "kind": "decision",
+          "statement": "Earlier we used TTL expiry; now we decided to keep entries until an explicit invalidation.",
+          "reason": null,
+          "task_state": null
+        }
+      ],
+      "evidence": {
+        "evidence-65b75722cb8229dc3ed473ef": "Earlier we used TTL expiry; now we decided to keep entries until an explicit invalidation."
+      },
+      "assertions": [],
+      "id": "conflict",
+      "expected": "decision",
+      "predicted": [],
+      "supported_claims": [],
+      "error": "ValueError",
+      "seconds": 0.8927670000120997,
+      "output": null
+    }
+  ],
+  "latencies_seconds": [
+    1.8498247081879526,
+    0.43417645804584026,
+    0.2990304999984801,
+    0.3312280410900712,
+    0.7338231669273227,
+    0.27555408398620784,
+    0.2774964158888906,
+    0.2641808749176562,
+    0.27226645802147686,
+    0.29585216590203345,
+    0.2896976249758154,
+    4.836240125121549,
+    0.2644113751593977,
+    0.5376062910072505,
+    0.29067358397878706,
+    0.8927670000120997
+  ],
+  "semantic_bytes": 151552,
+  "python_peak_rss_bytes": 32784384,
+  "energy_metrics": "not measured",
+  "resource_pass": false,
+  "selection_pass": false,
+  "runtime_peak_bytes": 676970496,
+  "runtime_weight_hashes": [
+    "sha256:c5396e06af294bd101b30dce59131a76d2b773e76950acc870eda801d3ab0515",
+    "sha256:66b9ea09bd5b7099cbb4fc820f31b575c0366fa439b08245566692c6784e281e",
+    "sha256:eb4402837c7829a690fa845de4d7f3fd842c2adee476d5341da8a46ea9255175",
+    "sha256:832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e"
+  ],
+  "p95_seconds": 4.836240125121549,
+  "timing_samples": 16,
+  "idle_cpu_percent": null,
+  "resource_incomplete": [
+    "60-second idle CPU sample"
+  ],
+  "resource_partial_pass": true
+}

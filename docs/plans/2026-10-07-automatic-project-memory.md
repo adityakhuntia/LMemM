@@ -14,8 +14,9 @@
 
 Fixture-driven Tasks 1–6 have committed implementations with review fixes. Their
 full acceptance checklists remain open where coverage or behavior is incomplete.
-Task 7 tooling and two real local-model comparisons are implemented; neither model
-passed. Task 8 regression/review/documentation work is verified (144 tests); real semantic
+Task 7 now includes exact assertion/citation scoring and reviewed privacy probes;
+three local-model configurations were compared. None meets precision/resource
+acceptance. See the [benchmark index](../benchmarks/project-memory/README.md). Task 8 regression/review/documentation work is verified (163 tests); real semantic
 acceptance and remaining implementation items stay open. This is an isolated
 engineering increment, not semantic acceptance or the live/MCP MVP. Detailed evidence
 and remaining gaps: [implementation status](../semantic-project-memory-status.md).

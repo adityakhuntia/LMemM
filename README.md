@@ -7,7 +7,8 @@ you did there (typing, reading, receiving, focus) and what it was about. Press
 **pending edit** that comes back when you reopen that thing.
 
 Everything runs on your Mac: capture, OCR (Apple Vision), activity rules and speech
-recognition. No model or server is involved.
+recognition. Normal tracking uses no model or server. The experimental semantic
+benchmark is separate and remains disabled in capture.
 
 ## Setup (once)
 
@@ -187,3 +188,15 @@ python3 -m unittest discover -s tests      # 110 tests, incl. real on-device OCR
 
 [ARCHITECTURE.md](ARCHITECTURE.md) covers how the modules fit and where to extend it.
 [docs/](docs/) has specs, plans and the development history.
+
+## Experimental semantic project memory (feature branch)
+
+`feat/semantic-project-memory` contains a fixture-driven local SQLite core for
+evidence, claims, project relationships and scoped context retrieval. It is not yet
+connected to the tracker or exposed through MCP. Local model evaluation uses only
+synthetic inputs, and no configuration has passed all acceptance gates.
+
+Start with [context.md](context.md), the [semantic handover](docs/semantic-project-memory-status.md)
+and the [benchmark index](docs/benchmarks/project-memory/README.md) for current status,
+architecture, tests and reproduction. Normal capture commands do not start Ollama,
+download models or send evidence to a service.

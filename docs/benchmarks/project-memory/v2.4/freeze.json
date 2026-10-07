@@ -1,0 +1,19 @@
+{
+  "extractor_version": "indexed-source-selection-v2.4",
+  "prompt_hash": "ee235646d60c518469b9bcc85deae139ae80e4440d2616c37d2ffb3c564b98a4",
+  "fixture_file_hash": "af36f29a6f24de1142cfee04b18e425f4d3585a92a391fbfa84710ed42e0e474",
+  "models": [
+    "qwen2.5:0.5b",
+    "qwen2.5:1.5b",
+    "qwen3:1.7b"
+  ],
+  "context_limit": 8192,
+  "thinking": false,
+  "runtime_budget_bytes": 3221225472,
+  "reason": "Development comparison complete; no candidate passes all gates. Run fresh heldout without further tuning.",
+  "heldout_inspected_before_freeze": false,
+  "selection_requires_full_resource_acceptance": true,
+  "review_note": "Following initial heldout, only validation/privacy-audit fixes were made. No prompt, weights, context, examples or labels changed. Audit2 reruns are repeat evaluations of this same split, not new independent holdouts.",
+  "runtime_code_hash_reviewed": "b0cfec05c7d863c525932f810545327730d2d98af0ed9f43c65b5c4109350271",
+  "scorer_code_hash_reviewed": "9d3df16b45a6501fdcd59dd25bb32408d50c01afb8fe841a5c6f8e76c1893b12"
+}

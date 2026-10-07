@@ -113,3 +113,18 @@ Rules that keep this cohesive:
 images, identity, content, migration, notes/resurfacing/project view, the CLI, input
 events with fake native data, retention and deletion recovery. No test uses the real
 microphone, input tap or your data.
+
+## Experimental semantic boundary
+
+The feature branch adds a separate `semantic_memory/` package and SQLite database.
+Its controlled flow is source envelope + access policy → source-owned text → bounded
+episode → validated local quote selection → claims/relationships → scoped project
+context and citations. The legacy tracker does not feed it. Session-deletion recovery
+cleans a semantic database when one exists; there is no implicit legacy import.
+
+The local runtime is an explicitly started isolated Ollama process on a fixed loopback
+endpoint. Models select numbered source quotes/categories; host code maps evidence
+IDs and exact project-path references. Inference cannot execute tools or grant access.
+Automatic runtime startup, live adapters and MCP remain unimplemented. See the
+[semantic handover](docs/semantic-project-memory-status.md) for contracts and limits
+and the [benchmark index](docs/benchmarks/project-memory/README.md) for measured status.

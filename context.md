@@ -3,6 +3,24 @@
 Updated 2026-10-07, America/New_York. Historical context and handover are in
 `docs/history/`. This file records current decisions and verification limits.
 
+## Document map
+
+- [README](README.md): normal tracker setup and user commands.
+- [Architecture](ARCHITECTURE.md): capture modules and experimental semantic boundary.
+- [Semantic handover](docs/semantic-project-memory-status.md): implemented interfaces,
+  test instructions and remaining source/MCP prerequisites.
+- [Benchmark index and reviewed results](docs/benchmarks/project-memory/README.md):
+  measured claims, privacy probes, model failures and reproduction.
+- [Approved semantic design](docs/specs/2026-10-07-automatic-project-memory-design.md)
+  and [implementation plan/status](docs/plans/2026-10-07-automatic-project-memory.md).
+- [Product/knowledge-graph discussion](docs/knowledge-graph-discussion.md): MVP intent.
+- [Historical handovers](docs/history/): earlier capture/input/dictation work.
+
+Current worktree: `.worktrees/semantic-project-memory`, branch
+`feat/semantic-project-memory`. The root main checkout has not been merged or changed
+by this semantic increment. Treat the benchmark index as the source of current model
+results; v1 type scores and v2 assertion scores are different measurements.
+
 ## Integration and closed work
 
 - Aditya's `refactor/cohesive-core` through `42c38b7` includes every published
@@ -21,7 +39,7 @@ Updated 2026-10-07, America/New_York. Historical context and handover are in
 - Existing keyboard/cursor summaries, content excerpts, identity repair,
   dictation safeguards, retention and provenance work remain integrated.
 - Validated integration and repairs published to GitHub `main` and
-  `feat/input-timeline` at **0f3b862**. Current checkout is main. Feature/refactor
+  `feat/input-timeline` at **0f3b862**. That integration was on main. Feature/refactor
   branches are preserved; branch cleanup is not performed.
 
 ## Verification
@@ -50,8 +68,8 @@ Updated 2026-10-07, America/New_York. Historical context and handover are in
   policies. Input alone is explicitly opted in and restricted to VS Code.
 - Storage is local plaintext. OCR/activity/decision quotes do not establish
   authorship, intent, verified decisions or completed work.
-- Widget projects are derived labels. No knowledge graph, semantic inference,
-  MCP service or agent retrieval boundary exists yet.
+- Widget projects are derived labels. The fixture-only semantic core exists on this feature branch; it is not connected
+  to capture. No live knowledge graph, MCP service or agent connection is enabled.
 
 ## MVP decision and next work
 
@@ -61,7 +79,8 @@ the default workflow. First infer project anchors from workspace folders and
 document context, then associate activity automatically. Arbitrary project
 discovery comes later; corrections remain optional. Current MVP inference is
 strictly on-device; hosted inference remains a future privacy discussion and
-must not be an automatic fallback. Storage/resource budgets remain open.
+must not be an automatic fallback. Semantic budgets are approved at 250 MiB retained evidence and 3 GiB runtime;
+measured enabled-worker resource acceptance remains open.
 The agreed MVP is accurate project knowledge exposed to AI agents through MCP,
 with acceptable measured performance and low resource use. Broader companion
 features come after this. Initial source scope is VS Code plus permitted browser
@@ -102,9 +121,28 @@ source-backed claims and relationships, explicit task transitions/corrections,
 retention/deletion, scoped project context and citations. Existing CLI capture does
 not feed semantic evidence yet. Session deletion cleans the semantic DB when present.
 
-Qwen2.5 0.5B and 1.5B were evaluated locally on a fixed synthetic corpus; neither
-passed. Held-out type recall was 17% and 50%. These are classification proxies, not
-factual-accuracy acceptance. No local model is enabled in normal capture. Remaining
-work: strengthen assertion/privacy evaluation, improve local extraction, implement
-FTS candidate selection and independent-episode corroboration, harden total write
-budgets, then add authoritative live sources and scoped read-only MCP.
+Closed in the continuation: exact assertion/reason/state/citation scoring; source-index
+quote selection; boundary-safe explicit project references; mixed public/private
+revocation audits; independent review and regression repairs. Model output chooses
+a quote/category; it cannot fabricate quote text or arbitrary IDs. Reasons are currently
+limited to bounded explicit “because” excerpts. Complex multi-claim passages remain a gap.
+
+Verification: **163 tests pass, including 53 semantic tests**. Three local models were
+evaluated with the frozen extractor. Reviewed heldout assertion precision/recall:
+Qwen2.5 0.5B 67%/40%, Qwen2.5 1.5B 83%/100%, Qwen3 1.7B 71%/100%. Each run has
+32 extraction timings and zero leaks across 13 controlled privacy probes. Five gold
+claims and short synthetic inputs are a narrow benchmark, not general accuracy.
+No model passes the precision gate; resource/selection acceptance remain false.
+No local model is enabled in normal capture; no feature merge or push was performed.
+
+Next order:
+1. Improve precision and browser association using broader development examples and
+   a fresh heldout split; do not tune on the inspected v2 heldout. Keep confidence
+   status separate from source truth. See the benchmark index for actual errors.
+2. Complete FTS candidate selection, independent-episode corroboration, all-writer
+   quota enforcement, retention scheduling and worker cancellation/state lifecycle.
+3. Add authoritative permission-checked live VS Code/browser source envelopes and
+   foreground isolation, without enabling inference before quality/resource gates pass.
+4. Benchmark representative enabled-worker sessions and power, then expose scoped
+   read-only MCP retrieval for an agent resuming a project. Hosted inference remains
+   a separate future privacy discussion.

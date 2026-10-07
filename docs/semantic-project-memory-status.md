@@ -38,7 +38,7 @@ From the feature worktree, using the main repository’s virtual environment:
 ../../.venv/bin/python -m unittest discover -s tests -p 'test_semantic*.py' -v
 ```
 
-Verification: all 144 tests pass, including 34 semantic tests; syntax compilation
+Verification: all 163 tests pass, including 53 semantic tests; syntax compilation
 and `git diff --check` pass. The native full-suite run required macOS framework access.
 
 Tests use synthetic envelopes and temporary databases. They do not start global
@@ -53,7 +53,34 @@ configuration requires locally cached approved manifests/weights and the isolate
 Ollama endpoint at `127.0.0.1:11455`. Normal tracker startup never starts or pulls a model.
 Downloaded weights remain ignored under the worktree’s `data/model-cache`.
 
-## Actual evaluation and limits
+## Continuation: factual evaluation and local extraction
+
+The [benchmark index](benchmarks/project-memory/README.md) is the current record.
+V2 scores exact supported assertions, reasons, states and each citation against
+labelled gold quotes; it no longer treats a matching type as factual correctness.
+Reviewed privacy probes add mixed public/private support and whole-packet canary
+checks after revocation, plus denied/private/unknown intake and deletion checks.
+
+The local model now selects numbered source quotes and types; host code supplies
+original text/IDs and resolves only boundary-safe explicit project paths. Source
+units are at most 1 KiB, selected evidence still uses the existing 4/16 KiB source/
+request limits. Closed reason choices currently cover explicit “because” excerpts.
+This narrower adapter does not yet infer arbitrary reasons, task transitions or
+contradictions through the local model, even though core APIs/tests support them.
+
+Three configurations were tested without widening the 3 GiB runtime budget.
+Reviewed heldout precision/recall: Qwen2.5 0.5B 67%/40%, Qwen2.5 1.5B 83%/100%,
+Qwen3 1.7B 71%/100%. The two larger models recalled all five labelled claims but
+still emitted extra misclassified content. All failed precision; no model selected.
+Follow the benchmark links for hashes, original development failures, repeated
+32-timing heldout runs, audit revisions and resource-measurement limitations.
+
+Independent continuation review found and fixed unrelated extra citation scoring,
+legacy project-index bypasses and private-derived text missed by the revocation
+audit. Whole-suite verification now passes 163 tests. New model tuning requires
+a fresh heldout split; current outputs have been inspected.
+
+## Historical v1 evaluation and limits
 
 Mac14,9 / M2 Pro / 32 GiB; Ollama 0.33.3; Qwen2.5 Q4_K_M 0.5B and 1.5B.
 The fixed synthetic corpus contains 16 development and eight held-out cases. Prompt
@@ -81,8 +108,8 @@ leaking across caller scopes. Regression tests preserve those cases.
 
 ## Remaining implementation and acceptance work
 
-1. Add proposition/reason/citation/status scoring and adversarial deletion/revocation
-   evaluation. Improve local extraction on development data; use fresh held-out cases
+1. Broaden the implemented assertion/privacy evaluation and improve local precision
+   and browser grouping on development data; use fresh held-out cases
    if tuning follows inspection of this held-out set. Keep all acceptance gates explicit.
 2. Complete FTS-based candidate selection and independent-episode corroboration;
    current selection uses recent anchors and browser promotion uses explicit references.

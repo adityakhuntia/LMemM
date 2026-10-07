@@ -49,7 +49,7 @@ test('host pause clears digest and resume publishes fresh source with new revisi
  const originalLoad=Module._load,originalInterval=global.setInterval,originalClear=global.clearInterval;
  try{
   Module._load=function(name,...args){return name==='vscode'?fake:originalLoad.call(this,name,...args);};global.setInterval=cb=>{poll=cb;return 1;};global.clearInterval=()=>{};
-  const extension=require(process.env.LMEMM_TEST_EXTENSION||'./extension');extension.activate({subscriptions:[]});await commands['lmemm.connect']();
+  const extension=require(process.env.LMEMM_TEST_EXTENSION||'./extension');extension.activate({subscriptions:[]});await commands['lmemm.note']();assert.match(errors.pop(),/Connect Experimental/);await commands['lmemm.connect']();fake.window.activeTextEditor=undefined;await commands['lmemm.note']();assert.match(errors.pop(),/approved local file/);fake.window.activeTextEditor=editor;
   const event=path.join(directory,'events',fs.readdirSync(path.join(directory,'events'))[0]);let m=JSON.parse(fs.readFileSync(event));const ack=path.join(directory,'acks',m.client+'.json');
   fs.writeFileSync(ack,JSON.stringify({session:'test',window:10,seq:m.seq}),{mode:0o600});poll();if(JSON.parse(fs.readFileSync(event)).kind!=='snapshot')poll();
   m=JSON.parse(fs.readFileSync(event));assert.equal(m.kind,'snapshot');

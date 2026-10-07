@@ -81,9 +81,10 @@ function activate(context){
  context.subscriptions.push(vscode.commands.registerCommand('lmemm.pause',()=>{paused=true;if(connection){confirmNote(connection);failNote(connection,'Source sharing paused.');}clear();poll();}));
  context.subscriptions.push(vscode.commands.registerCommand('lmemm.stop',stop));
  context.subscriptions.push(vscode.commands.registerCommand('lmemm.note',async()=>{
-  if(!connection||paused)return;
+  if(!connection){vscode.window.showErrorMessage('LMemM: run Connect Experimental Project Memory first.');return;}
+  if(paused){vscode.window.showErrorMessage('LMemM: source sharing is paused; reconnect before recording a note.');return;}
   const c=connection,editor=vscode.window.activeTextEditor;
-  const before=visibleSnapshot(editor,c.roots,state(editor));if(!before)return;
+  const before=visibleSnapshot(editor,c.roots,state(editor));if(!before){vscode.window.showErrorMessage('LMemM: open an approved local file such as README.md in the connected development window, then record the note.');return;}
   const text=await vscode.window.showInputBox({prompt:'Intentional project note. This text will be retained locally with this file as its source.'});
   if(!text||connection!==c||paused)return;
   // Let the input box dismiss before sampling the post-submit authorization.

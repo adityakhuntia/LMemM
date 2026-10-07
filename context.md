@@ -11,6 +11,9 @@ Updated 2026-10-07, America/New_York. Historical context and handover are in
   test instructions and remaining source/MCP prerequisites.
 - [Benchmark index and reviewed results](docs/benchmarks/project-memory/README.md):
   measured claims, privacy probes, model failures and reproduction.
+- [Proposed live semantic pilot](docs/specs/2026-10-07-live-semantic-pilot-design.md):
+  VS Code source bridge, foreground checks and opt-in experimental testing;
+  written-spec review pending, implementation not started.
 - [Approved semantic design](docs/specs/2026-10-07-automatic-project-memory-design.md)
   and [implementation plan/status](docs/plans/2026-10-07-automatic-project-memory.md).
 - [Product/knowledge-graph discussion](docs/knowledge-graph-discussion.md): MVP intent.
@@ -146,3 +149,13 @@ Next order:
 4. Benchmark representative enabled-worker sessions and power, then expose scoped
    read-only MCP retrieval for an agent resuming a project. Hosted inference remains
    a separate future privacy discussion.
+
+## Next increment authorized — live semantic pilot
+
+The user approved proceeding with live-source integration and precision work before
+testing, then handover and pushing this feature branch after confirmation. Proposed
+[written pilot design](docs/specs/2026-10-07-live-semantic-pilot-design.md) uses a
+local VS Code bridge for authoritative document/workspace identity and bounded visible
+source, with independent foreground verification. VS Code/one workspace first;
+browser adapters follow. Written-spec review and its implementation plan remain
+pending. No extension, live collector or inference has been enabled by this design step.

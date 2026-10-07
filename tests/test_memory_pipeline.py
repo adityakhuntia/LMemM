@@ -17,6 +17,7 @@ import resolver
 import store
 import tracker
 
+from frames import fake_frame
 from test_content import observation
 
 
@@ -39,11 +40,11 @@ class MemoryPipelineTests(unittest.TestCase):
                 stack.enter_context(patch.object(macos, "pointer_on", return_value=None))
                 screens = stack.enter_context(patch.object(macos, "NSScreen"))
                 screens.screens.return_value = [SimpleNamespace(frame=lambda: screen)]
-                stack.enter_context(patch.object(macos, "screenshot",
-                                    side_effect=lambda path, display: Path(path).write_bytes(b"image")))
+                stack.enter_context(patch.object(macos, "grab", side_effect=lambda display: fake_frame()))
                 capture = tracker.Tracker()
                 self.assertIsNone(capture.capture("note", pinned=True))
                 self.assertTrue(capture.q.empty())
+                self.assertEqual(capture.frames, {})
                 self.assertEqual(list(root.glob("*.jpg")), [])
 
     def test_capture_records_foreground_region_for_content_extraction(self):
@@ -62,15 +63,16 @@ class MemoryPipelineTests(unittest.TestCase):
             stack.enter_context(patch.object(macos, "pointer_on", return_value={"x": 300, "y": 200}))
             screens = stack.enter_context(patch.object(macos, "NSScreen"))
             screens.screens.return_value = [SimpleNamespace(frame=lambda: screen)]
-            stack.enter_context(patch.object(macos, "screenshot",
-                                            side_effect=lambda path, display: Path(path).write_bytes(b"image")))
+            stack.enter_context(patch.object(macos, "grab", side_effect=lambda display: fake_frame()))
             capture = tracker.Tracker()
             capture.capture("timer")
             path, meta, _, _ = capture.q.get_nowait()
             self.assertEqual(meta["window_region"], [0.2, 0.1, 0.6, 0.8])
             self.assertEqual(meta["inputs"]["key"], 50)
             self.assertEqual(meta["pointer"], {"x": 300, "y": 200})
-            self.assertEqual(json.loads(Path(path).read_text())["window_region"], meta["window_region"])
+            # the frame waits in memory; nothing is written unless it ends up kept
+            self.assertIn(meta["ts"], capture.frames)
+            self.assertEqual(list(Path(directory).glob("*.jpg")) + list(Path(directory).glob("*.json")), [])
 
     def test_content_changes_under_same_title_survive_reload_and_cli(self):
         with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as stack:

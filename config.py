@@ -9,14 +9,29 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 
 # ---------------------------------------------------------------- capture schedule
 
-EVERY = 5               # seconds between captures while nothing else happens
+EVERY = 5               # seconds between captures while you're active on one window
+BACKOFF_CAP = 30        # ...doubling up to this while nothing changes and you give no input
+BACKOFF_CAP_CHAT = 15   # chats and AI chats: text can arrive with no input from you
 SETTLE = 1.0            # debounce: wait this long after the last trigger
 MAX_SETTLE = 3.0        # ...but never longer than this after the first one
 MIN_GAP = 2.0           # never two captures closer than this (pinned excepted)
 POLL = 0.5              # seconds between window/tab title checks
 IDLE = 60               # no input for this long -> pause
 MAX_QUEUE = 8           # resolver backlog above which timer captures are skipped
-SCALE_PX = 1280         # downscale screenshots to this long edge
+MAX_PX = 1600           # a captured screen wider than this is scaled down to it
+
+# ---------------------------------------------------------------- cost control
+
+FAST_CONTINUATION = True    # fast OCR for later frames of the same window; accurate for the first look
+THIN_RATIO = 0.5            # fast OCR that finds under this share of the previous frame's lines is redone accurately
+THUMB_PX = 480              # kept screenshots are thumbnails with this long edge...
+THUMB_QUALITY = 60          # ...at this JPEG quality (~20-30 KB)
+SCREENSHOT_DAYS = 7         # a thing's thumbnail is deleted this long after it was taken...
+                            # ...unless the thing is pinned or has an open note
+SAVE_EVERY = 5              # seconds: write memory files at most this often while running
+RETENTION_SWEEP = 3600      # seconds between screenshot-expiry sweeps
+RSS_WARN_MB = 800           # warn in the terminal when LMemM itself uses more memory than this
+CPU_WARN_PCT = 60           # ...or more than this share of one core over the last 30 s
 
 # ---------------------------------------------------------------- memory
 

@@ -98,7 +98,8 @@ def readable(i):
         out["activity"] = acts
     out["time"] = {"total": duration(i["seconds"]), "visits": i["visits"],
                    "first": nice_time(i["first_seen"]), "last": nice_time(i["last_seen"])}
-    out["screenshot"] = i["screenshot"]
+    if i.get("screenshot"):                       # gone once its retention has passed
+        out["screenshot"] = i["screenshot"]
     if i.get("pinned"):
         out["pinned"] = True
     return out

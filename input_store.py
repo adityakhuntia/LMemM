@@ -167,7 +167,10 @@ class InputStore:
             raise ValueError("invalid capture ID")
         destination = self.root / "inputs" / "frames" / self.session_id / (capture_id + ".jpg")
         destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        shutil.copyfile(path, destination)
+        if hasattr(path, "save"):        # an in-memory frame (macos.Frame)
+            path.save(str(destination), quality=70)
+        else:
+            shutil.copyfile(path, destination)
         destination.chmod(0o600)
 
     def invalidate_context(self, reason):

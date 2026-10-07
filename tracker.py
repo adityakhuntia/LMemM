@@ -22,6 +22,7 @@ import os
 import queue
 import re
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -39,12 +40,16 @@ import input_monitor as input_hooks
 import macos
 import notes
 import resolver
+import retention
 import store
 import understand
 import widget
 from input_events import Aggregator
 from input_store import InputStore, private_write
 from memory_content import extract_content, remember_content, visible_window_region
+
+
+CHATTY = {"chat", "chat_list", "ai_conversation"}    # text can arrive here with no input from you
 
 
 def hms(ts):
@@ -89,6 +94,18 @@ class Tracker:
         self.last_capture = 0.0
         self.last_poll = 0.0
         self.last_frame = None               # previous frame (pixels + OCR) for change tracking
+        self.frames = {}                     # capture ts -> macos.Frame, in memory until resolved
+        self.idle_steps = 0                  # consecutive unchanged frames: drives the timer back-off
+        self.interval_cap = config.BACKOFF_CAP
+        self.save_interval = 0               # seconds between memory writes; run() sets SAVE_EVERY
+        self.last_save = 0.0
+        self.dirty = False
+        self.metrics = Counter()             # work done and time spent, shown by `status`
+        self.started = time.time()
+        self.cpu_started = time.process_time()
+        self.resources = {}
+        self.last_resource_sample = 0.0
+        self.last_retention_sweep = 0.0
         self.panel = dictation.NotePanel()
         self.show_widget = show_widget
         self.widget = None                   # the on-screen pill (widget.py), made in run()
@@ -160,14 +177,63 @@ class Tracker:
             with self.lock:
                 found = notes.set_done(self.items, doc["ids"], done=bool(doc.get("done", True)))
                 if found:
-                    self.save()
+                    self.save(force=True)
             line(now_hms(), "", f"{len(found)} note{'s' * (len(found) != 1)} marked "
                  + ("done" if doc.get("done", True) else "open"))
 
     def publish_status(self):
         private_write(self.status_file, {
             "pid": os.getpid(), "session": self.session, "paused": self.manual_paused,
-            "input": self.input_monitor.status() if self.input_monitor else {"state": "off"}})
+            "input": self.input_monitor.status() if self.input_monitor else {"state": "off"},
+            "cost": self.cost_report()})
+
+    # ------------------------------------------------------------ what it costs
+
+    def timed(self, name, started):
+        """Add the time since `started` (perf_counter) to the running totals for `name`."""
+        self.metrics[name + "_ms"] += (time.perf_counter() - started) * 1000
+        self.metrics[name + "_n"] += 1
+
+    def sample_resources(self, now):
+        """Memory and CPU of this process, every 30 s. Warns when either looks wrong."""
+        if now - self.last_resource_sample < 30:
+            return
+        wall = now - (self.last_resource_sample or self.started)
+        cpu = time.process_time()
+        last_cpu = self.resources.get("_cpu", self.cpu_started)
+        self.last_resource_sample = now
+        try:
+            rss = int(subprocess.check_output(["ps", "-o", "rss=", "-p", str(os.getpid())],
+                                              timeout=2)) / 1024
+        except (OSError, ValueError, subprocess.SubprocessError):
+            rss = self.resources.get("rss_mb", 0)
+        recent = 100 * (cpu - last_cpu) / max(wall, 1)
+        self.resources = {"rss_mb": round(rss), "peak_rss_mb": round(max(rss, self.resources.get("peak_rss_mb", 0))),
+                          "cpu_pct_recent": round(recent), "_cpu": cpu,
+                          "cpu_pct_avg": round(100 * (cpu - self.cpu_started) / max(now - self.started, 1))}
+        # warn about memory, or CPU that stays high for two readings in a row (startup is busy)
+        high_cpu = recent > config.CPU_WARN_PCT
+        sustained = high_cpu and self.resources.get("_high_cpu", False)
+        self.resources["_high_cpu"] = high_cpu
+        if now - self.started > 60 and (rss > config.RSS_WARN_MB or sustained):
+            line(now_hms(), "", f"⚠ LMemM is using {round(rss)} MB and {round(recent)}% of a core")
+        self.publish_status()
+
+    def cost_report(self):
+        m = self.metrics
+
+        def avg(name):
+            return round(m[name + "_ms"] / m[name + "_n"]) if m[name + "_n"] else None
+        return {
+            "running_for": store.duration(time.time() - self.started),
+            "memory_mb": self.resources.get("rss_mb"), "peak_memory_mb": self.resources.get("peak_rss_mb"),
+            "cpu_pct_now": self.resources.get("cpu_pct_recent"), "cpu_pct_average": self.resources.get("cpu_pct_avg"),
+            "captures": self.stats["captured"], "skipped_ocr_unchanged": self.stats["no_ocr"],
+            "ocr": {"fast": m["ocr_fast_n"], "accurate": m["ocr_accurate_n"], "redone_accurate": m["ocr_redo_n"]},
+            "avg_ms": {"capture": avg("capture"), "ocr_fast": avg("ocr_fast"), "ocr_accurate": avg("ocr_accurate"),
+                       "handle": avg("handle"), "save": avg("save")},
+            "capture_interval_s": round(self.current_interval(time.time(), quiet=True)),
+        }
 
     # ------------------------------------------------------------ input timeline
 
@@ -226,6 +292,7 @@ class Tracker:
     # ------------------------------------------------------------ scheduling
 
     def trigger(self, why):
+        self.idle_steps = 0                  # something happened: back to the fast timer
         if self.input_monitor and why in {"app_switch", "window_change", "tab_change"}:
             self.input_monitor.invalidate_boundary()
         now = time.time()
@@ -249,6 +316,7 @@ class Tracker:
         """One pass of the main loop (~4x a second)."""
         self.process_control()
         self.poll_input()
+        self.maintain()
         if self.widget and time.time() - self.last_widget_refresh >= 1:
             self.last_widget_refresh = time.time()
             self.widget.refresh()
@@ -309,12 +377,33 @@ class Tracker:
                 why = self.pending[0]
                 self.pending = None
                 self.capture(why)
-        elif now - self.last_capture >= self.every:
+        elif now - self.last_capture >= self.current_interval(now):
             if self.q.qsize() < config.MAX_QUEUE:
                 self.capture("timer")
             else:
                 self.last_capture = now
                 self.stats["backlog_skip"] += 1
+
+    def current_interval(self, now, quiet=False):
+        """Seconds until the next timer capture. Fast (`every`) while you're active; each
+        unchanged frame doubles it, up to a cap (lower for chats, where text can arrive with
+        no input from you). Any input since the last capture, or a switch, resets it."""
+        if not quiet and min(macos.input_ages().values()) < (now - self.last_capture) + 0.5:
+            self.idle_steps = 0
+        return min(self.every * 2 ** self.idle_steps, max(self.interval_cap, self.every))
+
+    def maintain(self):
+        """Housekeeping the main loop does between captures."""
+        now = time.time()
+        if self.dirty and now - self.last_save >= self.save_interval:
+            with self.lock:
+                self.save(force=True)
+        self.sample_resources(now)
+        if now - self.last_retention_sweep >= config.RETENTION_SWEEP:
+            self.last_retention_sweep = now
+            with self.lock:
+                if retention.expire_screenshots(self.items):
+                    self.save(force=True)
 
     # ------------------------------------------------------------ capture
 
@@ -345,29 +434,30 @@ class Tracker:
         inputs, pointer = macos.input_ages(), macos.pointer_on(frame)
         ts = datetime.now().strftime("%Y%m%d-%H%M%S")
         data_dir = config.paths().data_dir
-        img = os.path.join(data_dir, ts + ".jpg")
-        if os.path.exists(img):          # two captures in one second
-            return None
+        if ts in self.frames or os.path.exists(os.path.join(data_dir, ts + ".jpg")):
+            return None                  # two captures in one second
         capture_start_ns = time.monotonic_ns()
-        macos.screenshot(img, display)
+        started = time.perf_counter()
+        shot = macos.grab(display) or macos.grab_with_screencapture(display)   # in memory: no files
+        self.timed("capture", started)
         capture_end_ns = time.monotonic_ns()
-        if not os.path.exists(img):
+        if shot is None:
             say("  ! screenshot failed (Screen Recording permission?)")
             return None
         after = macos.front()
         if after and (after["pid"], after["win_id"]) != (f["pid"], f["win_id"]):
             # you switched while we were capturing: picture and context no longer match
-            os.remove(img)
+            shot.release()
             self.trigger("app_switch" if after["pid"] != f["pid"] else "window_change")
             return None
         if trigger == "note":
             if after is None or any(after.get(key) != f.get(key) for key in ("app", "bundle_id", "window", "bounds")):
-                os.remove(img)
+                shot.release()
                 self.trigger("window_change")
                 return None
             # a tab can switch without changing the containing window's id/title
             if macos.browser_info(f["app"]) != (url, tab_title, private):
-                os.remove(img)
+                shot.release()
                 self.trigger("tab_change")
                 return None
         meta = {
@@ -375,7 +465,7 @@ class Tracker:
             "app": f["app"], "bundle_id": f["bundle_id"], "window": f["window"],
             "url": url, "site": site, "tab_title": tab_title,
             "screen": {"w": int(size.width), "h": int(size.height)}, "display": display,
-            "image": ts + ".jpg", "bytes": os.path.getsize(img),
+            "image": ts + ".jpg",       # the thumbnail's name, if this frame ends up kept
             "trigger": trigger, "pinned": pinned, "session": self.session,
             "inputs": inputs, "pointer": pointer,
             "window_region": visible_window_region(f["bounds"], macos.display_bounds(display)),
@@ -391,10 +481,9 @@ class Tracker:
                 with self.lock:
                     meta["input_event_ids"] = self.input_store.link_capture(
                         ts, permitted["id"], meta["capture_start_offset_ns"], meta["capture_end_offset_ns"])
-                    self.input_store.keep_capture(ts, img)
-        meta_path = os.path.join(data_dir, ts + ".json")
-        with open(meta_path, "w") as fh:
-            json.dump(meta, fh, indent=2)
+                    self.input_store.keep_capture(ts, shot)
+        meta_path = os.path.join(data_dir, ts + ".json")    # written only if this frame is kept
+        self.frames[ts] = shot
         self.stats["captured"] += 1
         self.q.put((meta_path, meta, trigger, pinned))
         return meta
@@ -424,7 +513,7 @@ class Tracker:
         at = datetime.now().isoformat(timespec="seconds")
         with self.lock:
             item = notes.record(self.items, self.frame_item, self.notes, target, text, at)
-            self.save()
+            self.save(force=True)
         line(at[11:19], (item or {}).get("app", "?"), "note saved" + (" (awaiting context)" if item is None else ""))
 
     # ------------------------------------------------------------ the on-screen pill
@@ -439,7 +528,7 @@ class Tracker:
         with self.lock:
             found = notes.set_done(self.items, ids, done=done)
             if found:
-                self.save()
+                self.save(force=True)
         line(now_hms(), "", f"{len(found)} note{'s' * (len(found) != 1)} marked {'done' if done else 'open'}")
 
     # ------------------------------------------------------------ resolver thread
@@ -464,26 +553,62 @@ class Tracker:
                 self.q.task_done()
 
     def handle(self, meta_path, meta, trigger, pinned):
+        started = time.perf_counter()
         now = time.mktime(time.strptime(meta["ts"], "%Y%m%d-%H%M%S"))
-        img = activity.load(os.path.join(config.paths().data_dir, meta["image"]))
+        frame = self.frames.pop(meta["ts"], None)         # in memory (normal), or None: read the file
+        img = frame.gray if frame is not None else \
+            activity.load(os.path.join(config.paths().data_dir, meta["image"]))
         last = self.last_frame
         sig = (meta.get("app"), meta.get("window"), meta.get("url"))
+        try:
+            # pixels first: an unchanged screen of the same window needs no OCR at all
+            change = activity.diff(last["img"], img) if last is not None and last["sig"] == sig else None
+            if change is not None and not change["regions"] and not pinned:
+                res, st = last["res"], last["st"]
+                self.stats["no_ocr"] += 1
+                self.idle_steps = min(self.idle_steps + 1, 8)     # nothing changed: slow the timer
+            else:
+                self.idle_steps = 0
+                res = self.read(meta_path, meta, frame, last, change, pinned)
+                st = understand.describe(res, meta)
+            self.interval_cap = (config.BACKOFF_CAP_CHAT if st["kind"] in CHATTY else config.BACKOFF_CAP)
+            content = extract_content(res, meta)
 
-        # pixels first: an unchanged screen of the same window needs no OCR at all
-        change = activity.diff(last["img"], img) if last is not None and last["sig"] == sig else None
-        if change is not None and not change["regions"] and not pinned:
-            res, st = last["res"], last["st"]
-            self.stats["no_ocr"] += 1
-        else:
-            res = resolver.resolve(meta_path)
-            st = understand.describe(res, meta)
-        content = extract_content(res, meta)
+            # OCR ran outside the memory lock so note saves never wait for Vision
+            with self.lock:
+                self.remember(meta, trigger, pinned, now, img, last, change, res, st, content, frame)
+        finally:
+            if frame is not None:
+                frame.release()
+            self.timed("handle", started)
 
-        # OCR ran outside the memory lock so note saves never wait for Vision
-        with self.lock:
-            self.remember(meta, trigger, pinned, now, img, last, change, res, st, content)
+    def read(self, meta_path, meta, frame, last, change, pinned):
+        """OCR a changed screen. Fast OCR (~9x cheaper) for a later frame of the same window;
+        accurate OCR for the first look at it, and whenever the fast pass looks thin."""
+        if frame is None:
+            return resolver.resolve(meta_path)             # a file on disk: always accurate
+        continuation = (config.FAST_CONTINUATION and last is not None and change is not None
+                        and not pinned and meta.get("trigger") not in ("note", "pin"))
+        started = time.perf_counter()
+        res = resolver.resolve_frame(meta, frame, fast=continuation)
+        if continuation and self.looks_thin(res, last["res"]):
+            self.timed("ocr_fast", started)
+            started = time.perf_counter()
+            res = resolver.resolve_frame(meta, frame, fast=False)
+            self.timed("ocr_redo", started)
+            self.timed("ocr_accurate", started)
+            return res
+        self.timed("ocr_fast" if continuation else "ocr_accurate", started)
+        return res
 
-    def remember(self, meta, trigger, pinned, now, img, last, change, res, st, content):
+    @staticmethod
+    def looks_thin(res, previous):
+        """Did the fast pass find far fewer lines than the last frame of this window?"""
+        count = lambda r: sum(1 for o in r["objects"] if o.get("text"))
+        before = count(previous)
+        return before >= 12 and count(res) < config.THIN_RATIO * before
+
+    def remember(self, meta, trigger, pinned, now, img, last, change, res, st, content, frame=None):
         """A resolved screen -> which thing, what you did on it, memory + timeline."""
         if not self.running or self.input_store and self.input_store.closed:
             return
@@ -501,7 +626,7 @@ class Tracker:
             change = activity.diff(last["img"], img)    # same thing, its URL/title changed
 
         # 2. what happened since the last frame of it: typing / reading / receiving / focus
-        dt = min(now - last["t"], 3 * self.every) if same_thing else 0
+        dt = min(now - last["t"], config.BACKOFF_CAP + self.every) if same_thing else 0
         scale = res["image_size"]["w"] / meta["screen"]["w"] if meta.get("screen") else 1
         ptr = meta.get("pointer")
         act = activity.classify(change, last["res"] if same_thing else None, res,
@@ -552,10 +677,25 @@ class Tracker:
                 self.input_store.link_capture(meta["ts"], meta["input_context_id"],
                                               meta["capture_start_offset_ns"], meta["capture_end_offset_ns"], item_id)
         notes.attach_pending(self.items, self.frame_item, self.notes)
-        if not frame_used:
-            self.drop_frame(meta["image"])
+        if frame_used:
+            self.keep_thumbnail(meta, frame)
+        else:
+            self.drop_frame(meta["image"])               # (only exists when read from a file)
             self.stats["no_change"] += 1
         self.save()
+
+    def keep_thumbnail(self, meta, frame):
+        """A frame that became a thing's screenshot: write it as a small thumbnail, plus its
+        capture metadata. (A frame read from a file is already on disk, as it was.)"""
+        if frame is None:
+            return
+        data_dir = config.paths().data_dir
+        os.makedirs(data_dir, exist_ok=True)
+        path = os.path.join(data_dir, meta["image"])
+        frame.save(path, long_edge=config.THUMB_PX, quality=config.THUMB_QUALITY)
+        meta["bytes"] = os.path.getsize(path)
+        with open(os.path.join(data_dir, meta["ts"] + ".json"), "w") as fh:
+            json.dump(meta, fh, indent=2)
 
     def resurface(self, item, event, meta):
         """Back on something with open notes: remind you of them (at most once per
@@ -653,12 +793,20 @@ class Tracker:
             except OSError:
                 pass
 
-    def save(self):
-        """Called under the memory lock."""
+    def save(self, force=False):
+        """Write memory to disk. Called under the memory lock. While running, writes are
+        batched to one per `save_interval` (the main loop flushes); force=True writes now
+        (notes, ticking an edit, shutdown)."""
+        if not force and self.save_interval and time.time() - self.last_save < self.save_interval:
+            self.dirty = True
+            return
+        started = time.perf_counter()
         if self.input_store:
             self.input_store.checkpoint(self.items, self.events, self.notes)
         store.save_memory(self.items)
         store.save_session(self.session, self.events, self.notes)
+        self.last_save, self.dirty = time.time(), False
+        self.timed("save", started)
 
     # ------------------------------------------------------------ lifecycle
 
@@ -671,6 +819,11 @@ class Tracker:
         os.makedirs(p.memory_dir, exist_ok=True)
         with open(p.pidfile, "w") as fh:
             fh.write(str(os.getpid()))
+        self.save_interval = config.SAVE_EVERY          # tests save immediately; the real loop batches
+        with self.lock:                                 # drop thumbnails past their retention
+            if retention.expire_screenshots(self.items):
+                self.save(force=True)
+        self.last_retention_sweep = time.time()
 
         def stop(*_):
             raise KeyboardInterrupt
@@ -722,6 +875,8 @@ class Tracker:
         self.q.put(None)
         self.thread.join(timeout=60)
         with self.lock:
+            if self.dirty:
+                self.save(force=True)                 # flush anything batched
             self.running = False
         if self.input_store:
             with self.lock:
@@ -755,6 +910,14 @@ class Tracker:
                                              plural(per_item[iid], "note") if per_item[iid] else ""] if x)
             say(f"  {store.duration(secs):>7}  {i['app'][:14]:14}  {i['doing'][:70]}"
                 + (f"   ({extra})" if extra else ""))
+        self.sample_resources(time.time() + 30)          # a final reading
+        c = self.cost_report()
+        ms = c["avg_ms"]
+        say(f"\ncost: {c['running_for']} running, {c['cpu_pct_average']}% of a core on average, "
+            f"memory {c['memory_mb']} MB (peak {c['peak_memory_mb']} MB)")
+        say(f"      {c['captures']} captures: {c['skipped_ocr_unchanged']} unchanged (no OCR), "
+            f"{c['ocr']['fast']} fast OCR, {c['ocr']['accurate']} accurate OCR; "
+            f"avg capture {ms['capture']} ms, fast OCR {ms['ocr_fast']} ms, accurate OCR {ms['ocr_accurate']} ms")
         say(f"\nsaved to {os.path.relpath(config.paths().items_file)}")
 
 

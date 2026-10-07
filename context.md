@@ -66,9 +66,11 @@ The agreed MVP is accurate project knowledge exposed to AI agents through MCP,
 with acceptable measured performance and low resource use. Broader companion
 features come after this. Initial source scope is VS Code plus permitted browser
 sites. A [proposed written spec](docs/specs/2026-10-07-automatic-project-memory-design.md)
-is ready for review; the [discussion brief](docs/knowledge-graph-discussion.md)
-records the selected direction. Implementation planning follows written-spec
-approval. No graph or local-model implementation has started.
+is approved; the [discussion brief](docs/knowledge-graph-discussion.md)
+records the selected direction. The [semantic-core implementation plan](docs/plans/2026-10-07-automatic-project-memory.md)
+is written and self-reviewed, awaiting written-plan review. Preserve native
+execution followed by an independent review. No graph or local-model implementation
+has started; live source adapters and MCP remain separate increments.
 
 Recommended order: define one agent workflow and evidence quality criteria;
 enforce app/site access and foreground source boundaries; establish performance

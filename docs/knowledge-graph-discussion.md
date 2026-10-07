@@ -1,6 +1,6 @@
 # Knowledge graph understanding — discussion brief
 
-2026-10-07. Brainstorming complete enough for a [proposed written spec](specs/2026-10-07-automatic-project-memory-design.md); written-spec review is pending. No graph code exists.
+2026-10-07. [Written spec](specs/2026-10-07-automatic-project-memory-design.md) approved; [semantic-core plan](plans/2026-10-07-automatic-project-memory.md) written and awaiting review. No graph code exists.
 
 ## Agreed purpose
 

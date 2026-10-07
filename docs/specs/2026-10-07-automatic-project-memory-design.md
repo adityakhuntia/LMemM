@@ -1,6 +1,6 @@
 # Automatic project memory for AI agents
 
-Date: 2026-10-07. Status: proposed written spec for user review; no graph implementation started.
+Date: 2026-10-07. Status: written spec approved by user; no graph implementation started.
 
 ## 1. Product contract
 

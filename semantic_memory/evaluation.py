@@ -13,15 +13,52 @@ from .store import SemanticStore
 from .episodes import EpisodeBuilder,build_request
 from .inference import validate_extraction
 from .relationships import apply_extraction
-from .retrieval import project_context
-from .retention import semantic_bytes
+from .retrieval import project_context,resolve_citation
+from .retention import semantic_bytes,delete_sources,revoke_scope
+from .scoring import score_assertions
 
 def load_fixture_manifest(path):
     doc=json.loads(Path(path).read_text())
     ids=[c['id'] for c in doc['cases']]
     if len(ids)!=len(set(ids)) or len(ids)<20 or set(doc['development'])&set(doc['heldout']) or set(ids)!=set(doc['development'])|set(doc['heldout']) or len(doc['heldout'])<math.ceil(len(ids)/3):
         raise ValueError("Invalid labelled corpus split")
+    if doc.get('version')==2:
+        for case in doc['cases']:
+            if not isinstance(case.get('gold'),list) or 'membership' not in case:
+                raise ValueError('Missing assertion labels')
+            for gold in case['gold']:
+                if gold.get('kind') not in {'decision','task','observation','suggestion'} or not isinstance(gold.get('statement'),str) or not gold['statement']:
+                    raise ValueError('Invalid assertion label')
     return doc
+
+def _privacy_probes(db,projects,access):
+    start,end='2026-10-07T00:00:00+00:00','2026-10-08T00:00:00+00:00'
+    leaks=probes=0
+    denied=SourceScope(frozenset())
+    full=SourceScope(access.allowed_apps,access.allowed_origins)
+    for project in projects:
+        packet=project_context(db,project,start,end,denied);probes+=1
+        if packet.citations or any((packet.recent_changes,packet.decisions,packet.open_tasks,packet.artifacts,packet.conflicts)):
+            leaks+=1
+        for section in (packet.unknowns,):
+            if any(entry.get('citations') for entry in section):leaks+=1
+    browser_ids={r[0] for r in db.connection.execute('SELECT o.id FROM occurrences o JOIN sources s ON s.id=o.source_id WHERE s.app_id=?',('com.apple.Safari',))}
+    revoke_scope(db,SourceScope(frozenset({'com.apple.Safari'})),dataclasses.replace(access,revision=access.revision+1))
+    for project in projects:
+        packet=project_context(db,project,start,end,full);probes+=1
+        if any(oid in browser_ids for oid in packet.citations):leaks+=1
+    remaining={r[0] for r in db.connection.execute('SELECT id FROM sources')}
+    delete_sources(db,remaining)
+    for project in projects:
+        packet=project_context(db,project,start,end,full);probes+=1
+        if packet.citations or any((packet.recent_changes,packet.decisions,packet.open_tasks,packet.artifacts,packet.conflicts)):
+            leaks+=1
+        if any(entry.get('citations') for entry in packet.unknowns):leaks+=1
+    for oid in browser_ids:
+        probes+=1
+        if resolve_citation(db,oid,full) is not None:leaks+=1
+    return {'forbidden_source_leaks':leaks,'probes':probes,
+            'scope':'empty caller scope, browser revocation, all-source deletion, citation resolution on the evaluated fixture store'}
 
 def score_predictions(rows):
     tp=fp=fn=unsupported=0
@@ -107,17 +144,26 @@ def evaluate(corpus,extractor,split,output=None,timing_repeats=1):
                 expected=set() if case['expected']=='none' else {correct_project}
                 artifact_tp+=len(targets&expected);artifact_fp+=len(targets-expected);artifact_fn+=len(expected-targets)
                 asserted=[r['kind'] for r in db.connection.execute('SELECT kind FROM claims WHERE episode_id=? AND status IN (?,?)',(eid,'supported','user_asserted'))]
-                rows.append({'id':case['id'],'expected':case['expected'],'predicted':predicted,'supported_claims':asserted,'error':error,'seconds':latencies[-1],'output':payload})
+                assertions=[]
+                for claim in db.connection.execute('SELECT * FROM claims WHERE episode_id=?',(eid,)):
+                    refs=[r[0] for r in db.connection.execute('SELECT occurrence_id FROM support WHERE entity_id=?',(claim['id'],))]
+                    assertions.append({'kind':claim['kind'],'statement':claim['statement'],'reason':claim['reason'],
+                                       'task_state':claim['task_state'],'status':claim['status'],'citations':refs})
+                rows.append({'gold':case.get('gold',[]),'evidence':{e['id']:e['text'] for e in request.evidence},'assertions':assertions,'id':case['id'],'expected':case['expected'],'predicted':predicted,'supported_claims':asserted,'error':error,'seconds':latencies[-1],'output':payload})
                 peak_db=max(peak_db,semantic_bytes(db))
             metrics=score_predictions(rows)
             metrics.update(association_precision=artifact_tp/(artifact_tp+artifact_fp) if artifact_tp+artifact_fp else 0,
                            artifact_recall=artifact_tp/(artifact_tp+artifact_fn) if artifact_tp+artifact_fn else 0,
                            association_true_positive=artifact_tp,association_false_positive=artifact_fp,association_false_negative=artifact_fn)
+            assertion_metrics=score_assertions(rows) if corpus.get('version')==2 else None
+            privacy_metrics=_privacy_probes(db,[r[0] for r in db.connection.execute('SELECT id FROM projects')],access)
             # Semantic recall explicitly reported; an empty extractor cannot pass.
             quality_pass=metrics['association_precision']>=.95 and metrics['artifact_recall']>=.8 and metrics['claim_recall']>=.8 and metrics['unsupported_assertions']==0 and not any(r['error'] for r in rows)
-            report={'split':split,'synthetic_corpus':True,'actual_local_model':extractor.__class__.__module__=='semantic_memory.local_runtime',
-                    'model':getattr(extractor,'model','injected'),'manifest_hash':getattr(extractor,'manifest_hash',None),
-                    'metrics':metrics,'quality_pass':False,'classification_gate_pass':quality_pass,'acceptance_incomplete':['proposition/reason accuracy','forbidden-source leakage'],'metric_scope':'candidate type classification; unsupported_assertions counts misclassified candidates, not supported assertions','rows':rows,'latencies_seconds':latencies,'semantic_bytes':peak_db,
+            fixture_quality_pass=bool(assertion_metrics and assertion_metrics['claim_precision']>=.95 and assertion_metrics['claim_recall']>=.8 and assertion_metrics['unsupported_assertions']==0 and assertion_metrics['invalid_citations']==0 and assertion_metrics['invalid_grounding']==0 and privacy_metrics['forbidden_source_leaks']==0 and metrics['association_precision']>=.95 and metrics['artifact_recall']>=.8 and not any(r['error'] for r in rows))
+            report={'corpus_version':corpus.get('version',1),'corpus_hash':__import__('hashlib').sha256(json.dumps(corpus,sort_keys=True).encode()).hexdigest(),
+                    'assertion_metrics':assertion_metrics,'privacy_metrics':privacy_metrics,'fixture_quality_pass':fixture_quality_pass,'split':split,'synthetic_corpus':True,'actual_local_model':extractor.__class__.__module__=='semantic_memory.local_runtime',
+                    'model':getattr(extractor,'model','injected'),'manifest_hash':getattr(extractor,'manifest_hash',None),'extractor_version':getattr(extractor,'version',None),
+                    'metrics':metrics,'quality_pass':fixture_quality_pass and extractor.__class__.__module__=='semantic_memory.local_runtime','classification_gate_pass':quality_pass,'acceptance_incomplete':(['real-session representativeness','full enabled-worker resources'] if assertion_metrics is not None else ['proposition/reason accuracy','forbidden-source leakage']),'metric_scope':'metrics is candidate-type classification; assertion_metrics scores exact gold quote/reason/state and citations on stored claims; privacy_metrics probes evaluated-store boundaries','rows':rows,'latencies_seconds':latencies,'semantic_bytes':peak_db,
                     'python_peak_rss_bytes':resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
                     'energy_metrics':'not measured','resource_pass':False,'selection_pass':False}
         finally:db.close()

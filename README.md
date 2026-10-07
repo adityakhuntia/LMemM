@@ -42,7 +42,7 @@ python3 lmemm.py notes done n-3f9a1c  # tick one off (reopen: notes reopen ID)
 
 | Command | What it does |
 |---|---|
-| `lmemm.py [start] [--every N] [--no-widget]` | watch and remember; capture every N s on the same window (default 5) |
+| `lmemm.py [start] [--every N] [--no-widget]` | watch and remember; N s is the fastest timer on one window (default 5; it slows itself down when nothing changes) |
 | `lmemm.py memory [N] [--content] [--events]` | latest N things; `--content` adds kept excerpts, `--events` the input timeline |
 | `lmemm.py notes [--all] [PROJECT]` | open notes grouped project → thing; `--all` includes done ones |
 | `lmemm.py notes done ID…` / `notes reopen ID…` | mark notes done / open again |
@@ -112,11 +112,22 @@ Click the pill again, or ×, to close it. Start with `--no-widget` to hide it.
 
 ## What it remembers
 
-**When it captures:** on app, tab and window switches (after ~1 s to settle), every 5 s
-on the same window, and on input bursts if the input timeline is on. It pauses when
-you're idle 60 s, locked, asleep or paused, and never captures password managers,
-private/incognito windows, or banking, payment and login pages (`config.py`). A screen
-with no pixel change since the last one skips OCR.
+**When it captures:** on app, tab and window switches (after ~1 s to settle), on a timer
+while you stay on one window, and on input bursts if the input timeline is on. The timer
+runs every 5 s while you're active and **backs off to 10, 20, then 30 s** (15 s in chats)
+while nothing changes and you give no input; any switch, key, scroll or click brings it
+back to 5 s. It pauses when you're idle 60 s, locked, asleep or paused, and never captures
+password managers, private/incognito windows, or banking, payment and login pages
+(`config.py`).
+
+**What a capture costs:** the screen is grabbed inside the program (~25 ms) and lives in
+memory. A screen with no pixel change skips OCR. A changed screen of the window you were
+already on gets fast OCR (~10× cheaper); the first look at a window, notes and pins get
+accurate OCR, and so does a fast pass that finds suspiciously little text. Nothing is
+written to disk for a frame that isn't kept. A kept frame becomes the thing's
+**thumbnail** (480 px, ~15 KB), and thumbnails are deleted after 7 days unless the thing
+is pinned or has an open note. Memory files are written at most every 5 s while running.
+`lmemm.py status` shows what it's costing: CPU, memory, captures, OCR counts and timings.
 
 **What it works out per screen:**
 
@@ -144,7 +155,7 @@ with no pixel change since the last one skips OCR.
 | `memory/sessions/<id>.json` | one session's timeline: when you were on what, and what was resurfaced |
 | `memory/.index.json` | full internal state (source of truth — back this one up) |
 | `memory/inputs/`, `memory/contributions/` | input timeline and per-session evidence (see below) |
-| `<ts>.jpg` / `<ts>.json` | the one screenshot kept per thing, and its capture metadata |
+| `<ts>.jpg` / `<ts>.json` | the one thumbnail kept per thing, and its capture metadata (deleted after 7 days; see above) |
 
 One entry looks like:
 
@@ -174,15 +185,18 @@ deletion works are in [docs/input-timeline.md](docs/input-timeline.md).
 ## Privacy, briefly
 
 - Nothing leaves the Mac. Files are plaintext JSON/JPEG under `data/`, which git ignores.
-- Screenshots are whole displays. The skip-lists use foreground checks, so other
-  windows on screen can still be captured.
+- Captures are whole displays, kept in memory and OCR'd. Only a small thumbnail of the
+  frame that became a thing's screenshot is written to disk, and it expires after 7 days
+  unless the thing is pinned or has an open note. The skip-lists use foreground checks,
+  so other windows on screen can still be captured. (The opt-in input timeline keeps its
+  own full-size frames for at most 24 h.)
 - Voice: on-device recognition only; the helper runs only while the note window is
   open and keeps no audio.
 
 ## Develop
 
 ```bash
-python3 -m unittest discover -s tests      # 110 tests, incl. real on-device OCR
+python3 -m unittest discover -s tests      # 127 tests, incl. real on-device OCR
 ```
 
 [ARCHITECTURE.md](ARCHITECTURE.md) covers how the modules fit and where to extend it.

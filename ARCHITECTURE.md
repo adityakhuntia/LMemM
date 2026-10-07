@@ -50,16 +50,34 @@ Rules that keep this cohesive:
 1. **Trigger** (`tracker.tick`, ~4×/s): a workspace notification, a title/window change
    (one CGWindowList call), the timer, a pin, a note, or input activity. Triggers wait
    `SETTLE` s so a burst of switches becomes one capture.
-2. **Capture** (`tracker.capture`): skip-list check, screenshot of the window's display,
-   re-check that the front window didn't change, write `<ts>.jpg/json`, enqueue.
+2. **Capture** (`tracker.capture`): skip-list check, grab the window's display **in
+   memory** (`macos.grab`, ~25 ms, a `macos.Frame`; falls back to `screencapture` if the OS
+   API is unavailable), re-check that the front window didn't change, enqueue. Nothing is
+   written to disk.
 3. **Resolve** (resolver thread, `tracker.handle`): if the pixels didn't change since the
-   last frame of the same window, reuse its OCR. Otherwise OCR → `understand.describe`.
-   OCR runs outside the memory lock, so saving a note never waits for Vision.
+   last frame of the same window, reuse its OCR. Otherwise `tracker.read`: **fast OCR**
+   for a changed later frame of the same window, **accurate OCR** for the first look,
+   notes, pins, and any fast pass that finds under `THIN_RATIO` of the previous line count.
+   Then `understand.describe`. OCR runs outside the memory lock, so saving a note never
+   waits for Vision.
 4. **Remember** (`tracker.remember`, under the lock):
-   `identity.resolve_item` → `activity.classify` → update the item, keeping one
-   screenshot per thing and dropping redundant frames → extend or start a timeline
-   event → **resurface** open notes on a new visit → attach notes waiting for this
-   frame → `store.save_*`.
+   `identity.resolve_item` → `activity.classify` → update the item → extend or start a
+   timeline event → **resurface** open notes on a new visit → attach notes waiting for
+   this frame → if the frame became the thing's screenshot, write it as a thumbnail
+   (`keep_thumbnail`) → `save()`. A redundant frame is simply released.
+
+## Cost control
+
+| Mechanism | Where | Effect |
+|---|---|---|
+| timer back-off | `Tracker.current_interval`, `idle_steps` | 5 → 10 → 20 → 30 s (15 s in chats) while frames are identical and you give no input; any trigger or input resets it |
+| in-memory capture | `macos.grab`, `Frame` | no subprocesses, no JPEG for frames that aren't kept |
+| fast OCR on continuation | `Tracker.read`, `resolver.resolve_frame(fast=…)` | ~10× less OCR CPU; thin results are redone accurately |
+| thumbnails + retention | `Tracker.keep_thumbnail`, `retention.py` | 480 px / ~15 KB per thing, deleted after `SCREENSHOT_DAYS` unless pinned or an open note |
+| batched writes | `Tracker.save(force=…)`, `maintain()` | memory files at most every `SAVE_EVERY` s; notes, ticks and shutdown write at once |
+| self-measurement | `Tracker.cost_report`, `sample_resources` | CPU, memory, OCR counts and timings in `status` and the session summary; warns on high memory or sustained CPU |
+
+All the knobs are in `config.py`.
 
 ## Notes as pending edits
 
@@ -109,7 +127,7 @@ Rules that keep this cohesive:
 
 ## Testing
 
-`python3 -m unittest discover -s tests` runs 110 tests: real Vision OCR on generated
+`python3 -m unittest discover -s tests` runs 127 tests: real Vision OCR on generated
 images, identity, content, migration, notes/resurfacing/project view, the CLI, input
 events with fake native data, retention and deletion recovery. No test uses the real
 microphone, input tap or your data.

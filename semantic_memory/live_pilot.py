@@ -84,7 +84,7 @@ class Pilot:
       continue
      if envelope and focus==verified:
       self.ingest(envelope)
-      write_private_json(self.bridge.directory/'acks'/(m['client']+'.json'),dict(session=self.bridge.session,window=focus.window,seq=m['seq'],accepted=True))
+      write_private_json(self.bridge.directory/'acks'/(m['client']+'.json'),dict(session=self.bridge.session,window=focus.window,seq=m['seq'],accepted=True,note_id=m.get('note_id'),revision=self.revision))
      elif envelope:self.bridge.last.pop(m.get('client'),None)
     if self.bridge.expire():self.invalidate('client_disconnected')
     with self.store.lock:self.schedule(self.episodes.flush(timestamp(self.clock())))

@@ -119,11 +119,16 @@ class Bridge:
             for s in spans:
                 if not isinstance(s['text'],str) or len(s['text'].encode())>4096 or type(s.get('truncated',False))!=bool: return None
             if sum(len(s['text'].encode()) for s in spans)>16384: return None
-            digest=hashlib.sha256(json.dumps([str(doc),spans,m['kind']],sort_keys=True).encode()).hexdigest()
+            note_id=None;source_at=at
+            if m['kind']=='note':
+                note_id=m.get('note_id');source_at=m.get('note_at')
+                if not isinstance(note_id,str) or not re.fullmatch('[a-f0-9]{32}',note_id):return None
+                if type(source_at) not in (int,float) or not 0<=self.clock()-source_at<=2:return None
+            digest=hashlib.sha256(json.dumps([str(doc),spans,m['kind'],note_id],sort_keys=True).encode()).hexdigest()
             if self.last.get(client)==digest: return None
             self.last[client]=digest
-            sid=identifier('source',self.session+client+str(seq))
-            return SourceEnvelope(sid,datetime.fromtimestamp(at,timezone.utc).isoformat(),self.session,
+            sid=identifier('source',self.session+client+(note_id if note_id else str(seq)))
+            return SourceEnvelope(sid,datetime.fromtimestamp(source_at,timezone.utc).isoformat(),self.session,
                  'com.microsoft.VSCode',str(doc),str(root),True,
                  'user_note' if m['kind']=='note' else 'trusted_artifact_snapshot',
                  tuple(TextSpan(str(i),s['text'],s.get('truncated',False)) for i,s in enumerate(spans)),self.revision)

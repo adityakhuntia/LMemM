@@ -88,7 +88,7 @@ $PY scripts/live_project_memory.py --data-dir "$PWD/data/live-pilot" stop
 Ctrl-C also stops. Context requires retained evidence for that exact workspace root.
 Use `--json` for structured inspection. Source snapshots show observed content;
 they do not prove authorship, changes completed or decisions made. Intentional
-notes through **LMemM: Record Intentional Project Note** are user-authored sources.
+notes through **LMemM: Record Intentional Project Note** are user-authored sources. Wait for **LMemM: project note saved locally** before submitting another note. A failed or interrupted delivery reports an error; submit again after reconnecting. Test decisions and tasks as separate notes, for example `We chose SQLite because memory should stay local.` and `TODO: test restart recovery.`
 Noncanonical/symlink document aliases are denied; open canonical paths. No manual project linking is required: canonical roots anchor project identity.
 
 Pause cancels queued/in-flight results and advances the policy revision. If a

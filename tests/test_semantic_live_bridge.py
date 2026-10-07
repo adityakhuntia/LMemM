@@ -190,3 +190,19 @@ class DisconnectLeaseTests(unittest.TestCase):
   write_private_json(self.bridge.directory/'events'/('a'*32+'.json'),message)
   self.bridge.accept(message,None)
   self.assertEqual(self.bridge.expire(),['a'*32])
+
+class NoteDeliveryTests(unittest.TestCase):
+ setUp=BridgeTests.setUp
+ tearDown=BridgeTests.tearDown
+ msg=BridgeTests.msg
+ connect=BridgeTests.connect
+ def test_note_retries_keep_identity_and_separate_intentional_submissions(self):
+  self.connect();m=self.msg('note',note_id='b'*32,note_at=self.now)
+  first=self.bridge.accept(m,self.focus);self.assertIsNotNone(first)
+  self.bridge.last.clear();self.now+=.5
+  m=self.msg('note',note_id='b'*32,note_at=self.now-.5)
+  retry=self.bridge.accept(m,self.focus)
+  self.assertEqual(first,retry)
+  m=self.msg('note',note_id='c'*32,note_at=self.now)
+  second=self.bridge.accept(m,self.focus);self.assertIsNotNone(second)
+  self.assertNotEqual(first.source_id,second.source_id)

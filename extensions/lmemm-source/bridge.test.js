@@ -43,9 +43,9 @@ test('host pause clears digest and resume publishes fresh source with new revisi
  const directory=path.join(root,'bridge');fs.mkdirSync(directory,{mode:0o700});for(const name of ['events','acks'])fs.mkdirSync(path.join(directory,name),{mode:0o700});
  const grantPath=path.join(directory,'grant.json'),grant={token:crypto.randomBytes(32).toString('hex'),session:'test',roots:[root],active:true,revision:0};
  fs.writeFileSync(grantPath,JSON.stringify(grant),{mode:0o600});
- let text='hello',version=1,poll;const commands={};const status={show(){},hide(){},text:''};
+ let text='hello',version=1,poll;const commands={},errors=[];const status={show(){},hide(){},text:''};
  const editor={document:{uri:{scheme:'file',fsPath:path.join(root,'a.js')},get version(){return version;},getText(){return text;}},visibleRanges:[{start:{line:0},end:{line:1}}]};
- const fake={StatusBarAlignment:{Right:1},ViewColumn:{Active:1},commands:{registerCommand(name,cb){commands[name]=cb;return {dispose(){}};}},workspace:{isTrusted:true,getWorkspaceFolder(){return {uri:{scheme:'file',fsPath:root}};}},window:{state:{focused:true},activeTextEditor:editor,createStatusBarItem(){return status;},async showInputBox(){return grantPath;},showErrorMessage(msg){throw Error(msg);},onDidChangeWindowState(){return {dispose(){}};},createWebviewPanel(){return {webview:{},dispose(){}};}}};
+ const fake={StatusBarAlignment:{Right:1},ViewColumn:{Active:1},commands:{registerCommand(name,cb){commands[name]=cb;return {dispose(){}};}},workspace:{isTrusted:true,getWorkspaceFolder(){return {uri:{scheme:'file',fsPath:root}};}},window:{state:{focused:true},activeTextEditor:editor,createStatusBarItem(){return status;},async showInputBox(options){if(options.prompt.startsWith('Intentional')){grant.revision++;fs.writeFileSync(grantPath,JSON.stringify(grant));return 'TODO: test rollback';}return grantPath;},showInformationMessage(){},showErrorMessage(msg){errors.push(msg);},onDidChangeWindowState(){return {dispose(){}};},createWebviewPanel(){return {webview:{},dispose(){}};}}};
  const originalLoad=Module._load,originalInterval=global.setInterval,originalClear=global.clearInterval;
  try{
   Module._load=function(name,...args){return name==='vscode'?fake:originalLoad.call(this,name,...args);};global.setInterval=cb=>{poll=cb;return 1;};global.clearInterval=()=>{};
@@ -54,9 +54,12 @@ test('host pause clears digest and resume publishes fresh source with new revisi
   fs.writeFileSync(ack,JSON.stringify({session:'test',window:10,seq:m.seq}),{mode:0o600});poll();if(JSON.parse(fs.readFileSync(event)).kind!=='snapshot')poll();
   m=JSON.parse(fs.readFileSync(event));assert.equal(m.kind,'snapshot');
   fs.writeFileSync(ack,JSON.stringify({session:'test',window:10,seq:m.seq,accepted:true}),{mode:0o600});poll();
+  await commands['lmemm.note']();m=JSON.parse(fs.readFileSync(event));assert.equal(m.kind,'note');assert.equal(m.revision,grant.revision);assert.equal(m.spans[0].text,'TODO: test rollback');
+  const noteId=m.note_id;assert.match(noteId,/^[a-f0-9]{32}$/);poll();m=JSON.parse(fs.readFileSync(event));assert.equal(m.kind,'note');assert.equal(m.note_id,noteId);
+  fs.writeFileSync(ack,JSON.stringify({session:'test',window:10,seq:m.seq,accepted:true,note_id:noteId}),{mode:0o600});poll();assert.notEqual(JSON.parse(fs.readFileSync(event)).kind,'note');
   grant.active=false;grant.revision=1;fs.writeFileSync(grantPath,JSON.stringify(grant));text='fresh edit';version++;poll();
   assert.match(status.text,/paused/);assert.equal(fs.existsSync(event),false);
   grant.active=true;grant.revision=2;fs.writeFileSync(grantPath,JSON.stringify(grant));poll();m=JSON.parse(fs.readFileSync(event));
-  assert.equal(m.kind,'snapshot');assert.equal(m.spans[0].text,'fresh edit');assert.equal(m.revision,2);fs.unlinkSync(ack);poll();m=JSON.parse(fs.readFileSync(event));assert.equal(m.kind,'connect');assert.equal(m.spans,undefined);extension.deactivate();
+  assert.equal(m.kind,'snapshot');assert.equal(m.spans[0].text,'fresh edit');assert.equal(m.revision,2);await commands['lmemm.note']();fs.unlinkSync(grantPath);poll();fs.writeFileSync(grantPath,JSON.stringify(grant),{mode:0o600});poll();assert.notEqual(JSON.parse(fs.readFileSync(event)).kind,'note');assert.ok(errors.length);fs.unlinkSync(ack);poll();m=JSON.parse(fs.readFileSync(event));assert.equal(m.kind,'connect');assert.equal(m.spans,undefined);extension.deactivate();
  }finally{Module._load=originalLoad;global.setInterval=originalInterval;global.clearInterval=originalClear;fs.rmSync(root,{recursive:true});}
 });

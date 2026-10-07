@@ -64,6 +64,10 @@ class Paths:
         return os.path.join(self.memory_dir, "pending.json")
 
     @property
+    def semantic_file(self):
+        return os.path.join(self.memory_dir, "semantic.sqlite3")
+
+    @property
     def sessions_dir(self):
         return os.path.join(self.memory_dir, "sessions")
 

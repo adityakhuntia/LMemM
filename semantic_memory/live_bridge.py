@@ -78,7 +78,7 @@ class Bridge:
         return expired
     def accept(self,m,focus):
         try:
-            if len(json.dumps(m).encode())>32768 or not self.active: return None
+            if len(json.dumps(m,ensure_ascii=False).encode())>32768 or not self.active: return None
             if type(m.get('revision'))!=int or m['revision']!=self.revision: return None
             if not hmac.compare_digest(m['token'],self.token) or m['session']!=self.session: return None
             client=m['client']; seq=m['seq']; at=m['at']

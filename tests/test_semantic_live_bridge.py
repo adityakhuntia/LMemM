@@ -134,3 +134,13 @@ class EpochTests(unittest.TestCase):
  def test_expiry_removes_client_and_ack(self):
   self.connect();self.now+=3
   self.assertEqual(self.bridge.expire(),['a'*32]);self.assertFalse(self.bridge.clients)
+
+class UnicodeIngressTests(unittest.TestCase):
+ setUp=BridgeTests.setUp
+ tearDown=BridgeTests.tearDown
+ msg=BridgeTests.msg
+ connect=BridgeTests.connect
+ def test_valid_utf8_envelope_not_charged_as_ascii_escape_expansion(self):
+  self.connect();m=self.msg('snapshot');m['spans']=[dict(text='😀'*1024,truncated=False) for i in range(4)]
+  self.assertLess(len(json.dumps(m,ensure_ascii=False).encode()),32768)
+  self.assertIsNotNone(self.bridge.accept(m,self.focus))

@@ -87,7 +87,8 @@ def build_request(store, episode_id, candidate_limit=8):
         used+=len(text.encode())
     # Anchored local projects nearest this episode, then retained project records.
     projects=store.connection.execute("SELECT p.id,p.locator,max(s.at) latest FROM projects p LEFT JOIN sources s ON s.project_id=p.id GROUP BY p.id ORDER BY latest DESC LIMIT ?",(candidate_limit,)).fetchall()
-    candidates=tuple({'id':p['id'],'locator':p['locator'][:512]} for p in projects)
+    candidates=tuple({'id':p['id'],'locator':p['locator'][:512],
+                      'claims':[dict(r,statement=r['statement'][:160]) for r in store.connection.execute('SELECT id,kind,statement FROM claims WHERE project_id=? AND at<=? ORDER BY at DESC LIMIT 4',(p['id'],row['ended']))]}
+                     for p in projects)
     revision=store.connection.execute("SELECT value FROM meta WHERE key='revision'").fetchone()
     return EpisodeRequest(episode_id,tuple(evidence),candidates,int(revision[0]) if revision else row['revision'],truncated)
-

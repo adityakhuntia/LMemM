@@ -68,9 +68,10 @@ features come after this. Initial source scope is VS Code plus permitted browser
 sites. A [proposed written spec](docs/specs/2026-10-07-automatic-project-memory-design.md)
 is approved; the [discussion brief](docs/knowledge-graph-discussion.md)
 records the selected direction. The [semantic-core implementation plan](docs/plans/2026-10-07-automatic-project-memory.md)
-is written and self-reviewed, awaiting written-plan review. Preserve native
-execution followed by an independent review. No graph or local-model implementation
-has started; live source adapters and MCP remain separate increments.
+was approved and executed in `.worktrees/semantic-project-memory` on
+`feat/semantic-project-memory`. The fixture-driven core and local evaluation
+exist there; no model has passed acceptance. Live source adapters and MCP remain
+separate increments. See [implementation status](docs/semantic-project-memory-status.md).
 
 Recommended order: define one agent workflow and evidence quality criteria;
 enforce app/site access and foreground source boundaries; establish performance
@@ -92,3 +93,18 @@ not proof of a shared project.
 
 One tracker at a time; restart after code/permission changes. README is the user
 guide and ARCHITECTURE.md describes the integrated modules.
+
+## Semantic increment — 2026-10-07
+
+Implemented in the isolated feature worktree: permission-checked SQLite evidence,
+canonical workspace/artifact identity, bounded episodes, validated extraction jobs,
+source-backed claims and relationships, explicit task transitions/corrections,
+retention/deletion, scoped project context and citations. Existing CLI capture does
+not feed semantic evidence yet. Session deletion cleans the semantic DB when present.
+
+Qwen2.5 0.5B and 1.5B were evaluated locally on a fixed synthetic corpus; neither
+passed. Held-out type recall was 17% and 50%. These are classification proxies, not
+factual-accuracy acceptance. No local model is enabled in normal capture. Remaining
+work: strengthen assertion/privacy evaluation, improve local extraction, implement
+FTS candidate selection and independent-episode corroboration, harden total write
+budgets, then add authoritative live sources and scoped read-only MCP.

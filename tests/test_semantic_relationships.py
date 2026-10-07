@@ -1,12 +1,12 @@
+import unittest
+from semantic_helpers import SemanticFixture, source, policy
 import json
-from test_semantic_inference import InferenceTests
-from test_semantic_store import source, policy
 from semantic_memory.episodes import build_request
 from semantic_memory.contracts import TextSpan, Correction
 from semantic_memory.inference import validate_extraction
 from semantic_memory.relationships import apply_extraction, apply_correction
 
-class RelationshipTests(InferenceTests):
+class RelationshipTests(SemanticFixture, unittest.TestCase):
     def test_workspace_and_explicit_note_supported(self):
         self.db.ingest(source(origin_type='user_note',spans=(TextSpan('span1','We decided to use SQLite because it stays local.'),)),policy())
         self.builder.accept('s1'); eid=self.builder.boundary('stop','2026-10-07T10:00:01+00:00')[0]

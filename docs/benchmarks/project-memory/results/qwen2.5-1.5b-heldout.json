@@ -1,0 +1,178 @@
+{
+  "split": "heldout",
+  "synthetic_corpus": true,
+  "actual_local_model": true,
+  "model": "qwen2.5:1.5b",
+  "manifest_hash": "65ec06548149b04c096a120e4a6da9d4017ea809c91734ea5631e89f96ddc57b",
+  "metrics": {
+    "claim_precision": 0.375,
+    "claim_recall": 0.5,
+    "unsupported_assertions": 5,
+    "true_positive": 3,
+    "false_positive": 5,
+    "false_negative": 3,
+    "association_precision": 1.0,
+    "artifact_recall": 0.8333333333333334,
+    "association_true_positive": 5,
+    "association_false_positive": 0,
+    "association_false_negative": 1
+  },
+  "quality_pass": false,
+  "rows": [
+    {
+      "id": "held_code",
+      "expected": "observation",
+      "predicted": [
+        "observation"
+      ],
+      "supported_claims": [
+        "observation"
+      ],
+      "error": null,
+      "seconds": 1.2863596251700073,
+      "output": "{\n  \"candidates\": [\n    {\n      \"type\": \"observation\",\n      \"subject_id\": \"artifact-995a3c09411a26579df5f401\",\n      \"evidence_ids\": [\"evidence-1a779f5456b99f326aa8ba14\"],\n      \"statement\": \"Changed retry.py so a failed transaction leaves no partially written rows.\",\n      \"extraction_status\": \"observed\",\n      \"reason\": \"The text mentions changing a file named `retry.py`.\"\n    }\n  ]\n}"
+    },
+    {
+      "id": "held_decision",
+      "expected": "decision",
+      "predicted": [
+        "decision"
+      ],
+      "supported_claims": [
+        "decision"
+      ],
+      "error": null,
+      "seconds": 1.2656041660811752,
+      "output": "{\n  \"candidates\": [\n    {\n      \"type\": \"decision\",\n      \"subject_id\": \"artifact-4bd52ddca6b115bf5d352c83\",\n      \"evidence_ids\": [\"evidence-9743efd65cf0e0f82a660676\"],\n      \"statement\": \"We chose an explicit cache invalidation step because time based expiry made tests flaky.\",\n      \"extraction_status\": \"explicit\",\n      \"reason\": \"We chose an explicit cache invalidation step because time based expiry made tests flaky.\"\n    }\n  ]\n}"
+    },
+    {
+      "id": "held_task",
+      "expected": "task",
+      "predicted": [
+        "decision"
+      ],
+      "supported_claims": [],
+      "error": null,
+      "seconds": 1.1563567919656634,
+      "output": "{\n  \"candidates\": [\n    {\n      \"type\": \"decision\",\n      \"subject_id\": \"project-197924140d20a9bb8b332a38\",\n      \"evidence_ids\": [\"evidence-0b630efa87c86d634a5bebab\"],\n      \"statement\": \"Next task for project one: test a crash during transaction recovery.\",\n      \"extraction_status\": \"explicit\",\n      \"reason\": \"None\"\n    }\n  ]\n}"
+    },
+    {
+      "id": "held_ai",
+      "expected": "suggestion",
+      "predicted": [
+        "decision",
+        "decision"
+      ],
+      "supported_claims": [],
+      "error": null,
+      "seconds": 2.185371666913852,
+      "output": "{\n  \"candidates\": [\n    {\n      \"type\": \"decision\",\n      \"subject_id\": \"project-e53708460beb9ab5c62433ae\",\n      \"evidence_ids\": [\n        \"evidence-ecec0ee182c0f3abe6476e19\"\n      ],\n      \"statement\": \"AI output recommends moving all keys into Redis. The user has not agreed.\",\n      \"extraction_status\": \"observed\",\n      \"reason\": \"AI output recommendation\"\n    },\n    {\n      \"type\": \"decision\",\n      \"subject_id\": \"project-197924140d20a9bb8b332a38\",\n      \"evidence_ids\": [\n        \"evidence-ecec0ee182c0f3abe6476e19\"\n      ],\n      \"statement\": \"Next task for project one: test a crash during transaction recovery.\",\n      \"extraction_status\": \"observed\",\n      \"reason\": \"AI output recommendation\"\n    }\n  ]\n}"
+    },
+    {
+      "id": "held_reference",
+      "expected": "belongs_to",
+      "predicted": [
+        "decision",
+        "decision"
+      ],
+      "supported_claims": [],
+      "error": null,
+      "seconds": 2.070621666032821,
+      "output": "{\n  \"candidates\": [\n    {\n      \"type\": \"decision\",\n      \"subject_id\": \"project-e53708460beb9ab5c62433ae\",\n      \"evidence_ids\": [\"evidence-3b5dcb82d8aa08e152fcaa1a\"],\n      \"statement\": \"AI output recommends moving all keys into Redis. The user has not agreed.\",\n      \"extraction_status\": \"explicit\",\n      \"reason\": \"AI output recommendation\"\n    },\n    {\n      \"type\": \"decision\",\n      \"subject_id\": \"project-197924140d20a9bb8b332a38\",\n      \"evidence_ids\": [\"evidence-3b5dcb82d8aa08e152fcaa1a\"],\n      \"statement\": \"Next task for project one: test a crash during transaction recovery.\",\n      \"extraction_status\": \"explicit\",\n      \"reason\": \"Next task recommendation\"\n    }\n  ]\n}"
+    },
+    {
+      "id": "held_unrelated",
+      "expected": "none",
+      "predicted": [
+        "decision",
+        "decision"
+      ],
+      "supported_claims": [],
+      "error": null,
+      "seconds": 2.178007750073448,
+      "output": "{\n  \"candidates\": [\n    {\n      \"type\": \"decision\",\n      \"subject_id\": \"project-e53708460beb9ab5c62433ae\",\n      \"evidence_ids\": [\"evidence-4f3f25e77a0f2635d4418872\"],\n      \"statement\": \"AI output recommends moving all keys into Redis. The user has not agreed.\",\n      \"extraction_status\": \"explicit\",\n      \"reason\": \"AI output recommendation\"\n    },\n    {\n      \"type\": \"decision\",\n      \"subject_id\": \"project-197924140d20a9bb8b332a38\",\n      \"evidence_ids\": [\"evidence-4f3f25e77a0f2635d4418872\"],\n      \"statement\": \"Next task for project one: test a crash during transaction recovery.\",\n      \"extraction_status\": \"explicit\",\n      \"reason\": \"Next task recommendation\"\n    }\n  ]\n}"
+    },
+    {
+      "id": "held_ambiguous",
+      "expected": "none",
+      "predicted": [
+        "decision",
+        "decision"
+      ],
+      "supported_claims": [],
+      "error": null,
+      "seconds": 2.284834041027352,
+      "output": "{\n  \"candidates\": [\n    {\n      \"type\": \"decision\",\n      \"subject_id\": \"artifact-4cd3703a53ced5701f8a3395\",\n      \"evidence_ids\": [\n        \"evidence-df491d6c8f175345d5b4897b\"\n      ],\n      \"statement\": \"AI output recommends moving all keys into Redis. The user has not agreed.\",\n      \"extraction_status\": \"explicit\",\n      \"reason\": \"AI output recommendation\"\n    },\n    {\n      \"type\": \"decision\",\n      \"subject_id\": \"artifact-4cd3703a53ced5701f8a3395\",\n      \"evidence_ids\": [\n        \"evidence-df491d6c8f175345d5b4897b\"\n      ],\n      \"statement\": \"We chose an explicit cache invalidation step because time based expiry made tests flaky.\",\n      \"extraction_status\": \"explicit\",\n      \"reason\": \"User decision\"\n    }\n  ]\n}"
+    },
+    {
+      "id": "held_decision_unknown",
+      "expected": "decision",
+      "predicted": [
+        "decision"
+      ],
+      "supported_claims": [],
+      "error": null,
+      "seconds": 1.195994625100866,
+      "output": "{\n  \"candidates\": [\n    {\n      \"type\": \"decision\",\n      \"subject_id\": \"project-197924140d20a9bb8b332a38\",\n      \"evidence_ids\": [\"evidence-3f8687b3ea2956d69d5a1cc7\"],\n      \"statement\": \"Next task for project one: test a crash during transaction recovery.\",\n      \"extraction_status\": \"explicit\",\n      \"reason\": \"The user has not agreed with the AI output recommendation.\"\n    }\n  ]\n}"
+    }
+  ],
+  "latencies_seconds": [
+    2.885635625105351,
+    1.2533539170399308,
+    1.2948190001770854,
+    1.2863596251700073,
+    1.5666141249239445,
+    1.2750227500218898,
+    1.252343500033021,
+    1.2656041660811752,
+    1.5122217920143157,
+    1.2170945000834763,
+    1.153518999926746,
+    1.1563567919656634,
+    2.6495658750645816,
+    2.4563730829395354,
+    2.1968028750270605,
+    2.185371666913852,
+    2.482591375010088,
+    2.1900164580438286,
+    2.0759540831204504,
+    2.070621666032821,
+    2.573251999914646,
+    2.183116667205468,
+    2.1905558749567717,
+    2.178007750073448,
+    2.6578380409628153,
+    2.263136041117832,
+    2.2547986251302063,
+    2.284834041027352,
+    1.624253457877785,
+    1.1957930838689208,
+    1.1885599580127746,
+    1.195994625100866
+  ],
+  "semantic_bytes": 151552,
+  "python_peak_rss_bytes": 33406976,
+  "energy_metrics": "not measured",
+  "resource_pass": false,
+  "selection_pass": false,
+  "runtime_peak_bytes": 1542455296,
+  "runtime_weight_hashes": [
+    "sha256:183715c435899236895da3869489cc30ac241476b4971a20285b1a462818a5b4",
+    "sha256:66b9ea09bd5b7099cbb4fc820f31b575c0366fa439b08245566692c6784e281e",
+    "sha256:eb4402837c7829a690fa845de4d7f3fd842c2adee476d5341da8a46ea9255175",
+    "sha256:832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e"
+  ],
+  "p95_seconds": 2.6578380409628153,
+  "timing_samples": 32,
+  "idle_cpu_percent": null,
+  "resource_incomplete": [
+    "60-second idle CPU sample"
+  ],
+  "resource_partial_pass": true,
+  "metric_scope": "Candidate type classification, not proposition accuracy. unsupported_assertions counts misclassified decision candidates, not supported assertions.",
+  "acceptance_incomplete": [
+    "proposition/reason accuracy",
+    "forbidden-source leakage",
+    "full enabled-worker resource baseline"
+  ]
+}

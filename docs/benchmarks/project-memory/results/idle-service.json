@@ -1,0 +1,8 @@
+{
+  "pid": 1890,
+  "command": "ollama serve",
+  "seconds": 60.0050932909362,
+  "idle_cpu_percent": 0.0,
+  "scope": "unloaded isolated Ollama service only; no live semantic worker or capture",
+  "acceptance_complete": false
+}

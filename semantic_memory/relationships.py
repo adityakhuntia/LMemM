@@ -53,12 +53,20 @@ def apply_extraction_in_transaction(store,episode_id,result,request):
             continue
         user_explicit=any(e['origin_type']=='user_note' for e in selected)
         texts=[e['text'] for e in selected if e['origin_type']=='user_note']
-        status='supported' if kind in {'observation','suggestion'} else 'inferred'
+        grounded=any(' '.join(statement.split()).lower() in ' '.join(e['text'].split()).lower() for e in selected)
+        status='supported' if grounded and kind in {'observation','suggestion'} else 'inferred'
         state=None
-        if kind=='decision' and user_explicit and any(re.match(r"\s*(?:we|i)\s+(?:decided|chose|agreed|selected)\b",t,re.I) for t in texts):
+        if kind=='decision' and grounded and user_explicit and any(re.match(r"\s*(?:we|i)\s+(?:decided|chose|agreed|selected)\b",t,re.I) and statement.lower() in t.lower() for t in texts):
             status='supported'
-        if kind=='task' and user_explicit and any(re.match(r"\s*(?:next task|todo|i will|we will)\b",t,re.I) for t in texts):
+        if kind=='task' and grounded and user_explicit and any(re.match(r"\s*(?:next task|todo|i will|we will)\b",t,re.I) and statement.lower() in t.lower() for t in texts):
             status='supported'; state='open'
+        transition=candidate.get('task_state')
+        if kind=='task' and transition in {'completed','reopened'} and obj:
+            target=c.execute("SELECT * FROM claims WHERE id=? AND kind='task' AND task_state='open'",(obj,)).fetchone()
+            pattern=r'\s*completed task\b' if transition=='completed' else r'\s*reopen task\b'
+            target_text=target['statement'].split(':',1)[-1].strip().rstrip('.').lower() if target else ''
+            if target and grounded and any(re.match(pattern,t,re.I) and target_text in t.lower() for t in texts):
+                status='supported';state=transition
         reason=candidate.get('reason')
         if not reason or not any(reason.lower() in e['text'].lower() for e in selected):
             reason=None
@@ -70,6 +78,8 @@ def apply_extraction_in_transaction(store,episode_id,result,request):
         cid=identifier('claim',subject+'|'+kind+'|'+statement)
         c.execute("INSERT OR IGNORE INTO claims VALUES(?,?,?,?,?,?,?,?,?)",(cid,episode_id,project,kind,statement,status,state,at,reason))
         _support(c,cid,refs,episode_id,'extraction'); claims+=1
+        if state in {'completed','reopened'}:
+            _edge(c,cid,obj,'supersedes','supported',at,refs,episode_id,'task_transition')
     return ApplyResult(claims,edges)
 
 def apply_extraction(store,episode_id,result):
@@ -101,7 +111,20 @@ def apply_correction(store,correction):
 def recompute_support(store,entity_ids):
     c=store.connection
     for eid in entity_ids:
-        if c.execute("SELECT 1 FROM support WHERE entity_id=? LIMIT 1",(eid,)).fetchone(): continue
-        c.execute("DELETE FROM claims WHERE id=?",(eid,))
-        c.execute("DELETE FROM edges WHERE id=? AND status!='user_asserted'",(eid,))
-
+        ids=[r[0] for r in c.execute("SELECT occurrence_id FROM support WHERE entity_id=?",(eid,))]
+        evidence=store.evidence(ids)
+        claim=c.execute('SELECT * FROM claims WHERE id=?',(eid,)).fetchone()
+        if claim:
+            # A surviving citation must independently ground the full claim;
+            # partial public support cannot retain derived private text.
+            grounded=any(claim['statement'].lower() in e['text'].lower() and
+                         (claim['kind'] not in {'decision','task'} or e['origin_type']=='user_note')
+                         and (not claim['reason'] or claim['reason'].lower() in e['text'].lower()) for e in evidence)
+            if not grounded:c.execute('DELETE FROM claims WHERE id=?',(eid,))
+        edge=c.execute('SELECT * FROM edges WHERE id=?',(eid,)).fetchone()
+        if not edge or edge['status']=='user_asserted':continue
+        if not evidence:c.execute('DELETE FROM edges WHERE id=?',(eid,));continue
+        if edge['kind']=='belongs_to':
+            project=c.execute('SELECT locator FROM projects WHERE id=?',(edge['object_id'],)).fetchone()
+            strong=any(e['project_id']==edge['object_id'] or (project and project[0] in e['text']) for e in evidence)
+            c.execute('UPDATE edges SET status=? WHERE id=?',('supported' if strong else 'inferred',eid))

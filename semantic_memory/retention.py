@@ -53,9 +53,13 @@ def enforce_budget(store,now,raw_root=None,semantic_limit=250*1024*1024,raw_limi
     at=datetime.fromisoformat(utc(now)); cutoff=(at-timedelta(days=30)).isoformat()
     expired={r[0] for r in store.connection.execute('SELECT id FROM sources WHERE pinned=0 AND at<?',(cutoff,))}
     pruned=delete_sources(store,expired).sources
+    with store.lock:
+        store.connection.execute('VACUUM')
     if semantic_bytes(store)>semantic_limit:
         for row in store.connection.execute('SELECT id FROM sources WHERE pinned=0 ORDER BY at').fetchall():
             pruned+=delete_sources(store,{row[0]}).sources
+            with store.lock:
+                store.connection.execute('VACUUM')
             if semantic_bytes(store)<=semantic_limit: break
         with store.lock:
             store.connection.execute('VACUUM')
@@ -81,4 +85,3 @@ def enforce_budget(store,now,raw_root=None,semantic_limit=250*1024*1024,raw_limi
         c.execute("INSERT OR REPLACE INTO meta VALUES('paused',?)",(reason or '',))
         c.execute("INSERT OR REPLACE INTO meta VALUES('semantic_limit',?)",(str(semantic_limit),))
     return BudgetStatus(semantic_bytes(store),raw_bytes,pruned,reason)
-

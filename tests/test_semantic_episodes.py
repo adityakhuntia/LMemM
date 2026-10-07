@@ -1,8 +1,9 @@
-from test_semantic_store import StoreTests, source, policy
+import unittest
+from semantic_helpers import SemanticFixture, source, policy
 from semantic_memory.episodes import EpisodeBuilder, build_request
 
 
-class EpisodeTests(StoreTests):
+class EpisodeTests(SemanticFixture, unittest.TestCase):
     def setUp(self):
         super().setUp()
         self.builder = EpisodeBuilder(self.db)

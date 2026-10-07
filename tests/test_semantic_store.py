@@ -7,28 +7,10 @@ from semantic_memory.contracts import AccessPolicy, SourceEnvelope, TextSpan
 from semantic_memory.store import SemanticStore
 
 
-def policy(revision=1):
-    return AccessPolicy(revision, frozenset({'com.microsoft.VSCode', 'com.apple.Safari'}),
-                        frozenset({'https://docs.example.org'}), frozenset())
+from semantic_helpers import source, policy, SemanticFixture
 
 
-def source(sid='s1', **changes):
-    values = dict(source_id=sid, at='2026-10-07T10:00:00+00:00', session_id='session',
-                  app_id='com.microsoft.VSCode', artifact_locator='/projects/one/main.py',
-                  workspace_locator='/projects/one', identity_authoritative=True,
-                  origin_type='observed_screen_text', spans=(TextSpan('span1', 'Use local storage.', False),),
-                  policy_revision=1, private_context=False, browser_context_known=True)
-    values.update(changes)
-    return SourceEnvelope(**values)
-
-
-class StoreTests(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.db = SemanticStore(Path(self.tmp.name) / 'semantic.sqlite3')
-        self.addCleanup(self.db.close)
-
+class StoreTests(SemanticFixture, unittest.TestCase):
     def test_duplicate_source_is_idempotent(self):
         first = self.db.ingest(source(), policy())
         again = self.db.ingest(source(), policy())

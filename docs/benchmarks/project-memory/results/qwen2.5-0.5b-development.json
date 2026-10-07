@@ -1,0 +1,285 @@
+{
+  "split": "development",
+  "synthetic_corpus": true,
+  "actual_local_model": true,
+  "model": "qwen2.5:0.5b",
+  "manifest_hash": "a8b0c51577010a279d933d14c2a8ab4b268079d44c5c8830c0a93900f1827c67",
+  "metrics": {
+    "claim_precision": 0.21052631578947367,
+    "claim_recall": 0.2857142857142857,
+    "unsupported_assertions": 1,
+    "true_positive": 4,
+    "false_positive": 15,
+    "false_negative": 10,
+    "association_precision": 1.0,
+    "artifact_recall": 0.8571428571428571,
+    "association_true_positive": 12,
+    "association_false_positive": 0,
+    "association_false_negative": 2
+  },
+  "quality_pass": false,
+  "rows": [
+    {
+      "id": "code_one",
+      "expected": "observation",
+      "predicted": [
+        "observation",
+        "observation"
+      ],
+      "supported_claims": [
+        "observation",
+        "observation"
+      ],
+      "error": null,
+      "seconds": 2.2886597921606153,
+      "output": "{\"candidates\": [{\"type\": \"observation\", \"subject_id\": \"project-197924140d20a9bb8b332a38\", \"evidence_ids\": [\"evidence-be69bf26f387859176b609d1\"], \"statement\": \"Updated storage.py to use SQLite transactions.\", \"extraction_status\": \"explicit\", \"reason\": \"The evidence explicitly states the action taken.\"}, {\"type\": \"observation\", \"subject_id\": \"project-e53708460beb9ab5c62433ae\", \"evidence_ids\": [\"evidence-be69bf26f387859176b609d1\"], \"statement\": \"Updated storage.py to use SQLite transactions.\", \"extraction_status\": \"explicit\", \"reason\": \"The evidence explicitly states the action taken.\"}]}"
+    },
+    {
+      "id": "code_two",
+      "expected": "observation",
+      "predicted": [
+        "observation",
+        "observation"
+      ],
+      "supported_claims": [
+        "observation",
+        "observation"
+      ],
+      "error": null,
+      "seconds": 1.2171974580269307,
+      "output": "{\"candidates\": [{\"type\": \"observation\", \"subject_id\": \"project-e53708460beb9ab5c62433ae\", \"evidence_ids\": [\"evidence-9b42b0f7faf93eba532735d5\"], \"statement\": \"Updated cache.py to use immutable cache keys.\", \"extraction_status\": \"explicit\", \"reason\": \"The evidence directly quotes the source text of the project's code file.\"}, {\"type\": \"observation\", \"subject_id\": \"project-197924140d20a9bb8b332a38\", \"evidence_ids\": [\"evidence-9b42b0f7faf93eba532735d5\"], \"statement\": \"Updated cache.py to use immutable cache keys.\", \"extraction_status\": \"explicit\", \"reason\": \"The evidence directly quotes the source text of the project's code file.\"}]}"
+    },
+    {
+      "id": "decision_one",
+      "expected": "decision",
+      "predicted": [
+        "observation",
+        "observation"
+      ],
+      "supported_claims": [
+        "observation",
+        "observation"
+      ],
+      "error": null,
+      "seconds": 1.3819122910499573,
+      "output": "{\"candidates\": [{\"type\": \"observation\", \"subject_id\": \"project-197924140d20a9bb8b332a38\", \"evidence_ids\": [\"evidence-0bee2110279a05bb4b38e44c\"], \"statement\": \"We decided to use SQLite transactions in project one because partial writes must be avoided.\", \"extraction_status\": \"explicit\", \"reason\": \"The text explicitly states that partial writes must be avoided in project one.\"}, {\"type\": \"observation\", \"subject_id\": \"project-e53708460beb9ab5c62433ae\", \"evidence_ids\": [\"evidence-0bee2110279a05bb4b38e44c\"], \"statement\": \"We decided to use SQLite transactions in project one because partial writes must be avoided.\", \"extraction_status\": \"explicit\", \"reason\": \"The text explicitly states that partial writes must be avoided in project e53708460beb9ab5c62433ae.\"}]}"
+    },
+    {
+      "id": "decision_two",
+      "expected": "decision",
+      "predicted": [
+        "observation",
+        "observation"
+      ],
+      "supported_claims": [
+        "observation",
+        "observation"
+      ],
+      "error": null,
+      "seconds": 1.2565481250640005,
+      "output": "{\"candidates\": [{\"type\": \"observation\", \"subject_id\": \"project-e53708460beb9ab5c62433ae\", \"evidence_ids\": [\"evidence-96516880d4e621fb8ca49803\"], \"statement\": \"We decided to invalidate cache keys in project two because old values were returned.\", \"extraction_status\": \"explicit\", \"reason\": \"The evidence explicitly states the decision made by the team.\"}, {\"type\": \"observation\", \"subject_id\": \"project-197924140d20a9bb8b332a38\", \"evidence_ids\": [\"evidence-96516880d4e621fb8ca49803\"], \"statement\": \"We decided to invalidate cache keys in project two because old values were returned.\", \"extraction_status\": \"explicit\", \"reason\": \"The evidence explicitly states the decision made by the team.\"}]}"
+    },
+    {
+      "id": "task_one",
+      "expected": "task",
+      "predicted": [
+        "observation",
+        "observation"
+      ],
+      "supported_claims": [
+        "observation"
+      ],
+      "error": null,
+      "seconds": 1.1785378749482334,
+      "output": "{\"candidates\": [{\"type\": \"observation\", \"subject_id\": \"project-197924140d20a9bb8b332a38\", \"evidence_ids\": [\"evidence-abd592e042ac9b1f7bd33e85\"], \"statement\": \"Next task for project one: add a rollback test.\", \"extraction_status\": \"explicit\", \"reason\": \"The evidence directly states the task for project one.\"}, {\"type\": \"observation\", \"subject_id\": \"project-e53708460beb9ab5c62433ae\", \"evidence_ids\": [\"evidence-abd592e042ac9b1f7bd33e85\"], \"statement\": \"Next task for project two: add a rollback test.\", \"extraction_status\": \"explicit\", \"reason\": \"The evidence directly states the task for project two.\"}]}"
+    },
+    {
+      "id": "task_two",
+      "expected": "task",
+      "predicted": [
+        "observation",
+        "observation"
+      ],
+      "supported_claims": [
+        "observation"
+      ],
+      "error": null,
+      "seconds": 1.19388558389619,
+      "output": "{\"candidates\": [{\"type\": \"observation\", \"subject_id\": \"project-e53708460beb9ab5c62433ae\", \"evidence_ids\": [\"evidence-cd40ccb34405fe211ac8b7e8\"], \"statement\": \"Next task for project two: benchmark the cache eviction path.\", \"extraction_status\": \"explicit\", \"reason\": \"The evidence directly states the task for project two.\"}, {\"type\": \"observation\", \"subject_id\": \"project-197924140d20a9bb8b332a38\", \"evidence_ids\": [\"evidence-cd40ccb34405fe211ac8b7e8\"], \"statement\": \"Next task for project one: benchmark the cache eviction path.\", \"extraction_status\": \"explicit\", \"reason\": \"The evidence directly states the task for project one.\"}]}"
+    },
+    {
+      "id": "suggestion_one",
+      "expected": "suggestion",
+      "predicted": [
+        "observation",
+        "observation"
+      ],
+      "supported_claims": [
+        "observation",
+        "observation"
+      ],
+      "error": null,
+      "seconds": 1.284043624997139,
+      "output": "{\"candidates\": [{\"type\": \"observation\", \"subject_id\": \"project-197924140d20a9bb8b332a38\", \"evidence_ids\": [\"evidence-f86d156638a51d453d84b3ac\"], \"statement\": \"replace SQLite with a hosted database. This has not been adopted.\", \"extraction_status\": \"explicit\", \"reason\": \"The evidence explicitly states the AI suggestion to replace SQLite with a hosted database.\"}, {\"type\": \"observation\", \"subject_id\": \"project-e53708460beb9ab5c62433ae\", \"evidence_ids\": [\"evidence-f86d156638a51d453d84b3ac\"], \"statement\": \"replace SQLite with a hosted database. This has not been adopted.\", \"extraction_status\": \"explicit\", \"reason\": \"The evidence explicitly states the AI suggestion to replace SQLite with a hosted database.\"}]}"
+    },
+    {
+      "id": "suggestion_two",
+      "expected": "suggestion",
+      "predicted": [
+        "observation",
+        "task",
+        "task"
+      ],
+      "supported_claims": [
+        "observation"
+      ],
+      "error": null,
+      "seconds": 1.7597749580163509,
+      "output": "{\"candidates\": [{\"type\": \"observation\", \"subject_id\": \"artifact-4bd52ddca6b115bf5d352c83\", \"evidence_ids\": [\"evidence-968b0c5411d06342ae7bf6ab\"], \"statement\": \"remove the cache; this is not a user decision.\", \"extraction_status\": \"explicit\", \"reason\": \"The AI suggestion is a clear and explicit choice made by the system.\"}, {\"type\": \"task\", \"subject_id\": \"project-e53708460beb9ab5c62433ae\", \"evidence_ids\": [\"evidence-968b0c5411d06342ae7bf6ab\"], \"statement\": \"remove the cache; this is not a user decision.\", \"extraction_status\": \"observed\", \"reason\": \"The AI suggestion is a clear and explicit choice made by the system.\"}, {\"type\": \"task\", \"subject_id\": \"project-197924140d20a9bb8b332a38\", \"evidence_ids\": [\"evidence-968b0c5411d06342ae7bf6ab\"], \"statement\": \"remove the cache; this is not a user decision.\", \"extraction_status\": \"observed\", \"reason\": \"The AI suggestion is a clear and explicit choice made by the system.\"}]}"
+    },
+    {
+      "id": "reference_one",
+      "expected": "belongs_to",
+      "predicted": [
+        "observation",
+        "observation"
+      ],
+      "supported_claims": [
+        "observation"
+      ],
+      "error": null,
+      "seconds": 1.2439834580291063,
+      "output": "{\"candidates\": [{\"type\": \"observation\", \"subject_id\": \"project-197924140d20a9bb8b332a38\", \"evidence_ids\": [\"evidence-226cf997a698538176917553\"], \"statement\": \"SQLite transaction reference for /projects/one/storage.py.\", \"extraction_status\": \"explicit\", \"reason\": \"The evidence is a reference to a project ID, which is not trusted quoted data.\"}, {\"type\": \"observation\", \"subject_id\": \"project-e53708460beb9ab5c62433ae\", \"evidence_ids\": [\"evidence-226cf997a698538176917553\"], \"statement\": \"SQLite transaction reference for /projects/two/storage.py.\", \"extraction_status\": \"explicit\", \"reason\": \"The evidence is a reference to a project ID, which is not trusted quoted data.\"}]}"
+    },
+    {
+      "id": "reference_two",
+      "expected": "belongs_to",
+      "predicted": [
+        "observation",
+        "decision",
+        "task",
+        "suggestion",
+        "task"
+      ],
+      "supported_claims": [
+        "observation",
+        "suggestion"
+      ],
+      "error": null,
+      "seconds": 2.566942499950528,
+      "output": "{\"candidates\": [{\"type\": \"observation\", \"subject_id\": \"artifact-b8f02ee44fba32cb519ac4e4\", \"evidence_ids\": [\"evidence-1cee93ee8da0fdabec4a6483\"], \"statement\": \"Cache key reference for /projects/two/cache.py.\", \"extraction_status\": \"explicit\", \"reason\": \"The evidence directly quotes the project work from the evidence.\"}, {\"type\": \"decision\", \"subject_id\": \"artifact-b8f02ee44fba32cb519ac4e4\", \"evidence_ids\": [\"evidence-1cee93ee8da0fdabec4a6483\"], \"statement\": \"Cache key reference for /projects/two/cache.py.\", \"extraction_status\": \"observed\", \"reason\": \"The evidence is not directly quoted but is used to extract the project work.\"}, {\"type\": \"task\", \"subject_id\": \"artifact-b8f02ee44fba32cb519ac4e4\", \"evidence_ids\": [\"evidence-1cee93ee8da0fdabec4a6483\"], \"statement\": \"Cache key reference for /projects/two/cache.py.\", \"extraction_status\": \"observed\", \"reason\": \"The evidence is used to extract the project work.\"}, {\"type\": \"suggestion\", \"subject_id\": \"artifact-b8f02ee44fba32cb519ac4e4\", \"evidence_ids\": [\"evidence-1cee93ee8da0fdabec4a6483\"], \"statement\": \"Cache key reference for /projects/two/cache.py.\", \"extraction_status\": \"observed\", \"reason\": \"The evidence is used to extract the project work.\"}, {\"type\": \"task\", \"subject_id\": \"artifact-b8f02ee44fba32cb519ac4e4\", \"evidence_ids\": [\"evidence-1cee93ee8da0fdabec4a6483\"], \"statement\": \"Cache key reference for /projects/two/cache.py.\", \"extraction_status\": \"observed\", \"reason\": \"The evidence is used to extract the project work.\"}]}"
+    },
+    {
+      "id": "unrelated_weather",
+      "expected": "none",
+      "predicted": [
+        "observation",
+        "observation"
+      ],
+      "supported_claims": [
+        "observation",
+        "observation"
+      ],
+      "error": null,
+      "seconds": 1.1728916249703616,
+      "output": "{\"candidates\": [{\"type\": \"observation\", \"subject_id\": \"project-e53708460beb9ab5c62433ae\", \"evidence_ids\": [\"evidence-0d3a92479694d79a3ddcc954\"], \"statement\": \"Weather forecast: rain tomorrow in London.\", \"extraction_status\": \"explicit\", \"reason\": \"Weather forecast text is explicitly quoted.\"}, {\"type\": \"observation\", \"subject_id\": \"project-197924140d20a9bb8b332a38\", \"evidence_ids\": [\"evidence-0d3a92479694d79a3ddcc954\"], \"statement\": \"Weather forecast: rain tomorrow in London.\", \"extraction_status\": \"explicit\", \"reason\": \"Weather forecast text is explicitly quoted.\"}]}"
+    },
+    {
+      "id": "unrelated_music",
+      "expected": "none",
+      "predicted": [
+        "observation",
+        "observation"
+      ],
+      "supported_claims": [
+        "observation",
+        "observation"
+      ],
+      "error": null,
+      "seconds": 1.238628167193383,
+      "output": "{\"candidates\": [{\"type\": \"observation\", \"subject_id\": \"project-e53708460beb9ab5c62433ae\", \"evidence_ids\": [\"evidence-de8c8692ec053379f89de6cd\"], \"statement\": \"Music charts and upcoming concerts.\", \"extraction_status\": \"explicit\", \"reason\": \"The evidence directly quotes the text 'Music charts and upcoming concerts.'\"}, {\"type\": \"observation\", \"subject_id\": \"project-197924140d20a9bb8b332a38\", \"evidence_ids\": [\"evidence-de8c8692ec053379f89de6cd\"], \"statement\": \"Music charts and upcoming concerts.\", \"extraction_status\": \"explicit\", \"reason\": \"The evidence directly quotes the text 'Music charts and upcoming concerts.'\"}]}"
+    },
+    {
+      "id": "unknown_reason",
+      "expected": "decision",
+      "predicted": [
+        "observation",
+        "observation"
+      ],
+      "supported_claims": [
+        "observation",
+        "observation"
+      ],
+      "error": null,
+      "seconds": 1.0856338748708367,
+      "output": "{\"candidates\": [{\"type\": \"observation\", \"subject_id\": \"project-197924140d20a9bb8b332a38\", \"evidence_ids\": [\"evidence-11ca98c793efd66129c30f24\"], \"statement\": \"We decided to keep the existing database.\", \"extraction_status\": \"explicit\", \"reason\": \"no reason was recorded\"}, {\"type\": \"observation\", \"subject_id\": \"project-e53708460beb9ab5c62433ae\", \"evidence_ids\": [\"evidence-11ca98c793efd66129c30f24\"], \"statement\": \"No reason was recorded.\", \"extraction_status\": \"explicit\", \"reason\": \"no reason was recorded\"}]}"
+    },
+    {
+      "id": "done_task",
+      "expected": "observation",
+      "predicted": [
+        "observation",
+        "observation"
+      ],
+      "supported_claims": [
+        "observation"
+      ],
+      "error": null,
+      "seconds": 1.2044835828710347,
+      "output": "{\"candidates\": [{\"type\": \"observation\", \"subject_id\": \"project-197924140d20a9bb8b332a38\", \"evidence_ids\": [\"evidence-d049a412263313eb314eb442\"], \"statement\": \"Completed the rollback test task for project one.\", \"extraction_status\": \"explicit\", \"reason\": \"The evidence explicitly states that the project is 'project one'.\"}, {\"type\": \"observation\", \"subject_id\": \"project-e53708460beb9ab5c62433ae\", \"evidence_ids\": [\"evidence-d049a412263313eb314eb442\"], \"statement\": \"Completed the rollback test task for project two.\", \"extraction_status\": \"explicit\", \"reason\": \"The evidence explicitly states that the project is 'project two'.\"}]}"
+    },
+    {
+      "id": "reopen_task",
+      "expected": "observation",
+      "predicted": [
+        "observation",
+        "observation"
+      ],
+      "supported_claims": [
+        "observation",
+        "observation"
+      ],
+      "error": null,
+      "seconds": 1.300443666987121,
+      "output": "{\"candidates\": [{\"type\": \"observation\", \"subject_id\": \"project-197924140d20a9bb8b332a38\", \"evidence_ids\": [\"evidence-c1ba5c44c0b1cc9439794d91\"], \"statement\": \"Reopen the rollback test task for project one; it still fails.\", \"extraction_status\": \"explicit\", \"reason\": \"The evidence directly quotes the text of the task and provides a clear statement about the task.\"}, {\"type\": \"observation\", \"subject_id\": \"project-e53708460beb9ab5c62433ae\", \"evidence_ids\": [\"evidence-c1ba5c44c0b1cc9439794d91\"], \"statement\": \"Reopen the rollback test task for project one; it still fails.\", \"extraction_status\": \"explicit\", \"reason\": \"The evidence directly quotes the text of the task and provides a clear statement about the task.\"}]}"
+    },
+    {
+      "id": "conflict",
+      "expected": "decision",
+      "predicted": [],
+      "supported_claims": [],
+      "error": "ValueError",
+      "seconds": 3.832935582846403,
+      "output": null
+    }
+  ],
+  "latencies_seconds": [
+    2.2886597921606153,
+    1.2171974580269307,
+    1.3819122910499573,
+    1.2565481250640005,
+    1.1785378749482334,
+    1.19388558389619,
+    1.284043624997139,
+    1.7597749580163509,
+    1.2439834580291063,
+    2.566942499950528,
+    1.1728916249703616,
+    1.238628167193383,
+    1.0856338748708367,
+    1.2044835828710347,
+    1.300443666987121,
+    3.832935582846403
+  ],
+  "semantic_bytes": 167936,
+  "python_peak_rss_bytes": 28950528,
+  "energy_metrics": "not measured",
+  "resource_pass": false,
+  "selection_pass": false,
+  "metric_scope": "Candidate type classification, not proposition accuracy. unsupported_assertions counts misclassified decision candidates, not supported assertions.",
+  "acceptance_incomplete": [
+    "proposition/reason accuracy",
+    "forbidden-source leakage",
+    "full enabled-worker resource baseline"
+  ]
+}

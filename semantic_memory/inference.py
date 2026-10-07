@@ -16,8 +16,9 @@ def validate_extraction(payload, request):
     evidence={e['id']:e for e in request.evidence}
     entities={v for e in request.evidence for v in (e.get('artifact_id'),e.get('project_id')) if v}
     entities.update(c['id'] for c in request.candidates)
+    entities.update(claim['id'] for p in request.candidates for claim in p.get('claims',[]))
     result=[]
-    allowed={'type','subject_id','object_id','evidence_ids','statement','extraction_status','reason'}
+    allowed={'type','subject_id','object_id','evidence_ids','statement','extraction_status','reason','task_state'}
     for candidate in doc['candidates']:
         if not isinstance(candidate,dict) or set(candidate)-allowed or not {'type','subject_id','evidence_ids','statement','extraction_status'}<=set(candidate):
             raise ValueError("Invalid candidate fields")
@@ -32,6 +33,8 @@ def validate_extraction(payload, request):
             raise ValueError("Unknown evidence")
         if candidate['extraction_status'] not in {'observed','inferred','explicit'}:
             raise ValueError("Invalid extraction status")
+        if 'task_state' in candidate and (candidate['type']!='task' or candidate['task_state'] not in {'open','completed','reopened'}):
+            raise ValueError("Invalid task state")
         for name,limit in (('statement',1024),('reason',512)):
             value=candidate.get(name,'')
             if not isinstance(value,str) or len(value.encode())>limit:
@@ -96,4 +99,3 @@ class InferenceWorker:
                 c.execute("UPDATE episodes SET status=? WHERE id=?",(status,eid))
             return JobResult(eid,status,attempt)
         finally: self.guard.release()
-

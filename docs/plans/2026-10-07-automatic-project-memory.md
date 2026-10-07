@@ -10,6 +10,16 @@
 
 **Spec:** [Approved automatic project-memory design](../specs/2026-10-07-automatic-project-memory-design.md).
 
+## Execution status — 2026-10-07
+
+Fixture-driven Tasks 1–6 have committed implementations with review fixes. Their
+full acceptance checklists remain open where coverage or behavior is incomplete.
+Task 7 tooling and two real local-model comparisons are implemented; neither model
+passed. Task 8 regression/review/documentation work is verified (144 tests); real semantic
+acceptance and remaining implementation items stay open. This is an isolated
+engineering increment, not semantic acceptance or the live/MCP MVP. Detailed evidence
+and remaining gaps: [implementation status](../semantic-project-memory-status.md).
+
 ## Global constraints
 
 - On-device inference only; no hosted endpoint or network fallback. Model downloads never contain user content.
@@ -53,9 +63,9 @@ Tests: `tests/test_semantic_store.py`, `test_semantic_episodes.py`, `test_semant
 - `SemanticStore(path: Path)` creates version-1 schema/FTS5, enables foreign keys and private file permissions; `ingest(envelope, policy) -> IngestResult(source_id, occurrence_ids, project_id, artifact_id, inserted)` is transactional/idempotent.
 
 - [ ] Write failing tests named `test_duplicate_source_is_idempotent`, `test_conflicting_source_replay_rejected`, `test_denied_private_unknown_browser_rejected`, `test_same_name_workspaces_do_not_merge`, `test_query_document_ids_preserved`, `test_shared_text_has_separate_occurrences`, and `test_unicode_span_byte_limit`. Assertions: duplicates add zero rows; changed replay raises; denial leaves no text/FTS rows; distinct locators yield distinct IDs; each source owns its citations.
-- [ ] Run `.venv/bin/python -m unittest discover -s tests -p test_semantic_store.py -v`; observe missing implementation failures.
-- [ ] Implement schema tables for projects/artifacts/blobs/occurrences/episodes/claims/edges/support/corrections/jobs and schema migration bookkeeping. Foreign keys own dependent rows. Exact original text is citation evidence; raw-text hash deduplicates blobs and normalized hash identifies equivalent content. Whitespace variants may retain separate original blobs rather than misquote a source.
-- [ ] Implement canonicalization and policy checks; FTS indexes unique retained text. Reject unsupported schema versions visibly. Define UTC aware timestamps and stable IDs; prohibit field/path injection and arbitrary file reads. Use a writer lock, parameterized SQL and explicit transactions.
+- [x] Run `.venv/bin/python -m unittest discover -s tests -p test_semantic_store.py -v`; observe missing implementation failures.
+- [x] Implement schema tables for projects/artifacts/blobs/occurrences/episodes/claims/edges/support/corrections/jobs and schema migration bookkeeping. Foreign keys own dependent rows. Exact original text is citation evidence; raw-text hash deduplicates blobs and normalized hash identifies equivalent content. Whitespace variants may retain separate original blobs rather than misquote a source.
+- [x] Implement canonicalization and policy checks; FTS indexes unique retained text. Reject unsupported schema versions visibly. Define UTC aware timestamps and stable IDs; prohibit field/path injection and arbitrary file reads. Use a writer lock, parameterized SQL and explicit transactions.
 - [ ] Run focused tests and existing config/storage tests; confirm pass. Commit this independently testable store.
 
 ### Task 2: Bounded work episodes and deterministic fixture corpus
@@ -70,7 +80,7 @@ Tests: `tests/test_semantic_store.py`, `test_semantic_episodes.py`, `test_semant
 - [ ] Write tests asserting exact five-minute-gap/two-minute-flush boundaries, artifact/pause/revision boundaries, 4/16 KiB limits, unchanged content producing no repeated extraction evidence, same content from different ownership retained, and restart restoring closed/unprocessed episodes without duplicates.
 - [ ] Run episode tests; observe failures before implementing.
 - [ ] Implement episode persistence and selection using Task 1 interfaces; FTS plus nearby anchored episodes yields at most eight candidate summaries. Unknown context never borrows an authoritative identity from the previous artifact. Bound candidates separately so summaries cannot expand requests without limit.
-- [ ] Create at least 24 labelled synthetic episodes across two coding projects. Assign eight held-out episodes before any model comparison. Cover interleaving, same titles, renamed locators, explicit/implicit tasks, unknown authorship, AI suggestions, decisions/reasons, conflicts and revoked/deleted sources. A renamed workspace without verified alias remains separate, not magically recognized.
+- [x] Create at least 24 labelled synthetic episodes across two coding projects. Assign eight held-out episodes before any model comparison. Cover interleaving, same titles, renamed locators, explicit/implicit tasks, unknown authorship, AI suggestions, decisions/reasons, conflicts and revoked/deleted sources. A renamed workspace without verified alias remains separate, not magically recognized.
 - [ ] Run fixture validation and episode tests; confirm limits, split disjointness and every expected citation's existence. Commit episode formation plus corpus; no semantic-quality claim yet.
 
 ### Task 3: Safe structured extraction and bounded scheduling
@@ -145,19 +155,19 @@ Tests: `tests/test_semantic_store.py`, `test_semantic_episodes.py`, `test_semant
 
 - [ ] Write scorer tests with known true/false positives, missing predictions, invalid citations and invented reasons; assert denominators and metrics. Test local-runtime missing assets, disallowed endpoint/config, malformed output, cancellation and timeouts with a fake executable. A fake benchmark must be labelled synthetic and cannot produce a passing real-model selection record.
 - [ ] Run evaluation tests and observe failures; implement deterministic scoring and resource sampling, including process-tree peak RAM, worker/baseline overhead, latency, DB-side-file growth and 60-second idle CPU sample. Label unavailable energy metrics rather than fabricate results.
-- [ ] Inspect target hardware and research candidate runtimes/models using current official documentation/model cards. Shortlist at least two on-device configurations likely to fit 3 GiB additional RAM; record licence, weight hash, quantization, runtime version and expected context capacity before download/install. Preserve user-content offline constraint. Do not silently widen the memory budget.
+- [x] Inspect target hardware and research candidate runtimes/models using current official documentation/model cards. Shortlist at least two on-device configurations likely to fit 3 GiB additional RAM; record licence, weight hash, quantization, runtime version and expected context capacity before download/install. Preserve user-content offline constraint. Do not silently widen the memory budget.
 - [ ] Select candidates using development data only; freeze prompt/configuration and scoring before held-out execution. Run real extraction on held-out data, record at least 30 extraction timings by repetitions for p95 (quality denominators remain unique examples), and measure baseline versus semantic-enabled resource use. Keep full failure/error counts.
-- [ ] Choose the smallest actual configuration meeting every quality/resource gate; record reproducible commands and measured results in the benchmark manifest. If none passes, stop runtime enablement and report failed criteria to the user; engineering tasks may be complete, semantic acceptance is not. No hosted fallback, automatic embeddings expansion or reinterpretation of lexical output as semantic success.
-- [ ] Run focused runtime/evaluation tests and commit benchmark tooling/report. Downloaded weights and private data remain ignored and uncommitted.
+- [x] Choose the smallest actual configuration meeting every quality/resource gate; record reproducible commands and measured results in the benchmark manifest. If none passes, stop runtime enablement and report failed criteria to the user; engineering tasks may be complete, semantic acceptance is not. No hosted fallback, automatic embeddings expansion or reinterpretation of lexical output as semantic success.
+- [x] Run focused runtime/evaluation tests and commit benchmark tooling/report. Downloaded weights and private data remain ignored and uncommitted.
 
 ### Task 8: End-to-end evaluation, review and handover
 
 **Files:** Existing/new test suites; `README.md`, `ARCHITECTURE.md`, `context.md`, this plan and benchmark report.
 
-- [ ] Run `.venv/bin/python -m unittest discover -s tests -v`, syntax compilation and `git diff --check`. Existing 110-test baseline remains passing alongside the new suite; do not weaken input/privacy checks to obtain a green run.
+- [x] Run `.venv/bin/python -m unittest discover -s tests -v`, syntax compilation and `git diff --check`. Existing 110-test baseline remains passing alongside the new suite; do not weaken input/privacy checks to obtain a green run.
 - [ ] Exercise actual fixture envelopes → store → episodes → selected local extractor → relationships → project context → delete/revoke → retrieve again. Verify repeat ingestion/restart is idempotent, budgets visible and forbidden evidence absent. Do not count injected outputs as real semantic validation.
-- [ ] Obtain one independent whole-change review using requesting-code-review, specifically adversarial sources, source ownership/deletion races, supported-status promotion, retrieval scope and resource bounds. Resolve important findings and rerun affected checks.
-- [ ] Update docs with implemented interfaces, reproducible evaluation, selected model only if benchmark passed, current limits and no live/MCP claim. Mark completed tasks in this plan; preserve any blocked benchmark/acceptance task as open.
+- [x] Obtain one independent whole-change review using requesting-code-review, specifically adversarial sources, source ownership/deletion races, supported-status promotion, retrieval scope and resource bounds. Resolve important findings and rerun affected checks.
+- [x] Update docs with implemented interfaces, reproducible evaluation, selected model only if benchmark passed, current limits and no live/MCP claim. Mark completed tasks in this plan; preserve any blocked benchmark/acceptance task as open.
 - [ ] Commit the verified increment and report test counts, semantic metrics, resource results, publication state and remaining source/MCP prerequisites. Keep implementation isolated from main until reviewed; do not auto-merge an incomplete benchmark.
 
 ## Self-review and handoff

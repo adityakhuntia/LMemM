@@ -1,9 +1,9 @@
+from semantic_helpers import source,policy
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 from semantic_memory.store import SemanticStore
-from test_semantic_store import source,policy
 from input_store import private_write,recover_deletion
 
 class DeletionIntegrationTests(unittest.TestCase):

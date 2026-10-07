@@ -1,10 +1,10 @@
+import unittest
+from semantic_helpers import SemanticFixture, source, policy
 from pathlib import Path
-from test_semantic_relationships import RelationshipTests
-from test_semantic_store import source, policy
 from semantic_memory.contracts import SourceScope
 from semantic_memory.retention import delete_sources, delete_session, revoke_scope, enforce_budget
 
-class RetentionTests(RelationshipTests):
+class RetentionTests(SemanticFixture, unittest.TestCase):
     def test_shared_text_and_replayed_deleted_source(self):
         self.db.ingest(source(),policy()); self.db.ingest(source('shared'),policy())
         delete_sources(self.db,{'s1'})
@@ -16,7 +16,7 @@ class RetentionTests(RelationshipTests):
         self.assertEqual(self.db.connection.execute('SELECT count(*) FROM evidence_search').fetchone()[0],0)
 
     def test_delete_last_support_removes_claim(self):
-        self.test_workspace_and_explicit_note_supported()
+        self.seed_decision()
         delete_session(self.db,'session')
         self.assertEqual(self.db.count('claims'),0)
         self.assertEqual(self.db.count('edges'),0)

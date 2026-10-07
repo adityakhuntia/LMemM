@@ -1,8 +1,8 @@
+import unittest
+from semantic_helpers import SemanticFixture, source, policy
 import json
-from test_semantic_episodes import EpisodeTests
 from semantic_memory.inference import InferenceWorker, validate_extraction
 from semantic_memory.episodes import build_request
-from test_semantic_store import source, policy
 
 class FakeExtractor:
     def __init__(self, payload='{"candidates":[]}'):
@@ -12,7 +12,7 @@ class FakeExtractor:
         return self.payload
     def cancel(self): self.cancelled=True
 
-class InferenceTests(EpisodeTests):
+class InferenceTests(SemanticFixture, unittest.TestCase):
     def request(self):
         self.db.ingest(source(),policy()); self.builder.accept('s1')
         eid=self.builder.boundary('stop','2026-10-07T10:01:00+00:00')[0]

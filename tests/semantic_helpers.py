@@ -45,4 +45,3 @@ class SemanticFixture:
         req=self.request();e=req.evidence[0]
         candidate={'type':'decision','subject_id':e['artifact_id'],'statement':'We chose a hosted database','evidence_ids':[e['id']],'extraction_status':'explicit'}
         apply_extraction(self.db,req.episode_id,validate_extraction(json.dumps({'candidates':[candidate]}),req))
-

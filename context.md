@@ -56,14 +56,23 @@ Updated 2026-10-07, America/New_York. Historical context and handover are in
 ## MVP decision and next work
 
 The user selected **resume work on a project** as the first agent workflow.
+Automatic semantic understanding/linking is required; manual attachment is not
+the default workflow. First infer project anchors from workspace folders and
+document context, then associate activity automatically. Arbitrary project
+discovery comes later; corrections remain optional. Current MVP inference is
+strictly on-device; hosted inference remains a future privacy discussion and
+must not be an automatic fallback. Storage/resource budgets remain open.
 The agreed MVP is accurate project knowledge exposed to AI agents through MCP,
 with acceptable measured performance and low resource use. Broader companion
-features come after this. Graph understanding is now in **brainstorming**;
-see [discussion brief](docs/knowledge-graph-discussion.md).
+features come after this. Initial source scope is VS Code plus permitted browser
+sites. A [proposed written spec](docs/specs/2026-10-07-automatic-project-memory-design.md)
+is ready for review; the [discussion brief](docs/knowledge-graph-discussion.md)
+records the selected direction. Implementation planning follows written-spec
+approval. No graph or local-model implementation has started.
 
 Recommended order: define one agent workflow and evidence quality criteria;
 enforce app/site access and foreground source boundaries; establish performance
-baseline; build explicit project/artifact associations and source-backed facts;
+baseline; build automatic anchored project/artifact associations and source-backed facts;
 expose scoped read-only MCP retrieval; evaluate inferred relationships before
 allowing them to affect agent answers. Tab-switch patterns are weak evidence,
 not proof of a shared project.

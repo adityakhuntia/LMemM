@@ -1,31 +1,51 @@
 # Knowledge graph understanding — discussion brief
 
-2026-10-07. Brainstorming only; no approved implementation design or graph code.
+2026-10-07. Brainstorming complete enough for a [proposed written spec](specs/2026-10-07-automatic-project-memory-design.md); written-spec review is pending. No graph code exists.
 
 ## Agreed purpose
 
 The MVP serves AI agents: accurate project knowledge, retrieved through MCP,
 with explicit user app/site access controls and benchmarked resource use.
-Users may assign artifacts to projects manually. Automatic linking is desirable,
-but observed switching/content alone cannot prove a relationship or user intent.
+Automatic semantic understanding and relationship building are required.
+Manual association is optional correction, not a prerequisite. Observed
+switching/content alone cannot prove a relationship or user intent.
 
 The user selected **resume work on a project**: what changed, why, and open tasks,
-each backed by dated sources. Project identity/association scope is the next
-open question. Recommended first anchor: a selected workspace folder with
-explicitly attached documents/tabs; inferred links remain proposals.
+each backed by dated sources. The user selected automatically connecting
+activity to projects inferred from workspace folders and document context first.
+Discovering arbitrary new projects comes later. No manual attachment step is
+required; ambiguous relationships remain proposed or unassigned.
 
 ## Approaches to compare
 
-1. **Evidence-first hybrid (recommended):** explicit projects/artifact links and
-   user notes form the trusted core. A model proposes typed relationships and
-   claim candidates with source spans; only supported/confirmed material feeds
-   confident agent answers. More incremental, easier to evaluate and correct.
+1. **Evidence-first automatic linking (selected direction):** stable workspace
+   and document identities anchor candidate projects. A model interprets bounded
+   work episodes and proposes typed relationships/claims with source spans.
+   Identity, repeated context and semantic support govern automatic association;
+   weak links remain tentative. Manual confirmation is not required for every
+   supported link. Automatic does not mean every model guess becomes a fact.
 2. **Automatic model-built graph:** infer entities/relationships from every
    capture. Less manual work, but ambiguous context, authorship, duplicate
    identities and resource/privacy cost make a useful accuracy baseline harder.
-3. **Manual graph only:** deterministic project associations and user facts,
-   exposed through MCP. Reliable baseline, but misses contextual understanding
-   and creates ongoing curation work.
+3. **Manual graph only (rejected as the product workflow):** reliable baseline,
+   but creates the curation burden the user explicitly wants to avoid.
+
+## Proposed understanding and storage flow
+
+Meaningful content changes plus app/tab/input boundaries create work episodes.
+Local deduplication removes repeated OCR and interface noise. Inference runs on
+bounded episode evidence, not every screenshot. Output contains source-backed
+topics, artifact/project links, claim candidates, decisions and tasks with their
+epistemic status. Switching patterns contribute weak context; semantic similarity
+alone is insufficient to establish membership or intent.
+
+Separate short-lived raw captures from durable deduplicated text, compact episode
+summaries, entities/edges and selected search embeddings. Use content hashes and
+incremental changes to avoid repeating unchanged content. Bound inference queues,
+raw disk usage and embedding growth; preserve enough evidence to check summaries.
+Deleting/revoking evidence must remove or invalidate dependent claims and indexes.
+SQLite is a persistence candidate, not a finalized implementation decision.
+Exact retention and resource budgets require measurement and user policy.
 
 ## What sensible understanding must distinguish
 
@@ -44,6 +64,36 @@ traceable through dependent claims and exports.
 
 ## Agent output and evaluation
 
+### Proposed first acceptance scenario
+
+Use a consented, synthetic coding-project fixture (not a claim about actual
+captured work): edit a local project's storage code, consult a relevant database
+reference tab, observe an AI suggestion, record an explicit decision and an open
+test task, then visit an unrelated site. Resume the project two days later.
+
+The agent should retrieve the code artifact and supporting reference, distinguish
+the AI suggestion from the explicit decision, return the still-open task, and
+exclude the unrelated site. Every asserted change/reason/task links to its dated
+source. If the decision reason was never captured, report it as unknown.
+
+First proposed implementation boundary: workspace/project and artifact identity;
+deduplicated episode evidence; on-device typed extraction; conservative automatic
+relationship proposals; persisted evidence/status; project context retrieval.
+Do not add unrestricted project discovery or proactive companion features.
+MCP should expose the same tested retrieval contract rather than introduce a
+second interpretation path.
+
+Graph edges should describe a specific supported relationship (`belongs_to`,
+`references`, `supports`, `supersedes`) rather than merely "related". Model output
+must reference supplied evidence IDs; application validation rejects unknown
+references and unsupported structured fields. Those checks alone do not prove
+semantic accuracy, so fixture evaluation remains required.
+
+Source scope for the first scenario is agreed: VS Code plus explicitly
+permitted browser sites. Current screen capture is not sufficiently isolated to
+treat its entire image as authorized foreground evidence; fix that boundary
+before collecting new semantic training/evaluation examples from real use.
+
 For a project-resume request, return a compact context packet: scope/time range,
 recent work, decisions with reasons when explicit, open tasks, conflicts/unknowns,
 and citations to permitted sources. Absence of evidence must stay visible.
@@ -56,9 +106,10 @@ claims, retrieval usefulness, permission leakage, latency and resource cost.
 
 ## Open design decisions
 
-- First agent workflow and a concrete example of a useful answer.
-- Project association UI/CLI and the minimum reliable artifact identities.
-- Local model, hosted opt-in model, or explicit-only initial extraction.
+- A concrete project-resume example and the minimum reliable artifact identities.
+- **Decided: inference stays on-device for the current MVP.** Hosted inference
+  remains a future privacy discussion, not an enabled fallback. No captured
+  content, embeddings or summaries may be sent to a hosted model.
 - Which claim classes can be inferred and how corrections/confirmations work.
 - MCP scopes, tool contracts, citations and permission revocation semantics.
 - Capture/inference budgets and benchmark acceptance thresholds.

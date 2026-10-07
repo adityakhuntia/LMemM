@@ -11,9 +11,11 @@ Updated 2026-10-07, America/New_York. Historical context and handover are in
   test instructions and remaining source/MCP prerequisites.
 - [Benchmark index and reviewed results](docs/benchmarks/project-memory/README.md):
   measured claims, privacy probes, model failures and reproduction.
-- [Proposed live semantic pilot](docs/specs/2026-10-07-live-semantic-pilot-design.md):
+- [Live semantic pilot design](docs/specs/2026-10-07-live-semantic-pilot-design.md):
   VS Code source bridge, foreground checks and opt-in experimental testing across
-  approved projects; revised direction approved, implementation underway.
+  approved projects; implemented, native live acceptance pending.
+- [Live pilot runbook](docs/live-semantic-pilot.md): exact start/connect/control/test commands.
+- [Live pilot implementation plan](docs/plans/2026-10-07-live-semantic-pilot.md): task/review status.
 - [Approved semantic design](docs/specs/2026-10-07-automatic-project-memory-design.md)
   and [implementation plan/status](docs/plans/2026-10-07-automatic-project-memory.md).
 - [Product/knowledge-graph discussion](docs/knowledge-graph-discussion.md): MVP intent.
@@ -71,7 +73,7 @@ results; v1 type scores and v2 assertion scores are different measurements.
   policies. Input alone is explicitly opted in and restricted to VS Code.
 - Storage is local plaintext. OCR/activity/decision quotes do not establish
   authorship, intent, verified decisions or completed work.
-- Widget projects are derived labels. The fixture-only semantic core exists on this feature branch; it is not connected
+- Widget projects are derived labels. The semantic core and separate opt-in VS Code pilot exist on this feature branch; normal capture is not connected
   to capture. No live knowledge graph, MCP service or agent connection is enabled.
 
 ## MVP decision and next work
@@ -92,8 +94,8 @@ is approved; the [discussion brief](docs/knowledge-graph-discussion.md)
 records the selected direction. The [semantic-core implementation plan](docs/plans/2026-10-07-automatic-project-memory.md)
 was approved and executed in `.worktrees/semantic-project-memory` on
 `feat/semantic-project-memory`. The fixture-driven core and local evaluation
-exist there; no model has passed acceptance. Live source adapters and MCP remain
-separate increments. See [implementation status](docs/semantic-project-memory-status.md).
+exist there; no model has passed acceptance. The separate VS Code pilot is implemented below; browser adapters and MCP remain
+future increments. See [implementation status](docs/semantic-project-memory-status.md).
 
 Recommended order: define one agent workflow and evidence quality criteria;
 enforce app/site access and foreground source boundaries; establish performance
@@ -130,7 +132,7 @@ revocation audits; independent review and regression repairs. Model output choos
 a quote/category; it cannot fabricate quote text or arbitrary IDs. Reasons are currently
 limited to bounded explicit “because” excerpts. Complex multi-claim passages remain a gap.
 
-Verification: **163 tests pass, including 53 semantic tests**. Three local models were
+Verification: **191 Python tests pass, including 81 semantic tests; 6 Node tests pass**. Three local models were
 evaluated with the frozen extractor. Reviewed heldout assertion precision/recall:
 Qwen2.5 0.5B 67%/40%, Qwen2.5 1.5B 83%/100%, Qwen3 1.7B 71%/100%. Each run has
 32 extraction timings and zero leaks across 13 controlled privacy probes. Five gold
@@ -139,23 +141,22 @@ No model passes the precision gate; resource/selection acceptance remain false.
 No local model is enabled in normal capture; no feature merge or push was performed.
 
 Next order:
-1. Improve precision and browser association using broader development examples and
-   a fresh heldout split; do not tune on the inspected v2 heldout. Keep confidence
-   status separate from source truth. See the benchmark index for actual errors.
-2. Complete FTS candidate selection, independent-episode corroboration, all-writer
-   quota enforcement, retention scheduling and worker cancellation/state lifecycle.
-3. Add authoritative permission-checked live VS Code/browser source envelopes and
-   foreground isolation, without enabling inference before quality/resource gates pass.
-4. Benchmark representative enabled-worker sessions and power, then expose scoped
-   read-only MCP retrieval for an agent resuming a project. Hosted inference remains
-   a separate future privacy discussion.
+1. Run the [live pilot checklist](docs/live-semantic-pilot.md) across two approved projects. Confirm native handshake, real visible text, exclusions, switching, pause/restart/deletion and recall usefulness. No user content has been captured for this validation.
+2. Record live results, handover and push the feature branch after confirmation. Do not merge main.
+3. Improve automatic semantic understanding using observed pilot errors and broader development/fresh heldout examples. Complete FTS candidate selection and independent-episode relationship corroboration.
+4. Measure representative enabled-worker RAM/CPU/power, improve precision and build browser source adapters with explicit website permissions.
+5. Expose scoped read-only MCP retrieval for an agent resuming a project after quality/privacy/resource acceptance. Hosted inference remains an open privacy discussion.
 
-## Next increment authorized — live semantic pilot
+## Live semantic pilot — engineering closed, live acceptance open
 
-The user approved proceeding with live-source integration and precision work before
-testing, then handover and pushing this feature branch after confirmation. Proposed
-[written pilot design](docs/specs/2026-10-07-live-semantic-pilot-design.md) uses a
-local VS Code bridge for authoritative document/workspace identity and bounded visible
-source, with independent foreground verification. Multiple approved VS Code projects/windows; browser adapters follow. The
-[implementation plan](docs/plans/2026-10-07-live-semantic-pilot.md) preserves inline
-execution and now builds the usable pilot before requiring model acceptance. No extension, live collector or inference has been enabled by this design step.
+The revised direction supports multiple approved VS Code projects/windows and visible tentative recall. Precision gates govern default agent use, not explicit experimental testing.
+
+Built and tested: visible-range VS Code extension; private token/session/revision bridge; random native-title registration challenge; secure-focus/root/symlink/exclusion gates; metadata heartbeats and accepted-source dedup; lifecycle cancellation barriers; async worker; scheduled 30-day retention and all-writer SQLite page cap; read-only recent project recall with original source quotes/file locators/omission coverage; controls and stopped-session deletion.
+
+Independent review found registration, symlink exclusion, focus/pause cancellation, generation, resumed-publication, disconnect, recent-recall and CLI-directory issues. Regression cases reproduced failures and now pass. Extension-host pause/resume is covered with a mocked VS Code API; this is not a real host acceptance claim.
+
+Metadata-only native smoke: Accessibility trusted; foreground was not verified as approved VS Code, so intake stayed closed. No screenshots/input listener/microphone or user-content inference was started. Model benchmarks remain unchanged and below precision acceptance.
+
+Rulings: one-second publisher poll stays inside the two-second freshness window; resume may require retry while a cancelled request finishes; the 250MiB total reserves journal/reclaim space, leaving roughly one-third for the database; noncanonical/symlink document aliases are rejected; the native title challenge requires a temporary registration tab. These favor inspectable behavior and privacy and may require explicit reconnect/canonical paths.
+
+Pointers: [design](docs/specs/2026-10-07-live-semantic-pilot-design.md), [implementation plan](docs/plans/2026-10-07-live-semantic-pilot.md), [runbook](docs/live-semantic-pilot.md), [semantic handover](docs/semantic-project-memory-status.md). No push or main merge has been performed.

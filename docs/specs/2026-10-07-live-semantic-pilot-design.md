@@ -184,3 +184,13 @@ inline execution preference persists. Build the end-to-end pilot now and use liv
 feedback to improve understanding; do not require a passing model before an explicitly
 experimental pilot can start. Keep automatic agent consumption disabled. The existing
 precision benchmark and any future broader benchmark retain honest failure status.
+
+## Implementation privacy rulings
+
+Registration now uses a transient VS Code tab carrying the random client challenge;
+AX focused-window title must match that challenge before and after registration.
+Binding cannot silently move to another native PID/window. Events also carry the
+current grant revision, preventing pre-pause sources from being relabelled after
+resume. Any noncanonical/symlink document URI is rejected, including benign aliases.
+These are stricter safeguards within the approved project/workflow direction; actual
+extension-host title/accessibility behavior remains pending the user live test.

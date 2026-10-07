@@ -1,6 +1,6 @@
 # Architecture
 
-One process, two threads, plain files.
+Normal tracker: one process, two threads, plain files. The experimental pilot is a separate opt-in process.
 
 ```
  macOS ──▶ macos.py ──▶ tracker.py (main thread) ──queue──▶ tracker.py (resolver thread)
@@ -109,7 +109,7 @@ Rules that keep this cohesive:
 
 ## Testing
 
-`python3 -m unittest discover -s tests` runs 110 tests: real Vision OCR on generated
+`python3 -m unittest discover -s tests` runs 191 tests: real Vision OCR on generated
 images, identity, content, migration, notes/resurfacing/project view, the CLI, input
 events with fake native data, retention and deletion recovery. No test uses the real
 microphone, input tap or your data.
@@ -125,6 +125,28 @@ cleans a semantic database when one exists; there is no implicit legacy import.
 The local runtime is an explicitly started isolated Ollama process on a fixed loopback
 endpoint. Models select numbered source quotes/categories; host code maps evidence
 IDs and exact project-path references. Inference cannot execute tools or grant access.
-Automatic runtime startup, live adapters and MCP remain unimplemented. See the
+Automatic runtime startup and MCP remain unimplemented. The separate VS Code live adapter is described below. See the
 [semantic handover](docs/semantic-project-memory-status.md) for contracts and limits
 and the [benchmark index](docs/benchmarks/project-memory/README.md) for measured status.
+
+## Live semantic pilot
+
+`extensions/lmemm-source` reads bounded visible editor ranges using VS Code APIs.
+Connect opens a transient tab with a random client challenge. `live_focus.py`
+checks secure-input state, focused AX element/owner/window and a unique CG geometry
+match; registration also requires the native title challenge. A client cannot
+silently move its binding to another native window.
+
+`live_bridge.py` validates private files, token/session/revision, sequence/freshness,
+canonical approved roots/files and exclusions. No document contents are read by
+Python. Heartbeats are metadata only; unchanged text is deduplicated. Missing/stale
+clients expire. Denied focus, disconnect, pause and system lifecycle boundaries
+advance the persisted cancellation barrier before cancelling the local extractor.
+
+`live_pilot.py` owns intake, SQLite episodes, scheduled retention and one background
+worker. Conservative SQLite page caps reserve journal/reclaim space within 250MiB;
+there are at most eight queued episodes/128KiB queued text. `live_project_memory.py`
+provides standalone controls, read-only dated project recall and offline deletion.
+Quotes are observed content, not completed-work claims. Experimental model output
+retains source attribution and tentative status. Actual native extension-host
+acceptance and RAM/power are pending; see the [runbook](docs/live-semantic-pilot.md).

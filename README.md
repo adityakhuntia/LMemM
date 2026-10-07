@@ -183,7 +183,7 @@ deletion works are in [docs/input-timeline.md](docs/input-timeline.md).
 ## Develop
 
 ```bash
-python3 -m unittest discover -s tests      # 110 tests, incl. real on-device OCR
+python3 -m unittest discover -s tests      # 191 tests, incl. real on-device OCR
 ```
 
 [ARCHITECTURE.md](ARCHITECTURE.md) covers how the modules fit and where to extend it.
@@ -191,12 +191,20 @@ python3 -m unittest discover -s tests      # 110 tests, incl. real on-device OCR
 
 ## Experimental semantic project memory (feature branch)
 
-`feat/semantic-project-memory` contains a fixture-driven local SQLite core for
-evidence, claims, project relationships and scoped context retrieval. It is not yet
-connected to the tracker or exposed through MCP. Local model evaluation uses only
-synthetic inputs, and no configuration has passed all acceptance gates.
+`feat/semantic-project-memory` adds local SQLite evidence, project identity,
+bounded episodes, source-backed claims and scoped recall. An **opt-in live VS Code
+pilot** now feeds approved visible file ranges through a private bridge and native
+foreground checks. It supports multiple approved project windows, pause/resume,
+restart, source citations and session deletion. Ordinary capture remains separate.
 
-Start with [context.md](context.md), the [semantic handover](docs/semantic-project-memory-status.md)
-and the [benchmark index](docs/benchmarks/project-memory/README.md) for current status,
-architecture, tests and reproduction. Normal capture commands do not start Ollama,
-download models or send evidence to a service.
+Follow the [live pilot runbook](docs/live-semantic-pilot.md) to start the collector,
+load the VS Code extension and inspect what was observed and what may be left.
+Local inference requires explicit experimental flags and an already running
+cloud-disabled service. No tested model passes the accuracy gate; tentative
+interpretations remain inspectable. MCP access is not implemented.
+
+Verification: **191 Python tests and 6 Node tests passed**. Actual VS Code/native
+end-to-end acceptance and representative performance remain pending live testing.
+See [context.md](context.md), the [semantic handover](docs/semantic-project-memory-status.md)
+and [benchmark index](docs/benchmarks/project-memory/README.md) for current limits.
+Normal capture commands do not start Ollama, download models or send evidence.

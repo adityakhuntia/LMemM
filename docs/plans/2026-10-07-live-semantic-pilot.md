@@ -32,35 +32,50 @@
 
 **Files:** `semantic_memory/live_bridge.py`, `semantic_memory/live_focus.py`, `tests/test_semantic_live_bridge.py`.
 **Interfaces:** `Bridge(directory,roots,clock).accept(message,focus)->SourceEnvelope|None`; `Bridge.open_session()` returns private grant; `focused_context()` returns verified bundle/PID/window/bounds or deny reason. Registered client/window binding persists only this run.
-- [ ] Write tests for two approved project identities, stale/replayed sequences, wrong token/window, simultaneous focused clients, excluded/symlink/remote/unknown paths and private bounded file reads. Run missing-module RED.
-- [ ] Implement strict file protocol and explicit connect-before-snapshot binding; metadata-only heartbeats, deterministic source IDs and active-source tracking.
-- [ ] Implement unique AX-focused-window-to-CG matching, secure/unknown rejection and before/after context equality. Unit-test geometry ambiguity and native errors.
-- [ ] Run focused Python tests and commit the bridge.
+- [x] Write tests for two approved project identities, stale/replayed sequences, wrong token/window, simultaneous focused clients, excluded/symlink/remote/unknown paths and private bounded file reads. Run missing-module RED.
+- [x] Implement strict file protocol and explicit connect-before-snapshot binding; metadata-only heartbeats, deterministic source IDs and active-source tracking.
+- [x] Implement unique AX-focused-window-to-CG matching, secure/unknown rejection and before/after context equality. Unit-test geometry ambiguity and native errors.
+- [x] Run focused Python tests and commit the bridge.
 
 ### Task 2: VS Code source publisher
 
 **Files:** `extensions/lmemm-source/package.json`, `extension.js`, `bridge.js`, `bridge.test.js`.
 **Interfaces:** explicit connect/pause/stop/note commands, grant file and per-client event/ack files from Task1. Pure `visibleSnapshot(editor,roots)` reads approved visible ranges only.
-- [ ] Write Node tests for bounded UTF8 excerpts, focused/trusted/local/source checks, background editor not accessed, root containment and exclusions. Observe RED.
-- [ ] Implement CommonJS extension using VSCode API and Node built-ins only; atomic0600 event writes,2second polling, private grant checks and native ack binding before text publication.
-- [ ] Emit changed-document/view content only; unchanged heartbeat has no source text. Focus loss/pause/stop clears queued text. Intentional note command validates current source before/after user input.
-- [ ] Run `node --test extensions/lmemm-source/bridge.test.js`; commit source publisher.
+- [x] Write Node tests for bounded UTF8 excerpts, focused/trusted/local/source checks, background editor not accessed, root containment and exclusions. Observe RED.
+- [x] Implement CommonJS extension using VSCode API and Node built-ins only; atomic0600 event writes,2second polling, private grant checks and native ack binding before text publication.
+- [x] Emit changed-document/view content only; unchanged heartbeat has no source text. Focus loss/pause/stop clears queued text. Intentional note command validates current source before/after user input.
+- [x] Run `node --test extensions/lmemm-source/bridge.test.js`; commit source publisher.
 
 ### Task 3: Pilot lifecycle, budgets and recall
 
 **Files:** `semantic_memory/live_pilot.py`, `scripts/live_project_memory.py`; targeted updates `store.py`, `inference.py`, `retrieval.py`; `tests/test_semantic_live_pilot.py`.
-**Interfaces:** `Pilot.ingest`, `tick`, `pause`, `resume`, `close`; CLI `start --workspace ROOT... --data-dir DIR [--runtime-config FILE --experimental-model]`, `status`, `pause|resume|flush|stop`, `context --project ROOT --days2`, `delete-session`.
-- [ ] Write failing tests for two projects through intake/episodes/context, unchanged dedup, pause/revocation during worker result, restart identity, quota across writers, read-only context and tentative labels.
-- [ ] Implement asynchronous bounded worker; normalize extractor failures to unprocessed coverage, cancel stale jobs on lifecycle boundaries, create new extractor on resume and drain/stop without hanging.
-- [ ] Apply conservative SQLite page caps with journaling/reclaim reserve plus scheduled retention. Pause budget failures visibly without deleting pins or ordinary capture data.
-- [ ] Provide deterministic readable project context, tentative claims and source IDs/original quotes, plus private control/status files. Never treat file snapshots as completed changes/user decisions.
-- [ ] Run semantic regression suite and commit the complete pilot flow.
+**Interfaces:** `Pilot.ingest`, `tick`, `pause`, `resume`, `close`; CLI `start --workspace ROOT... --data-dir DIR [--runtime-config FILE --experimental-model]`, `status`, `pause|resume|flush|stop`, `context --project ROOT --days 2`, `delete-session`.
+- [x] Write failing tests for two projects through intake/episodes/context, unchanged dedup, pause/revocation during worker result, restart identity, quota across writers, read-only context and tentative labels.
+- [x] Implement asynchronous bounded worker; normalize extractor failures to unprocessed coverage, cancel stale jobs on lifecycle boundaries, create new extractor on resume and drain/stop without hanging.
+- [x] Apply conservative SQLite page caps with journaling/reclaim reserve plus scheduled retention. Pause budget failures visibly without deleting pins or ordinary capture data.
+- [x] Provide deterministic readable project context, tentative claims and source IDs/original quotes, plus private control/status files. Never treat file snapshots as completed changes/user decisions.
+- [x] Run semantic regression suite and commit the complete pilot flow.
 
 ### Task 4: Verification, independent review and live-test handover
 
 **Files:** README, architecture, context, pilot runbook/handover, this plan.
-- [ ] Run full Python163baseline plus new tests, Node tests, syntax and whole-branch diff checks. Native read-only focus smoke if permitted; no unrequested content capture.
-- [ ] Obtain one independent whole-change review; reproduce important findings RED→GREEN and rerun affected checks.
-- [ ] Document exact local service/extension/pilot start/context/stop commands, existing failed model acceptance, approved scope and resource limits.
-- [ ] Provide user live test across two approved projects, app/window switches, exclusions, pause/resume, restart and deletion. Keep real live results pending until user completes the run.
-- [ ] Commit verified implementation/docs. Push only after live-test confirmation and handover; no main merge.
+- [x] Run full Python163baseline plus new tests, Node tests, syntax and whole-branch diff checks. Native read-only focus smoke if permitted; no unrequested content capture.
+- [x] Obtain one independent whole-change review; reproduce important findings RED→GREEN and rerun affected checks.
+- [x] Document exact local service/extension/pilot start/context/stop commands, existing failed model acceptance, approved scope and resource limits.
+- [x] Provide user live test across two approved projects, app/window switches, exclusions, pause/resume, restart and deletion. Keep real live results pending until user completes the run.
+- [x] Commit verified implementation/docs. Push only after live-test confirmation and handover; no main merge.
+
+## Completion and live acceptance
+
+Engineering steps completed with one independent review and regression repairs.
+Final verification: 191 Python tests (81 semantic), 6 Node tests; syntax/whitespace
+checks. Native metadata smoke: Accessibility trusted, approved foreground denied.
+The [runbook](../live-semantic-pilot.md) supplies the live checklist; actual host
+handshake/content capture and model usefulness remain pending user execution.
+The live-result record and push are intentionally pending that confirmation.
+
+Rulings: one-second polling inside two-second freshness (extra idle file reads);
+resume retry while cancelled work drains (up to timeout); one-third SQLite page
+cap with journaling/reclaim reserve (less usable evidence space); canonical-only
+file URIs (benign symlink aliases denied); native random-title challenge (temporary
+registration tab and real-host title verification required).

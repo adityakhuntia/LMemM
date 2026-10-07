@@ -1,7 +1,7 @@
 # Semantic project-memory increment — 2026-10-07
 
-Status: fixture-driven engineering core implemented on `feat/semantic-project-memory`
-in `.worktrees/semantic-project-memory`. No accepted model, live semantic capture,
+Status: engineering core and opt-in live VS Code pilot implemented on `feat/semantic-project-memory`
+in `.worktrees/semantic-project-memory`. No accepted model or confirmed native live semantic capture,
 or MCP integration. Existing tracker behavior is unchanged.
 
 ## Flow and interfaces
@@ -120,8 +120,28 @@ leaking across caller scopes. Regression tests preserve those cases.
    of in-flight native work, manual/automatic task-event ordering, and restart boundaries.
 5. Measure enabled-worker versus baseline RAM/CPU and actual power over representative
    longer sessions. Isolated idle-service measurements alone are insufficient.
-6. Build permission-checked authoritative VS Code/browser source adapters and foreground
-   isolation. Then expose scoped read-only project context through MCP and validate an
+6. Validate the implemented VS Code pilot natively, build browser source adapters
+   with website permissions, then expose scoped read-only project context through MCP and validate an
    agent resuming a real project. Agent access must not grant wider capture permissions.
 
 Keep this increment isolated from main until the remaining acceptance work is reviewed.
+
+## Live pilot increment (2026-10-07)
+
+The [runbook](live-semantic-pilot.md) describes the new opt-in VS Code path across
+approved projects, private challenge-bound bridge, native focus gates, source quotes,
+experimental worker and recall/control/deletion CLI. Normal capture remains separate.
+The pilot enforces scheduled retention and page caps across its database writers;
+this does not complete every legacy/core quota or generic extractor lifecycle task.
+
+Current verification: 191 Python/81 semantic and 6 Node tests pass. One independent
+review identified nine important issues; regression repairs cover binding/excluded
+aliases, cancellation order/focus denial, stale generations, resumed publication,
+client expiry, recent recall and CLI symlink handling. Native metadata smoke denied
+non-VS-Code foreground. Real extension-host handshake/capture and model usefulness
+remain pending user live testing. No user-content model inference or push occurred.
+
+Next: live acceptance and handover/push after confirmation, richer automatic semantic
+understanding/corroboration, representative resources, browser source permissions,
+then scoped MCP. Existing failed model precision remains an acceptance limitation,
+not a restriction on explicitly experimental pilot testing.

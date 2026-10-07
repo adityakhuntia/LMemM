@@ -1,7 +1,7 @@
 # Opt-in live semantic project-memory pilot
 
-2026-10-07. Status: proposed written spec; scope approved in conversation,
-written-spec review pending. Extends the approved automatic project-memory design.
+2026-10-07. Status: revised direction approved after spec discussion; user requested
+real work across approved projects and inspectable tentative recall. Extends the approved automatic project-memory design.
 Implementation stays on `feat/semantic-project-memory` in its existing worktree.
 
 ## Intended outcome
@@ -12,10 +12,10 @@ source quotes, tentative interpretations and explicit coverage gaps. Successful
 pilot operation is not model/MVP acceptance. Confirmed live results will be recorded
 in handover/context docs before pushing this feature branch; no automatic main merge.
 
-The first pilot supports one explicitly approved local workspace and one VS Code
-window. Browser support remains the next source-adapter increment. That restriction
-reduces ambiguity while testing the actual project-resume loop; it is not a permanent
-product restriction. No hosted inference or expansion of the existing runtime budget.
+The pilot supports multiple explicitly approved local VS Code projects and windows.
+Each window registers its own client; only the uniquely focused, freshly verified
+client can publish accepted content. Browser support remains the next source-adapter
+increment. Switching projects requires no manual artifact attachment. No hosted inference or expansion of the existing runtime budget.
 
 ## Chosen approach and alternatives
 
@@ -35,20 +35,20 @@ Accessibility is used only to verify focus/geometry and reject secure/unknown co
 
 ## Source bridge and permission boundary
 
-The pilot starts only through an explicit experimental command, with an absolute
-workspace path, dedicated semantic data directory and cached runtime configuration.
+The pilot starts only through an explicit experimental command, with explicit absolute
+workspace paths, dedicated semantic data directory and cached runtime configuration.
 It generates a random per-run grant in a private local bridge directory. A VS Code
-command explicitly connects the extension to that grant and shows the chosen workspace
+command explicitly connects the extension to that grant and shows the approved workspaces
 and capture status. Installing/loading the extension alone never captures content.
 No network bridge or third-party extension dependency is needed; bounded atomic local
 files carry messages. The bridge is not a security boundary against malicious programs
 already running as the same OS user; OS account/file permissions are its trust boundary.
 
-The backend accepts only the configured grant/client, local desktop file URIs,
-trusted local workspaces, and documents canonically contained within the approved
+The backend accepts only the configured grant and registered clients, local desktop file URIs,
+trusted local workspaces, and documents canonically contained within an approved
 workspace. Reject remote/virtual workspaces, untitled buffers, untrusted workspaces,
 symlink escapes, unknown identity and excluded paths. Multi-root workspaces may expose
-only the approved root. Extension configuration cannot silently widen Python's grant.
+only explicitly approved roots. Extension configuration cannot silently widen Python's grant.
 Private bridge files use 0600 and directories 0700; reject symlinked ingress paths and
 oversized/malformed messages before parsing or text persistence. Bound ingress to 32 KiB,
 each source span to 4 KiB and each source envelope's retained text to 16 KiB.
@@ -68,8 +68,9 @@ content, not authorship, a completed edit or a user's decision.
 ## Independent foreground verification and lifecycle
 
 Verify foreground bundle ID `com.microsoft.VSCode`, native focused-window geometry and
-unique matching window-server identity. The first pilot rejects multiple VS Code
-windows/clients, absent Accessibility permission, ambiguous focus, secure input,
+unique matching window-server identity. Register clients while focused and bind them to the verified native window ID.
+Reject unregistered/mismatched windows, two clients claiming the same active window,
+absent Accessibility permission, ambiguous focus, secure input,
 lock/sleep, stale heartbeat and changed context. Do not reuse the legacy first-eligible
 window heuristic as verification. No native editable values are read. Verify context
 before and after accepting a bridge snapshot; discard changed/unknown context.
@@ -79,7 +80,8 @@ capture timestamps and heartbeats. Consume each event once. Accept only fresh ev
 (within 2 seconds), cap event publication to once per 2 seconds and keep at most one
 pending snapshot per source. Heartbeats update focus/state without repeatedly storing
 unchanged content. Focus loss/stop clears pending source text; disconnect/timeout closes
-an episode and cancels pending inference. A single focused client is required.
+an episode and cancels pending inference. One freshly focused client at a time is required; other connected project windows
+remain idle. Unknown window/client associations fail closed rather than guessing.
 
 Pause, lock/sleep, exclusion changes, secure input, permission loss and Ctrl+C stop
 new intake and invalidate pending/in-flight results before a worker can commit them.
@@ -107,7 +109,7 @@ An optional explicit pilot-note action may create user-note evidence only while 
 verified current source is available; this is intentional thought capture, not manual
 artifact association. No automatic completion from a passing test or a disappearing TODO.
 
-A pilot context command lists recent source-backed content, explicit decisions/reasons
+A pilot context command answers “what happened here and what is left?” using recent source-backed content, explicit decisions/reasons
 when available, open tasks, tentative claims and coverage, with original citations.
 An inspection mode shows unassigned/inferred proposals without presenting them as
 reliable agent answers. Do not label arbitrary source code as a verified completed
@@ -133,7 +135,7 @@ separately from deterministic workspace containment when browser fixtures are us
 Keep 95% assertion/association precision, 80% claim/relevant-artifact recall and zero
 unsupported decision/completion/citation/privacy failures. Preserve all misses/errors.
 No claimed release acceptance if a candidate fails. RAM target stays 3 GiB runtime,
-150MiB other semantic overhead; measure enabled-worker versus baseline,30-second p95
+150 MiB other semantic overhead; measure enabled-worker versus baseline, 30-second p95
 and 60-second idle CPU at most 2%. Measure longer-session power separately.
 
 Model quality and source/privacy correctness are separate gates. A live experimental
@@ -151,7 +153,7 @@ Use controlled extension-host/native smoke only after automated checks; report i
 separately from the user's real session. No background live capture starts unrequested.
 
 Then provide reproducible extension/pilot start/inspect/stop commands. The user opens
-two scratch files in the approved workspace, edits/scrolls/switches, briefly leaves
+files across two approved projects, edits/scrolls/switches, briefly leaves
 VS Code, exercises pause/resume and verifies excluded files are skipped. Inspect retained
 quotes, file/project identity, timestamps, tentative interpretations and coverage after
 Ctrl+C. Returning to the same file in a new session must reuse artifact/project identity.
@@ -173,3 +175,12 @@ cofounder handover with actual pass/fail evidence, then push only the feature br
 Later: permission-checked browser adapters, broader workspace discovery, stronger
 semantic relationship corroboration and scoped read-only MCP. Hosted inference remains
 an explicit future privacy discussion, with no fallback in this pilot.
+
+## Scope/execution clarification
+
+The approved revision removes the one-project/one-window restriction. It does not
+remove permission gates, reliable source identity, quotas or attribution. Existing
+inline execution preference persists. Build the end-to-end pilot now and use live
+feedback to improve understanding; do not require a passing model before an explicitly
+experimental pilot can start. Keep automatic agent consumption disabled. The existing
+precision benchmark and any future broader benchmark retain honest failure status.

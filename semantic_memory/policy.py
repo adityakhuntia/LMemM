@@ -80,4 +80,3 @@ def validate_source(envelope, policy):
         spans.append(dataclasses.replace(span, text=text, truncated=span.truncated or len(raw) > 4096))
     canonical_identity(envelope)
     return dataclasses.replace(envelope, at=utc(envelope.at), spans=tuple(spans))
-

@@ -100,4 +100,3 @@ class ContextPacket:
     unknowns: list = field(default_factory=list)
     citations: dict = field(default_factory=dict)
     coverage: dict = field(default_factory=dict)
-

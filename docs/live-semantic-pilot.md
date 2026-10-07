@@ -91,6 +91,8 @@ they do not prove authorship, changes completed or decisions made. Intentional
 notes through **LMemM: Record Intentional Project Note** are user-authored sources. Wait for **LMemM: project note saved locally** before submitting another note. A failed or interrupted delivery reports an error; submit again after reconnecting. Test decisions and tasks as separate notes, for example `We chose SQLite because memory should stay local.` and `TODO: test restart recovery.`
 Noncanonical/symlink document aliases are denied; open canonical paths. No manual project linking is required: canonical roots anchor project identity.
 
+Closed episodes without an inference job are recovered in bounded batches when native VS Code focus is verified, including retained notes across restart. Only evidence from currently approved roots is eligible. Cancelled or failed jobs are not automatically retried.
+
 Pause cancels queued/in-flight results and advances the policy revision. If a
 cancelled runtime request is still finishing, Resume asks you to retry once it
 finishes (up to the request timeout). Lock/sleep/display-off pause the process;

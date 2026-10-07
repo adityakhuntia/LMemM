@@ -49,6 +49,22 @@ class Pilot:
  def schedule(self,ids):
   if self.worker:
    for eid in ids:self.worker.enqueue(eid)
+ def recover_unscheduled(self):
+  # Only orphaned episodes: cancellation/error jobs never become automatic retries.
+  roots=tuple(str(r) for r in self.bridge.roots)
+  placeholders=','.join('?' for _ in roots)
+  with self.store.lock:
+   rows=self.store.connection.execute("""SELECT e.id FROM episodes e
+    WHERE e.status='unprocessed' AND NOT EXISTS(SELECT 1 FROM jobs j WHERE j.episode_id=e.id)
+    AND EXISTS(SELECT 1 FROM episode_evidence ee WHERE ee.episode_id=e.id)
+    AND NOT EXISTS(SELECT 1 FROM episode_evidence ee
+      JOIN occurrences o ON o.id=ee.occurrence_id JOIN sources s ON s.id=o.source_id
+      LEFT JOIN projects p ON p.id=s.project_id
+      WHERE ee.episode_id=e.id AND (s.app_id!=? OR p.locator IS NULL OR p.locator NOT IN ("""+placeholders+""")))
+    ORDER BY EXISTS(SELECT 1 FROM episode_evidence ee JOIN occurrences o ON o.id=ee.occurrence_id
+      JOIN sources s ON s.id=o.source_id WHERE ee.episode_id=e.id AND s.origin_type='user_note') DESC,
+      e.ended DESC LIMIT 8""",(APP,*roots)).fetchall()
+   self.schedule([row[0] for row in rows])
  def ingest(self,envelope):
   if self.paused or self.closed:return None
   with self.store.lock:
@@ -95,6 +111,7 @@ class Pilot:
      if self.factory:self.worker=InferenceWorker(self.store,self.factory())
      self.reset_worker=False
     if focus is not None and self.worker and (not self.thread or not self.thread.is_alive()):
+     self.recover_unscheduled()
      self.thread=threading.Thread(target=self._run,daemon=True);self.thread.start()
   except (sqlite3.DatabaseError,RuntimeError) as error:
    self.pause('Storage unavailable: '+type(error).__name__)

@@ -148,3 +148,39 @@ class GrantRevisionTests(unittest.TestCase):
   grant=json.loads((self.p.bridge.directory/'grant.json').read_text())
   self.assertGreater(self.p.revision,0)
   self.assertEqual(grant['revision'],self.p.revision)
+
+class BoundarySchedulingTests(unittest.TestCase):
+ def test_orphaned_note_recovers_only_with_focus_and_approved_root(self):
+  from semantic_memory.contracts import SourceEnvelope,TextSpan
+  class Extractor:
+   def cancel(self):pass
+   def extract(self,request):return json.dumps({'candidates':[]})
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp).resolve();focus=Focus(1,10,(0,0,800,600))
+   p=Pilot(root/'data',[root],extractor_factory=Extractor,focus_provider=lambda:focus)
+   try:
+    p.ingest(SourceEnvelope('note',datetime.now(timezone.utc).isoformat(),p.bridge.session,'com.microsoft.VSCode',str(root/'a.py'),str(root),True,'user_note',(TextSpan('0','TODO: test restart'),),p.revision))
+    p.focus_provider=lambda:None;p.tick()
+    self.assertEqual(p.store.connection.execute('SELECT count(*) FROM jobs').fetchone()[0],0)
+    p.focus_provider=lambda:focus;p.tick()
+    if p.thread:p.thread.join(2)
+    self.assertEqual(p.store.connection.execute('SELECT count(*) FROM jobs').fetchone()[0],1)
+    self.assertEqual(p.worker.status(),{'processed':1})
+   finally:p.close()
+ def test_recovery_excludes_unapproved_roots_and_does_not_retry_cancelled(self):
+  from semantic_memory.contracts import SourceEnvelope,TextSpan
+  from semantic_memory.inference import InferenceWorker
+  class Extractor:
+   def cancel(self):pass
+  with tempfile.TemporaryDirectory() as tmp:
+   base=Path(tmp).resolve();one=base/'one';two=base/'two';one.mkdir();two.mkdir()
+   p=Pilot(base/'data',[one,two],focus_provider=lambda:None)
+   try:
+    for i,root in enumerate((one,two)):
+     p.ingest(SourceEnvelope(str(i),datetime.now(timezone.utc).isoformat(),p.bridge.session,'com.microsoft.VSCode',str(root/'a.py'),str(root),True,'user_note',(TextSpan('0','TODO: test'),),p.revision))
+    p.flush();p.bridge.roots=(one,);p.worker=InferenceWorker(p.store,Extractor())
+    p.recover_unscheduled()
+    self.assertEqual(p.worker.status(),{'queued':1})
+    with p.store.transaction() as c:c.execute("UPDATE jobs SET status='cancelled'")
+    p.recover_unscheduled();self.assertEqual(p.worker.status(),{'cancelled':1})
+   finally:p.close()

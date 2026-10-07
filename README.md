@@ -182,7 +182,7 @@ deletion works are in [docs/input-timeline.md](docs/input-timeline.md).
 ## Develop
 
 ```bash
-python3 -m unittest discover -s tests      # 104 tests, incl. real on-device OCR
+python3 -m unittest discover -s tests      # 110 tests, incl. real on-device OCR
 ```
 
 [ARCHITECTURE.md](ARCHITECTURE.md) covers how the modules fit and where to extend it.

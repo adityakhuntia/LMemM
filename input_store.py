@@ -213,6 +213,8 @@ class InputStore:
         if self.closed:
             raise RuntimeError("session evidence store is closed")
         touched = {e["item"] for e in events} | {n["item"] for n in notes if n.get("item")}
+        touched.update(iid for iid, value in items.items()
+                       if value.get("notes_done", {}) != self.start_items.get(iid, {}).get("notes_done", {}))
         if not events and not notes:  # useful when importing independently owned evidence
             touched = {iid for iid in items if items[iid] != self.start_items.get(iid)}
         contributions = {}
@@ -227,6 +229,7 @@ class InputStore:
                                   "count": value.get("count", 0) - old.get("count", 0),
                                   "text": [t for t in value.get("text", []) if t not in old.get("text", [])]}
             metadata = {k: copy.deepcopy(v) for k, v in current.items() if k not in {"activity", "content", "notes", "seconds", "visits", "updates", "first_seen", "pinned", "refs", "typing_area"}}
+            metadata["notes_done"] = copy.deepcopy(current.get("notes_done", {}))
             metadata["first_seen"] = self.observed_first.get(iid, current["last_seen"])
             metadata["refs"] = sorted(self.observed_refs.get(iid, {current.get("ref")} ) - {None})
             if iid in self.observed_pins:
@@ -348,9 +351,11 @@ def recover_deletion(root):
         if not Path(path).resolve().is_relative_to(data):
             raise ValueError("invalid deletion manifest path")
     import store
+    import notes
     items = sorted(doc["items"].values(), key=lambda i: i["last_seen"], reverse=True)
     private_write(root / ".index.json", {"schema_version": 2, "items": items})
     private_write(root / "memory.json", {"schema_version": 2, "things": [store.readable(i) for i in items], "updated": _now()})
+    private_write(root / "pending.json", notes.pending_view(doc["items"]))
     for source in (root / "contributions").glob("*.json"):
         if source.name == "baseline.json" or source.stem == doc["session"]:
             continue

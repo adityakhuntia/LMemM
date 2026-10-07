@@ -253,6 +253,25 @@ class NotesCliTests(unittest.TestCase):
         self.assertIn("1 note(s) marked done", self.run_cli("notes", "done", self.nid))
         self.assertNotIn("split tracker", self.run_cli("notes"))
         self.assertIn("split tracker", self.run_cli("notes", "--all"))
+
+    def test_two_offline_commands_in_same_second_preserve_both_changes(self):
+        memory_dir = Path(self.paths.memory_dir)
+        items = memstore.load_items()
+        evidence = InputStore("first", memory_dir)
+        evidence.initialize_baseline(items)
+        evidence.checkpoint(items, [], [])
+        evidence.close()
+        other = notes.note_id(items["b"]["notes"][0])
+        with patch.object(lmemm, "datetime", wraps=datetime) as clock:
+            clock.now.return_value = datetime(2026, 10, 7, 1, 0, 0)
+            self.run_cli("notes", "done", self.nid)
+            self.run_cli("notes", "done", other)
+        from input_store import plan_session_deletion
+        plan = plan_session_deletion("first", {"data_dir": self.root, "memory_dir": memory_dir,
+                                               "pidfile": self.paths.pidfile})
+        self.assertEqual(plan["blockers"], [])
+        self.assertTrue(notes.is_done(plan["items"]["a"], items["a"]["notes"][0]))
+        self.assertTrue(notes.is_done(plan["items"]["b"], items["b"]["notes"][0]))
         self.run_cli("notes", "reopen", self.nid)
         self.assertIn("split tracker", self.run_cli("notes"))
 

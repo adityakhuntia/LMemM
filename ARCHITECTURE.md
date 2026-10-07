@@ -109,7 +109,7 @@ Rules that keep this cohesive:
 
 ## Testing
 
-`python3 -m unittest discover -s tests` runs 104 tests: real Vision OCR on generated
+`python3 -m unittest discover -s tests` runs 110 tests: real Vision OCR on generated
 images, identity, content, migration, notes/resurfacing/project view, the CLI, input
 events with fake native data, retention and deletion recovery. No test uses the real
 microphone, input tap or your data.

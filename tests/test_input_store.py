@@ -88,6 +88,89 @@ class InputStoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             delete_session("legacy", paths)
 
+    def test_deletion_rebuilds_pending_export_without_deleted_notes(self):
+        import config
+        import store as memory_store
+        baseline = item()
+        paths = {"data_dir": self.root, "memory_dir": self.root / "memory", "pidfile": self.root / "pid"}
+        first = InputStore("first", paths["memory_dir"], clock=lambda: self.now)
+        first.initialize_baseline({baseline["id"]: baseline})
+        changed = copy.deepcopy(baseline)
+        changed["notes"] = [{"at": "2026-10-05T09:00:00", "text": "Delete this private note"}]
+        first.checkpoint({baseline["id"]: changed}, [], [])
+        first.close()
+        with config.use_paths(self.root):
+            memory_store.save_memory({baseline["id"]: changed})
+        pending_path = paths["memory_dir"] / "pending.json"
+        self.assertIn("Delete this private note", pending_path.read_text())
+        delete_session("first", paths)
+        pending = json.loads(pending_path.read_text())
+        self.assertEqual(pending["open"], 0)
+        self.assertEqual(pending["projects"], [])
+        self.assertNotIn("Delete this private note", pending_path.read_text())
+        self.assertEqual(pending_path.stat().st_mode & 0o777, 0o600)
+
+    def test_pending_export_recovers_after_interruption_preserving_other_notes(self):
+        import config
+        import input_store
+        import store as memory_store
+        from unittest.mock import patch
+        baseline = item()
+        paths = {"data_dir": self.root, "memory_dir": self.root / "memory", "pidfile": self.root / "pid"}
+        current = {baseline["id"]: baseline}
+        for name, text in (("first", "Deleted note"), ("second", "Retained note")):
+            evidence = InputStore(name, paths["memory_dir"], clock=lambda: self.now)
+            evidence.initialize_baseline(current)
+            current = copy.deepcopy(current)
+            current[baseline["id"]].setdefault("notes", []).append({"at": self.now, "text": text})
+            evidence.checkpoint(current, [], [])
+            evidence.close()
+        pending_path = paths["memory_dir"] / "pending.json"
+        with config.use_paths(self.root):
+            memory_store.save_memory(current)
+            write = input_store.private_write
+            def interrupted(path, doc):
+                if Path(path).resolve() == pending_path.resolve():
+                    raise OSError("pending export interrupted")
+                return write(path, doc)
+            with patch.object(input_store, "private_write", interrupted), self.assertRaises(OSError):
+                delete_session("first", paths)
+            self.assertTrue((paths["memory_dir"] / ".deletion.json").exists())
+            restored = memory_store.load_items()
+        self.assertEqual([n["text"] for n in restored[baseline["id"]]["notes"]], ["Retained note"])
+        input_store.recover_deletion(paths["memory_dir"])
+        self.assertNotIn("Deleted note", pending_path.read_text())
+        self.assertIn("Retained note", pending_path.read_text())
+        self.assertEqual(json.loads(pending_path.read_text())["open"], 1)
+
+    def test_unvisited_item_done_and_reopen_survive_other_session_deletion(self):
+        import notes
+        for reopening in (False, True):
+            with self.subTest(reopening=reopening), tempfile.TemporaryDirectory() as directory:
+                data = Path(directory)
+                paths = {"data_dir": data, "memory_dir": data / "memory", "pidfile": data / "pid"}
+                a, b = item(), item()
+                a["id"], b["id"] = "visited", "unvisited"
+                b["notes"] = [{"at": self.now, "text": "Historical task"}]
+                nid = notes.note_id(b["notes"][0])
+                if reopening:
+                    notes.set_done({"b": b}, [nid])
+                baseline = {a["id"]: a, b["id"]: b}
+                disposable = InputStore("discard", paths["memory_dir"], clock=lambda: self.now)
+                disposable.initialize_baseline(baseline)
+                disposable.checkpoint(baseline, [], [])
+                disposable.close()
+                retained = InputStore("retained", paths["memory_dir"], clock=lambda: self.now)
+                retained.initialize_baseline(baseline)
+                changed = copy.deepcopy(baseline)
+                notes.set_done(changed, [nid], done=not reopening)
+                retained.checkpoint(changed, [{"item": a["id"]}], [])
+                retained.close()
+                delete_session("discard", paths)
+                restored = json.loads((paths["memory_dir"] / ".index.json").read_text())["items"]
+                restored_b = next(i for i in restored if i["id"] == b["id"])
+                self.assertEqual(notes.is_done(restored_b, b["notes"][0]), not reopening)
+
     def test_unknown_fields_are_rejected_not_stored(self):
         store = InputStore("first", self.root, clock=lambda: self.now)
         event = self.click()[0]

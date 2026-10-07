@@ -19,6 +19,7 @@ How it fits together: see ARCHITECTURE.md.
 import argparse
 import json
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -191,7 +192,7 @@ def record_offline_change(items):
     if not (memory_dir / "contributions" / "baseline.json").exists():
         return
     before = store.load_items()
-    evidence = InputStore("notes-" + datetime.now().strftime("%Y%m%d-%H%M%S"), memory_dir)
+    evidence = InputStore("notes-" + str(time.time_ns()), memory_dir)
     evidence.initialize_baseline(before)
     evidence.checkpoint(items, [], [])
     evidence.close()

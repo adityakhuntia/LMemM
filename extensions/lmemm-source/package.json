@@ -1,0 +1,10 @@
+{
+ "name":"lmemm-source", "displayName":"LMemM Experimental Source Bridge", "publisher":"lmemm", "version":"0.1.0",
+ "engines":{"vscode":"^1.85.0"}, "main":"./extension.js", "activationEvents":["onCommand:lmemm.connect"],
+ "capabilities":{"untrustedWorkspaces":{"supported":false},"virtualWorkspaces":false},
+ "contributes":{"commands":[
+  {"command":"lmemm.connect","title":"LMemM: Connect Experimental Project Memory"},
+  {"command":"lmemm.pause","title":"LMemM: Pause Source Sharing"},
+  {"command":"lmemm.stop","title":"LMemM: Disconnect Source Sharing"},
+  {"command":"lmemm.note","title":"LMemM: Record Intentional Project Note"}]}
+}

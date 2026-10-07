@@ -29,6 +29,8 @@ def focused_context():
             return None
         pid=app.processIdentifier()
         error, focused=AX.AXUIElementCopyAttributeValue(AX.AXUIElementCreateSystemWide(),'AXFocusedUIElement',None)
+        if error in (-25204,-25205,-25212):
+            error,focused=AX.AXUIElementCopyAttributeValue(AX.AXUIElementCreateApplication(pid),'AXFocusedUIElement',None)
         if error or focused is None: return None
         error, owner=AX.AXUIElementGetPid(focused,None)
         if error or owner!=pid: return None

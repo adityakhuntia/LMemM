@@ -144,3 +144,23 @@ class UnicodeIngressTests(unittest.TestCase):
   self.connect();m=self.msg('snapshot');m['spans']=[dict(text='😀'*1024,truncated=False) for i in range(4)]
   self.assertLess(len(json.dumps(m,ensure_ascii=False).encode()),32768)
   self.assertIsNotNone(self.bridge.accept(m,self.focus))
+
+class AppFocusFallbackTests(unittest.TestCase):
+ def test_app_focus_fallback_keeps_owner_and_secure_checks(self):
+  from types import SimpleNamespace as NS
+  from unittest.mock import patch
+  from semantic_memory.live_focus import focused_context
+  app=NS(bundleIdentifier=lambda:'com.microsoft.VSCode',processIdentifier=lambda:1)
+  state={'owner':1,'role':'AXGroup','subrole':None}
+  def attribute(element,name,ignored):
+   if element=='system':return -25204,None
+   if name=='AXRole':return 0,state['role']
+   if name=='AXSubrole':return -25212,state['subrole']
+   return 0,{'AXFocusedWindow':'window','AXPosition':'position','AXSize':'size','AXFocusedUIElement':'element','AXTitle':'LMemM test'}[name]
+  ax=NS(AXUIElementCreateApplication=lambda pid:'app',AXUIElementCreateSystemWide=lambda:'system',AXUIElementCopyAttributeValue=attribute,AXUIElementGetPid=lambda e,x:(0,state['owner']),AXValueGetValue=lambda value,kind,x:(True,NS(x=0,y=0) if value=='position' else NS(width=800,height=600)),kAXValueCGPointType=1,kAXValueCGSizeType=2)
+  quartz=NS(kCGWindowListOptionOnScreenOnly=1,CGWindowListCopyWindowInfo=lambda x,y:[{'kCGWindowLayer':0,'kCGWindowOwnerPID':1,'kCGWindowNumber':10,'kCGWindowBounds':dict(X=0,Y=0,Width=800,Height=600)}])
+  kit=NS(NSWorkspace=NS(sharedWorkspace=lambda:NS(frontmostApplication=lambda:app)))
+  with patch.dict('sys.modules',{'AppKit':kit,'Quartz':quartz,'ApplicationServices':ax}),patch('input_monitor.secure_input_enabled',return_value=False):
+   self.assertIsNotNone(focused_context())
+   state['owner']=2;self.assertIsNone(focused_context())
+   state.update(owner=1,role='AXTextField',subrole='AXSecureTextField');self.assertIsNone(focused_context())

@@ -34,11 +34,32 @@ The speech helper is built with clang (Xcode Command Line Tools) on first run.
 ## Use
 
 ```bash
-python3 lmemm.py                      # start watching; Ctrl-C to stop
-python3 lmemm.py memory               # what's remembered + the latest session
-python3 lmemm.py notes                # pending edits, by project
-python3 lmemm.py notes done n-3f9a1c  # tick one off (reopen: notes reopen ID)
+python3 lmemm.py
 ```
+
+That's the one command. With nothing after it, LMemM opens a menu:
+
+```
+LMemM
+─────
+ 1  Start watching               capture + remember what you do; Ctrl-C stops
+ 2  See what's remembered        memory.json: what you did, notes, activity
+ 3  Pending edits                your ⌃⌥N notes, grouped by project
+ 4  Export context for an AI     a clean summary - just what you did and why
+ 5  Status                       is a session running, paused, what it's costing
+ 6  Pause / resume               toggle a session that's already running
+ 7  Dictate a note now           same as pressing ⌃⌥N
+ 8  Force-save the current screen same as the pin hotkey
+ 9  Delete a session's data      review with --dry-run first, then --confirm
+ 0  Quit
+```
+
+Pick a number. Anything with options asks for them on the next line, in the same
+form as the command-line flags below — press Enter for the plain version. An
+action runs and drops you back at the menu, so you can start watching, stop it with
+Ctrl-C, then check `memory` or `notes` without leaving. 0, Ctrl-C or Ctrl-D to quit.
+
+Every item is also a direct command, for scripts and muscle memory:
 
 | Command | What it does |
 |---|---|
@@ -46,6 +67,7 @@ python3 lmemm.py notes done n-3f9a1c  # tick one off (reopen: notes reopen ID)
 | `lmemm.py memory [N] [--content] [--events]` | latest N things; `--content` adds kept excerpts, `--events` the input timeline |
 | `lmemm.py notes [--all] [PROJECT]` | open notes grouped project → thing; `--all` includes done ones |
 | `lmemm.py notes done ID…` / `notes reopen ID…` | mark notes done / open again |
+| `lmemm.py context [SESSION] [--days N]` | a clean, de-noised export for an AI (below) |
 | `lmemm.py status` / `pause` / `resume` | the running tracker; pause stops all capture |
 | `lmemm.py pin` | force-save the current screen |
 | `lmemm.py note` | open the note window from a terminal (same as ⌃⌥N) |
@@ -150,12 +172,16 @@ is pinned or has an open note. Memory files are written at most every 5 s while 
 
 | File | Contents |
 |---|---|
-| `memory/memory.json` | every thing, readable: what, doing, project, your notes (with status), latest content, activity, time, its one screenshot |
-| `memory/pending.json` | open notes by project |
+| `memory/memory.json` | **the one memory file** - every thing, both readable (what, doing, project, notes, content, activity, time, screenshot) and the full internal record the tracker resumes from. Back this one up. |
 | `memory/sessions/<id>.json` | one session's timeline: when you were on what, and what was resurfaced |
-| `memory/.index.json` | full internal state (source of truth — back this one up) |
-| `memory/inputs/`, `memory/contributions/` | input timeline and per-session evidence (see below) |
+| `memory/context/<id>.json` | the clean AI-facing export for one session or date range (below), only written when you ask for one |
+| `memory/inputs/`, `memory/contributions/` | input timeline and per-session evidence - only appear if you turn on the opt-in input timeline (see below) |
 | `<ts>.jpg` / `<ts>.json` | the one thumbnail kept per thing, and its capture metadata (deleted after 7 days; see above) |
+
+Pending edits (open notes by project) aren't a file - `notes` command and the pill
+compute that view live from `memory.json`. `.index.json` and `pending.json` from
+earlier versions are gone: the first run after upgrading folds `.index.json` into
+`memory.json` and removes both.
 
 One entry looks like:
 
@@ -227,7 +253,7 @@ deletion works are in [docs/input-timeline.md](docs/input-timeline.md).
 ## Develop
 
 ```bash
-python3 -m unittest discover -s tests      # 142 tests, incl. real on-device OCR
+python3 -m unittest discover -s tests      # 159 tests, incl. real on-device OCR
 ```
 
 [ARCHITECTURE.md](ARCHITECTURE.md) covers how the modules fit and where to extend it.

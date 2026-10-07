@@ -67,16 +67,8 @@ class Paths:
         return os.path.join(self.data_dir, "memory")
 
     @property
-    def items_file(self):         # readable export
+    def items_file(self):         # the one memory file: source of truth + readable view
         return os.path.join(self.memory_dir, "memory.json")
-
-    @property
-    def index_file(self):         # full internal state (source of truth)
-        return os.path.join(self.memory_dir, ".index.json")
-
-    @property
-    def pending_file(self):       # readable project view of open notes
-        return os.path.join(self.memory_dir, "pending.json")
 
     @property
     def sessions_dir(self):

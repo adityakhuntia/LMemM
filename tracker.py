@@ -820,8 +820,10 @@ class Tracker:
         with open(p.pidfile, "w") as fh:
             fh.write(str(os.getpid()))
         self.save_interval = config.SAVE_EVERY          # tests save immediately; the real loop batches
-        with self.lock:                                 # drop thumbnails past their retention
-            if retention.expire_screenshots(self.items):
+        with self.lock:
+            stale = os.path.exists(os.path.join(p.memory_dir, ".index.json"))
+            expired = retention.expire_screenshots(self.items)
+            if stale or expired:                        # one-time file consolidation, or just housekeeping
                 self.save(force=True)
         self.last_retention_sweep = time.time()
 

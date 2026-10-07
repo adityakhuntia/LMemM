@@ -196,7 +196,7 @@ class ResurfaceOnReopenTests(unittest.TestCase):
         self.assertEqual(len(self.notified), 1)
         timeline = json.loads(next(Path(config.paths().sessions_dir).glob("*.json")).read_text())["timeline"]
         self.assertEqual([bool(e.get("resurfaced")) for e in timeline], [False, False, True, False, False])
-        pending = json.loads(Path(config.paths().pending_file).read_text())
+        pending = notes.pending_view(memstore.load_items())
         self.assertEqual(pending["open"], 1)
         self.assertEqual(pending["projects"][0]["items"][0]["notes"][0]["text"], "add a pricing table")
 
@@ -207,7 +207,7 @@ class ResurfaceOnReopenTests(unittest.TestCase):
         self.assertEqual([n["text"] for n in card["left"]], ["add a pricing table"])
         self.capture.widget_tick([card["left"][0]["id"]], True)
         self.assertEqual(self.capture.widget_card()["left"], [])
-        self.assertEqual(json.loads(Path(config.paths().pending_file).read_text())["open"], 0)
+        self.assertEqual(notes.pending_view(memstore.load_items())["open"], 0)
 
     def test_done_note_does_not_resurface(self):
         ts = self.visit("Q3 plan", "Pricing section goes here")

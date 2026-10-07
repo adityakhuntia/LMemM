@@ -72,7 +72,7 @@ class InputStoreTests(unittest.TestCase):
         plan = plan_session_deletion("first", paths)
         self.assertEqual(plan["blockers"], [])
         delete_session("first", paths)
-        restored = json.loads((self.root / "memory" / ".index.json").read_text())["items"][0]
+        restored = json.loads((self.root / "memory" / "memory.json").read_text())["items"][0]
         self.assertEqual(restored["seconds"], 15)
         self.assertEqual(restored["visits"], 2)
         self.assertEqual([n["text"] for n in restored["notes"]], ["Second note"])
@@ -88,8 +88,11 @@ class InputStoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             delete_session("legacy", paths)
 
-    def test_deletion_rebuilds_pending_export_without_deleted_notes(self):
+    def test_deletion_removes_the_deleted_session_s_notes_from_what_is_left(self):
+        # pending edits are computed on demand (notes.pending_view), not stored separately;
+        # this checks the computed view changes correctly once the session is gone
         import config
+        import notes
         import store as memory_store
         baseline = item()
         paths = {"data_dir": self.root, "memory_dir": self.root / "memory", "pidfile": self.root / "pid"}
@@ -101,16 +104,15 @@ class InputStoreTests(unittest.TestCase):
         first.close()
         with config.use_paths(self.root):
             memory_store.save_memory({baseline["id"]: changed})
-        pending_path = paths["memory_dir"] / "pending.json"
-        self.assertIn("Delete this private note", pending_path.read_text())
+            before = notes.pending_view(memory_store.load_items())
+        self.assertEqual(before["open"], 1)
         delete_session("first", paths)
-        pending = json.loads(pending_path.read_text())
-        self.assertEqual(pending["open"], 0)
-        self.assertEqual(pending["projects"], [])
-        self.assertNotIn("Delete this private note", pending_path.read_text())
-        self.assertEqual(pending_path.stat().st_mode & 0o777, 0o600)
+        with config.use_paths(self.root):
+            after = notes.pending_view(memory_store.load_items())
+        self.assertEqual(after["open"], 0)
+        self.assertEqual(after["projects"], [])
 
-    def test_pending_export_recovers_after_interruption_preserving_other_notes(self):
+    def test_deletion_recovers_after_interruption_preserving_other_notes(self):
         import config
         import input_store
         import store as memory_store
@@ -125,13 +127,13 @@ class InputStoreTests(unittest.TestCase):
             current[baseline["id"]].setdefault("notes", []).append({"at": self.now, "text": text})
             evidence.checkpoint(current, [], [])
             evidence.close()
-        pending_path = paths["memory_dir"] / "pending.json"
+        memory_path = paths["memory_dir"] / "memory.json"
         with config.use_paths(self.root):
             memory_store.save_memory(current)
             write = input_store.private_write
             def interrupted(path, doc):
-                if Path(path).resolve() == pending_path.resolve():
-                    raise OSError("pending export interrupted")
+                if Path(path).resolve() == memory_path.resolve():
+                    raise OSError("memory write interrupted")
                 return write(path, doc)
             with patch.object(input_store, "private_write", interrupted), self.assertRaises(OSError):
                 delete_session("first", paths)
@@ -139,9 +141,9 @@ class InputStoreTests(unittest.TestCase):
             restored = memory_store.load_items()
         self.assertEqual([n["text"] for n in restored[baseline["id"]]["notes"]], ["Retained note"])
         input_store.recover_deletion(paths["memory_dir"])
-        self.assertNotIn("Deleted note", pending_path.read_text())
-        self.assertIn("Retained note", pending_path.read_text())
-        self.assertEqual(json.loads(pending_path.read_text())["open"], 1)
+        with config.use_paths(self.root):
+            recovered = memory_store.load_items()
+        self.assertEqual([n["text"] for n in recovered[baseline["id"]]["notes"]], ["Retained note"])
 
     def test_unvisited_item_done_and_reopen_survive_other_session_deletion(self):
         import notes
@@ -167,7 +169,7 @@ class InputStoreTests(unittest.TestCase):
                 retained.checkpoint(changed, [{"item": a["id"]}], [])
                 retained.close()
                 delete_session("discard", paths)
-                restored = json.loads((paths["memory_dir"] / ".index.json").read_text())["items"]
+                restored = json.loads((paths["memory_dir"] / "memory.json").read_text())["items"]
                 restored_b = next(i for i in restored if i["id"] == b["id"])
                 self.assertEqual(notes.is_done(restored_b, b["notes"][0]), not reopening)
 
@@ -220,7 +222,7 @@ class InputStoreTests(unittest.TestCase):
         delete_session("first", paths)
         self.assertEqual(plan_session_deletion("second", paths)["blockers"], [])
         delete_session("second", paths)
-        self.assertEqual(json.loads((paths["memory_dir"] / ".index.json").read_text())["items"][0]["seconds"], 0)
+        self.assertEqual(json.loads((paths["memory_dir"] / "memory.json").read_text())["items"][0]["seconds"], 0)
 
     def test_deletion_scrubs_all_retained_checkpoints_and_inherited_pin(self):
         base = item()
@@ -237,7 +239,7 @@ class InputStoreTests(unittest.TestCase):
         delete_session("first", paths)
         for path in (paths["memory_dir"] / "contributions").glob("*.json"):
             self.assertNotIn("ONLY_FIRST_SECRET", path.read_text())
-        restored = json.loads((paths["memory_dir"] / ".index.json").read_text())["items"][0]
+        restored = json.loads((paths["memory_dir"] / "memory.json").read_text())["items"][0]
         self.assertNotIn("pinned", restored)
         self.assertEqual(restored["first_seen"], "2026-10-05T09:02:00")
 
@@ -305,7 +307,7 @@ class InputStoreTests(unittest.TestCase):
         self.assertEqual(restored[baseline["id"]]["seconds"], 10)
         self.assertFalse((paths["memory_dir"] / ".deletion.json").exists())
         delete_session("second", paths)
-        self.assertEqual(json.loads((paths["memory_dir"] / ".index.json").read_text())["items"][0]["seconds"], 0)
+        self.assertEqual(json.loads((paths["memory_dir"] / "memory.json").read_text())["items"][0]["seconds"], 0)
 
     def test_navigation_counts_link_to_observed_changes_only_for_same_source(self):
         store = InputStore('first', self.root, clock=lambda: self.now)

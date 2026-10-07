@@ -310,8 +310,8 @@ def plan_session_deletion(session_id, paths):
         return {"session": session_id, "blockers": blockers, "files": []}
     all_sources = [read_json(p) for p in (root / "contributions").glob("*.json") if p.name != "baseline.json"]
     latest = max(all_sources, key=lambda c: (c["at"], c["session"]))
-    index = root / ".index.json"
-    if index.exists() and fingerprint({i["id"]: i for i in read_json(index)["items"]}) != latest.get("expected_fingerprint", fingerprint(latest.get("expected_items", {}))):
+    memory_file = root / "memory.json"
+    if memory_file.exists() and fingerprint({i["id"]: i for i in read_json(memory_file)["items"]}) != latest.get("expected_fingerprint", fingerprint(latest.get("expected_items", {}))):
         blockers.append("Memory changed outside recorded provenance; reconstruction would lose evidence.")
     for replay in (data / "replays").rglob("*.json") if (data / "replays").exists() else []:
         doc = read_json(replay)
@@ -354,11 +354,9 @@ def recover_deletion(root):
         if not Path(path).resolve().is_relative_to(data):
             raise ValueError("invalid deletion manifest path")
     import store
-    import notes
     items = sorted(doc["items"].values(), key=lambda i: i["last_seen"], reverse=True)
-    private_write(root / ".index.json", {"schema_version": 2, "items": items})
-    private_write(root / "memory.json", {"schema_version": 2, "things": [store.readable(i) for i in items], "updated": _now()})
-    private_write(root / "pending.json", notes.pending_view(doc["items"]))
+    private_write(root / "memory.json", {"schema_version": store.SCHEMA, "updated": _now(),
+                                         "things": [store.readable(i) for i in items], "items": items})
     for source in (root / "contributions").glob("*.json"):
         if source.name == "baseline.json" or source.stem == doc["session"]:
             continue

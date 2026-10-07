@@ -34,7 +34,7 @@ One process, two threads, plain files.
 | `input_monitor.py` | opt-in listen-only event tap + privacy gate | **yes** |
 | `input_events.py` | input summaries, ordering, context boundaries | no |
 | `input_store.py` | input files, capture links, provenance, session deletion | no |
-| `lmemm.py` | CLI | no |
+| `lmemm.py` | CLI: the interactive menu, and one direct command per menu item | no |
 
 Rules that keep this cohesive:
 
@@ -136,6 +136,21 @@ anywhere in the output.
 `.lmemm.control.json`, which the tracker applies on its next tick. `status` reads
 `.lmemm.status.json`. `pin` and `note` use SIGUSR1 / SIGUSR2.
 
+## The menu (lmemm.py)
+
+`lmemm.py` with no arguments calls `interactive_menu()` instead of starting the tracker
+(any explicit subcommand, including `start`, still goes straight there - this only
+changes the bare-invocation default). `MENU` is one list of `MenuItem(key, label, hint,
+hint_example, action)`; `action` is the same `cmd_*` function the direct command uses, so
+there is exactly one implementation of each command's argument parsing, used by both the
+CLI and the menu. Picking an item with a `hint_example` prompts once for an optional
+argument string, `shlex.split` into the same `args` list `cmd_*` already expects.
+
+The loop calls the action, catches `SystemExit` (several `cmd_*` functions call
+`sys.exit` on bad input or "nothing yet") and `KeyboardInterrupt` so one mistake or an
+empty state doesn't end the session, then redraws the menu. `read`/`write` are
+parameters (default `input`/`print`) so tests drive it without a real terminal.
+
 ## Extending
 
 | You want to… | Change |
@@ -148,7 +163,7 @@ anywhere in the output.
 
 ## Testing
 
-`python3 -m unittest discover -s tests` runs 142 tests: real Vision OCR on generated
+`python3 -m unittest discover -s tests` runs 159 tests: real Vision OCR on generated
 images, identity, content, migration, notes/resurfacing/project view, the CLI, input
 events with fake native data, retention and deletion recovery. No test uses the real
 microphone, input tap or your data.

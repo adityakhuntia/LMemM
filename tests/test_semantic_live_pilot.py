@@ -138,3 +138,13 @@ class RegistrationRaceTests(unittest.TestCase):
   self.p.focus_provider=lambda:next(sequence,other)
   self.send('connect')
   self.assertFalse(self.p.bridge.clients)
+
+class GrantRevisionTests(unittest.TestCase):
+ setUp=PilotTests.setUp
+ tearDown=PilotTests.tearDown
+ def test_focus_boundary_publishes_current_grant_revision(self):
+  self.p.focus_provider=lambda:None
+  self.p.tick()
+  grant=json.loads((self.p.bridge.directory/'grant.json').read_text())
+  self.assertGreater(self.p.revision,0)
+  self.assertEqual(grant['revision'],self.p.revision)

@@ -162,3 +162,5 @@ Rulings: one-second publisher poll stays inside the two-second freshness window;
 Pointers: [design](docs/specs/2026-10-07-live-semantic-pilot-design.md), [implementation plan](docs/plans/2026-10-07-live-semantic-pilot.md), [runbook](docs/live-semantic-pilot.md), [semantic handover](docs/semantic-project-memory-status.md). No push or main merge has been performed.
 
 Live QA follow-up: extension loaded and challenge tab appeared, but registration stayed blocked. Native diagnosis showed system AXFocusedUIElement error -25204 while app-scoped focus succeeded. Added app-scoped fallback for unavailable/unsupported system queries, preserving owner/role/secure-field checks. Regression reproduced RED then passed; collector restart and live acceptance remain pending.
+
+Live QA diagnostic: native challenge/focus/geometry checks passed for 27 recorded foreground samples. Found collector focus-boundary revisions were not published to grant.json, leaving extension events permanently stale. Added revision publication on invalidation and regression coverage (RED→GREEN). Collector restart required to load fix; accepted-source live QA still pending.

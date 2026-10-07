@@ -108,6 +108,7 @@ class Pilot:
    c.execute("INSERT OR REPLACE INTO meta VALUES('revision',?)",(str(self.revision),))
    c.execute("UPDATE jobs SET status='cancelled',error=? WHERE status IN ('queued','running')",(reason,))
   self.bridge.revision=self.revision;self.bridge.last.clear()
+  self.bridge.publish_grant()
   self.episodes.boundary(reason,timestamp(self.clock()))
   self.reset_worker=True
   if self.worker:self.worker.extractor.cancel()
@@ -124,7 +125,7 @@ class Pilot:
   self.bridge.active=True;self.bridge.publish_grant();self.paused=False;self.reason=None;self.status()
  def status(self):
   with self.store.lock:
-   result=dict(pid=os.getpid(),session=self.bridge.session,paused=self.paused,reason=self.reason,
+   result=dict(pid=os.getpid(),session=self.bridge.session,revision=self.revision,paused=self.paused,reason=self.reason,
     model='experimental' if self.worker else 'evidence only',sources=self.store.count('sources'),
     projects=self.store.count('projects'),native_focus_verified=self.last_focus is not None,jobs=self.worker.status() if self.worker else {},closed=self.closed)
   write_private_json(self.directory/'status.json',result);return result

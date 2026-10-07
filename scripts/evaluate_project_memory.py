@@ -21,6 +21,6 @@ def main():
     try:
         if not 1<=args.timing_repeats<=4:raise ValueError('Invalid repetition bound')
         report=evaluate(load_fixture_manifest(args.manifest),runtime,args.split,args.output/(runtime.model.replace(':','-')+'-'+args.split+'.json'),args.timing_repeats)
-        print(json.dumps({k:report[k] for k in ('model','split','metrics','quality_pass','resource_pass','selection_pass')},indent=2))
+        print(json.dumps({k:report[k] for k in ('model','split','assertion_metrics','privacy_metrics','quality_pass','resource_pass','selection_pass')},indent=2))
     finally:runtime.unload()
 if __name__=='__main__':main()

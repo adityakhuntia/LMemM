@@ -18,7 +18,7 @@ def score_assertions(rows):
             if not valid_refs:invalid_citations+=1
             texts=[_normalized(row['evidence'][ref]) for ref in refs if ref in row['evidence']]
             quote=_normalized(claim['statement']);reason=_normalized(claim.get('reason'))
-            grounded=bool(quote) and any(quote in text and (not reason or reason in text) for text in texts)
+            grounded=valid_refs and bool(quote) and all(quote in text and (not reason or reason in text) for text in texts)
             if not grounded:invalid_grounding+=1
             match=next((i for i,gold in enumerate(unmatched) if _key(gold)==_key(claim)),None)
             if valid_refs and grounded and match is not None:

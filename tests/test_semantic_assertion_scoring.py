@@ -33,3 +33,8 @@ class AssertionScoringTests(unittest.TestCase):
         row['evidence']['e1']=row['gold'][0]['statement']
         row['assertions'][0]['statement']=row['gold'][0]['statement']
         m=score_assertions([row]);self.assertEqual(m['false_negative'],1)
+
+    def test_every_claimed_citation_must_ground_the_assertion(self):
+        row=self.row([self.claim(citations=['e1','unrelated'])]);row['evidence']['unrelated']='Weather forecast.'
+        m=score_assertions([row]);self.assertEqual(m['true_positive'],0)
+        self.assertEqual(m['invalid_grounding'],1)

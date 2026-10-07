@@ -80,3 +80,9 @@ def validate_source(envelope, policy):
         spans.append(dataclasses.replace(span, text=text, truncated=span.truncated or len(raw) > 4096))
     canonical_identity(envelope)
     return dataclasses.replace(envelope, at=utc(envelope.at), spans=tuple(spans))
+
+
+def references_project(text,locator):
+    """An exact project path or contained file, never a similarly named prefix."""
+    import re
+    return bool(re.search(r'(?<![\w/.-])'+re.escape(locator)+r'(?=/|[\s,.;:!?)]|$)',text))

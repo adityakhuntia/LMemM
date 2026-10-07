@@ -26,3 +26,20 @@ class AssertionPipelineTests(unittest.TestCase):
         report=evaluate(dict(corpus,cases=[corpus['cases'][12]]),SourceQuoteExtractor(),'development')
         self.assertFalse(report['quality_pass'])
         self.assertIn('proposition/reason accuracy',report['acceptance_incomplete'])
+
+    def test_revocation_probe_detects_private_text_without_citation_ids(self):
+        from unittest.mock import patch
+        from semantic_helpers import SemanticFixture,source,policy
+        from semantic_memory.evaluation import _privacy_probes
+        from semantic_memory.retrieval import project_context
+        fixture=SemanticFixture();fixture.addCleanup=self.addCleanup;fixture.setUp()
+        ingest=fixture.db.ingest(source(),policy())
+        def leaking_context(store,*args):
+            packet=project_context(store,*args)
+            revision=store.connection.execute("SELECT value FROM meta WHERE key='revision'").fetchone()
+            if revision and revision[0]=='2' and store.count('sources'):
+                packet.recent_changes.append({'statement':'semantic-private-canary','citations':[]})
+            return packet
+        with patch('semantic_memory.evaluation.project_context',side_effect=leaking_context):
+            report=_privacy_probes(fixture.db,[ingest.project_id],policy())
+        self.assertGreater(report['forbidden_source_leaks'],0)

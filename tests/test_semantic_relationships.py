@@ -40,3 +40,14 @@ class RelationshipTests(SemanticFixture, unittest.TestCase):
         apply_correction(self.db,Correction('reject',e['artifact_id'],anchored.project_id,'2026-10-07T10:01:00+00:00'))
         apply_extraction(self.db,eid,result)
         self.assertFalse(self.db.connection.execute('SELECT 1 FROM edges WHERE subject_id=?',(e['artifact_id'],)).fetchone())
+
+    def test_similar_project_prefix_does_not_support_browser_membership(self):
+        anchored=self.db.ingest(source(),policy())
+        self.db.ingest(source('web',app_id='com.apple.Safari',artifact_locator='https://docs.example.org/prefix',workspace_locator=None,
+            spans=(TextSpan('x','Reference for /projects/one-other/main.py.'),)),policy())
+        self.builder.accept('web');eid=self.builder.boundary('stop','2026-10-07T10:01:00+00:00')[0]
+        req=build_request(self.db,eid);e=req.evidence[0]
+        candidate={'type':'belongs_to','subject_id':e['artifact_id'],'object_id':anchored.project_id,
+                   'statement':e['text'],'evidence_ids':[e['id']],'extraction_status':'observed'}
+        apply_extraction(self.db,eid,validate_extraction(json.dumps({'candidates':[candidate]}),req))
+        self.assertEqual(self.db.connection.execute('SELECT status FROM edges WHERE subject_id=?',(e['artifact_id'],)).fetchone()[0],'inferred')

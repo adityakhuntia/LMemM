@@ -24,6 +24,7 @@ class LocalSelectionTests(SemanticFixture,unittest.TestCase):
                 decode_selections(json.dumps({'selections':[selection]}),req)
     def test_project_mapping_does_not_allow_model_chosen_ids(self):
         req=self.request()
+        req=dataclasses.replace(req,evidence=(dict(req.evidence[0],text='Reference for /projects/one/main.py.'),))
         selection={'kind':'belongs_to','source':0,'project':0,'reason':None}
         result=validate_extraction(decode_selections(json.dumps({'selections':[selection]}),req),req)
         self.assertEqual(result.candidates[0]['object_id'],req.candidates[0]['id'])
@@ -73,4 +74,9 @@ class LocalSelectionTests(SemanticFixture,unittest.TestCase):
         result=validate_extraction(decode_selections(json.dumps(output),req),req)
         self.assertEqual(result.candidates[0]['object_id'],req.candidates[0]['id'])
         req=dataclasses.replace(req,evidence=(dict(req.evidence[0],text='Guide for /projects/one-other/retry.py.'),))
+        with self.assertRaises(ValueError):decode_selections(json.dumps(output),req)
+
+    def test_legacy_project_field_cannot_bypass_explicit_path_boundary(self):
+        req=self.request();req=dataclasses.replace(req,evidence=(dict(req.evidence[0],text='For /projects/one-other/retry.py.'),))
+        output={'selections':[{'kind':'belongs_to','source':0,'project':0,'reason':None}]}
         with self.assertRaises(ValueError):decode_selections(json.dumps(output),req)

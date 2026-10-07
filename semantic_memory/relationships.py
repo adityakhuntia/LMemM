@@ -4,7 +4,7 @@ import json
 import re
 from .contracts import ApplyResult
 from .episodes import build_request
-from .policy import identifier, utc
+from .policy import identifier, utc, references_project
 
 def _support(c,eid,refs,episode,method):
     for oid in refs:
@@ -44,7 +44,7 @@ def apply_extraction_in_transaction(store,episode_id,result,request):
             if kind=='belongs_to':
                 project=c.execute("SELECT locator FROM projects WHERE id=?",(obj,)).fetchone()
                 # Explicit path evidence is objective support, independent of model score.
-                explicit=bool(project and any(project[0] in e['text'] for e in selected))
+                explicit=bool(project and any(references_project(e['text'],project[0]) for e in selected))
                 status='supported' if explicit else 'inferred'
                 method='explicit_reference' if explicit else 'semantic_candidate'
             else:
@@ -126,5 +126,5 @@ def recompute_support(store,entity_ids):
         if not evidence:c.execute('DELETE FROM edges WHERE id=?',(eid,));continue
         if edge['kind']=='belongs_to':
             project=c.execute('SELECT locator FROM projects WHERE id=?',(edge['object_id'],)).fetchone()
-            strong=any(e['project_id']==edge['object_id'] or (project and project[0] in e['text']) for e in evidence)
+            strong=any(e['project_id']==edge['object_id'] or (project and references_project(e['text'],project[0])) for e in evidence)
             c.execute('UPDATE edges SET status=? WHERE id=?',('supported' if strong else 'inferred',eid))

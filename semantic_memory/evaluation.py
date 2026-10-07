@@ -42,23 +42,55 @@ def _privacy_probes(db,projects,access):
             leaks+=1
         for section in (packet.unknowns,):
             if any(entry.get('citations') for entry in section):leaks+=1
+    # Deliberately mixed support: a partial public mention must not retain a
+    # private decision/reason when its actual source is revoked.
+    markers=('semantic-private-canary','semantic-private-reason')
+    if projects:
+        project=projects[0]
+        locator=db.connection.execute('SELECT locator FROM projects WHERE id=?',(project,)).fetchone()[0]
+        quote=f'We decided to retain {markers[0]} for {locator} because {markers[1]}.'
+        private=SourceEnvelope('__audit_private','2026-10-07T13:00:00+00:00','audit','com.apple.Safari',
+            'https://docs.example.org/_privacy-canary',None,True,'user_note',(TextSpan('x',quote),),access.revision)
+        public=SourceEnvelope('__audit_public','2026-10-07T13:00:00+00:00','audit','com.microsoft.VSCode',
+            locator+'/_audit.py',locator,True,'observed_screen_text',(TextSpan('x','Public discussion of retention.'),),access.revision)
+        ingest=db.ingest(private,access);pub=db.ingest(public,access)
+        builder=EpisodeBuilder(db);builder.accept(private.source_id)
+        eid=builder.boundary('privacy audit','2026-10-07T13:01:00+00:00')[0];request=build_request(db,eid)
+        candidates=[{'type':'belongs_to','subject_id':ingest.artifact_id,'object_id':project,
+                     'statement':quote,'evidence_ids':list(ingest.occurrence_ids),'extraction_status':'explicit'},
+                    {'type':'decision','subject_id':ingest.artifact_id,'statement':quote,
+                     'reason':markers[1],'evidence_ids':list(ingest.occurrence_ids),'extraction_status':'explicit'}]
+        apply_extraction(db,eid,validate_extraction(json.dumps({'candidates':candidates}),request))
+        from .relationships import _support
+        with db.transaction() as c:
+            for claim in c.execute('SELECT id FROM claims WHERE episode_id=?',(eid,)).fetchall():
+                _support(c,claim[0],pub.occurrence_ids,eid,'partial_public_context')
+        # Permission rejection must leave source text absent from the store.
+        for denied_source in (dataclasses.replace(private,source_id='__denied_private',private_context=True),
+                              dataclasses.replace(private,source_id='__denied_unknown',browser_context_known=False),
+                              dataclasses.replace(private,source_id='__denied_site',artifact_locator='https://denied.example.org/canary')):
+            probes+=1
+            try:db.ingest(denied_source,access)
+            except ValueError:pass
+            else:leaks+=1
     browser_ids={r[0] for r in db.connection.execute('SELECT o.id FROM occurrences o JOIN sources s ON s.id=o.source_id WHERE s.app_id=?',('com.apple.Safari',))}
-    revoke_scope(db,SourceScope(frozenset({'com.apple.Safari'})),dataclasses.replace(access,revision=access.revision+1))
+    revoke_scope(db,SourceScope(frozenset({'com.apple.Safari'})),dataclasses.replace(access,revision=access.revision+1,allowed_apps=frozenset({'com.microsoft.VSCode'}),allowed_origins=frozenset()))
     for project in projects:
         packet=project_context(db,project,start,end,full);probes+=1
-        if any(oid in browser_ids for oid in packet.citations):leaks+=1
+        if any(oid in browser_ids for oid in packet.citations) or any(marker in json.dumps(dataclasses.asdict(packet)) for marker in markers):leaks+=1
     remaining={r[0] for r in db.connection.execute('SELECT id FROM sources')}
     delete_sources(db,remaining)
     for project in projects:
         packet=project_context(db,project,start,end,full);probes+=1
         if packet.citations or any((packet.recent_changes,packet.decisions,packet.open_tasks,packet.artifacts,packet.conflicts)):
             leaks+=1
+        if any(marker in json.dumps(dataclasses.asdict(packet)) for marker in markers):leaks+=1
         if any(entry.get('citations') for entry in packet.unknowns):leaks+=1
     for oid in browser_ids:
         probes+=1
         if resolve_citation(db,oid,full) is not None:leaks+=1
     return {'forbidden_source_leaks':leaks,'probes':probes,
-            'scope':'empty caller scope, browser revocation, all-source deletion, citation resolution on the evaluated fixture store'}
+            'scope':'empty caller scope, denied/private/unknown ingest, mixed public/private support canary revocation, all-source deletion and citation resolution on evaluated fixture store'}
 
 def score_predictions(rows):
     tp=fp=fn=unsupported=0
@@ -161,7 +193,7 @@ def evaluate(corpus,extractor,split,output=None,timing_repeats=1):
             quality_pass=metrics['association_precision']>=.95 and metrics['artifact_recall']>=.8 and metrics['claim_recall']>=.8 and metrics['unsupported_assertions']==0 and not any(r['error'] for r in rows)
             fixture_quality_pass=bool(assertion_metrics and assertion_metrics['claim_precision']>=.95 and assertion_metrics['claim_recall']>=.8 and assertion_metrics['unsupported_assertions']==0 and assertion_metrics['invalid_citations']==0 and assertion_metrics['invalid_grounding']==0 and privacy_metrics['forbidden_source_leaks']==0 and metrics['association_precision']>=.95 and metrics['artifact_recall']>=.8 and not any(r['error'] for r in rows))
             report={'corpus_version':corpus.get('version',1),'corpus_hash':__import__('hashlib').sha256(json.dumps(corpus,sort_keys=True).encode()).hexdigest(),
-                    'assertion_metrics':assertion_metrics,'privacy_metrics':privacy_metrics,'fixture_quality_pass':fixture_quality_pass,'split':split,'synthetic_corpus':True,'actual_local_model':extractor.__class__.__module__=='semantic_memory.local_runtime',
+                    'assertion_metrics':assertion_metrics,'privacy_metrics':privacy_metrics,'audit_version':2,'fixture_quality_pass':fixture_quality_pass,'split':split,'synthetic_corpus':True,'actual_local_model':extractor.__class__.__module__=='semantic_memory.local_runtime',
                     'model':getattr(extractor,'model','injected'),'manifest_hash':getattr(extractor,'manifest_hash',None),'extractor_version':getattr(extractor,'version',None),'prompt_hash':getattr(extractor,'prompt_hash',None),
                     'metrics':metrics,'quality_pass':fixture_quality_pass and extractor.__class__.__module__=='semantic_memory.local_runtime','classification_gate_pass':quality_pass,'acceptance_incomplete':(['real-session representativeness','full enabled-worker resources'] if assertion_metrics is not None else ['proposition/reason accuracy','forbidden-source leakage']),'metric_scope':'metrics is candidate-type classification; assertion_metrics scores exact gold quote/reason/state and citations on stored claims; privacy_metrics probes evaluated-store boundaries','rows':rows,'latencies_seconds':latencies,'semantic_bytes':peak_db,
                     'python_peak_rss_bytes':resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,

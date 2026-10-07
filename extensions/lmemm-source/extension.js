@@ -13,7 +13,7 @@ function state(editor){
 function clear(){
  if(connection){try{fs.unlinkSync(connection.event);}catch{}}
 }
-function stop(){ if(challenge){challenge.dispose();challenge=null;}clear();connection=null;clearInterval(timer);timer=null;if(status)status.hide(); }
+function stop(){if(connection){try{publish('disconnect');}catch{clear();}} if(challenge){challenge.dispose();challenge=null;}connection=null;clearInterval(timer);timer=null;if(status)status.hide(); }
 function publish(kind,extra={}){
  if(!connection)return;
  const c=connection;
@@ -29,6 +29,10 @@ function poll(){
   if(grant.revision!==c.revision){c.revision=grant.revision;c.last=null;c.pending=null;}
   if(!grant.active){c.last=null;c.pending=null;clear();status.text='LMemM: paused by pilot';return;}
   if(paused||!vscode.window.state.focused){c.last=null;publish('heartbeat');status.text='LMemM: source sharing paused';return;}
+  if(c.window){
+   try{const ack=readPrivate(path.join(c.directory,'acks',c.client+'.json'));if(ack.session!==c.session||ack.window!==c.window)throw Error('Registration lost');}
+   catch{c.window=null;c.last=null;c.pending=null;challenge=vscode.window.createWebviewPanel('lmemmHandshake','LMemM '+c.client,vscode.ViewColumn.Active,{enableScripts:false});challenge.webview.html='<p>LMemM is re-verifying this native window.</p>';}
+  }
   if(!c.window){
    try{const ack=readPrivate(path.join(c.directory,'acks',c.client+'.json'));if(ack.session===c.session&&Number.isInteger(ack.window)){c.window=ack.window;if(challenge){challenge.dispose();challenge=null;}return;}}catch{}
    if(!c.window){publish('connect');status.text='LMemM: waiting for native focus';return;}

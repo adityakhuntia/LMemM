@@ -71,7 +71,7 @@ class Bridge:
     def expire(self):
         expired=[]
         for client,value in list(self.clients.items()):
-            if self.clock()-value['at']>2 or not (self.directory/'events'/(client+'.json')).exists():
+            if value.get('disconnected') or self.clock()-value['at']>2:
                 expired.append(client);del self.clients[client];self.last.pop(client,None)
                 (self.directory/'acks'/(client+'.json')).unlink(missing_ok=True)
                 (self.directory/'events'/(client+'.json')).unlink(missing_ok=True)
@@ -86,8 +86,13 @@ class Bridge:
             if type(seq)!=int or seq<1 or type(at) not in (int,float) or not -0.25<=self.clock()-at<=2: return None
             old=self.clients.get(client)
             if old and seq<=old['seq']: return None
-            if old and m['kind']=='heartbeat' and m.get('focused') is False:
-                old.update(seq=seq,at=at,focused=False);self.last.pop(client,None);return None
+            if old and m['kind'] in ('heartbeat','snapshot','note','disconnect') and m.get('window')==old['window']:
+                # Authenticated liveness is independent of permission to ingest text.
+                old.update(seq=seq,at=at,focused=False)
+                if m['kind']=='disconnect':
+                    old['disconnected']=True;self.last.pop(client,None);return None
+                if m['kind']=='heartbeat' and m.get('focused') is False:
+                    self.last.pop(client,None);return None
             if focus is None:return None
             if m['kind']=='connect':
                 if not re.search(r'(?<![a-f0-9])'+re.escape('LMemM '+client)+r'(?![a-f0-9])',focus.title): return None

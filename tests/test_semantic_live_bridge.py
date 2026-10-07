@@ -46,6 +46,7 @@ class BridgeTests(unittest.TestCase):
         self.assertIsNone(self.bridge.accept(m,self.focus))
         m=self.msg('snapshot')
         self.assertIsNone(self.bridge.accept(m,None))
+        m=self.msg('snapshot')
         self.assertIsNotNone(self.bridge.accept(m,self.focus))
         self.assertIsNone(self.bridge.accept(m,self.focus))
     def test_ambiguous_clients(self):
@@ -164,3 +165,28 @@ class AppFocusFallbackTests(unittest.TestCase):
    self.assertIsNotNone(focused_context())
    state['owner']=2;self.assertIsNone(focused_context())
    state.update(owner=1,role='AXTextField',subrole='AXSecureTextField');self.assertIsNone(focused_context())
+
+class LeaseHeartbeatTests(unittest.TestCase):
+ setUp=BridgeTests.setUp
+ tearDown=BridgeTests.tearDown
+ msg=BridgeTests.msg
+ connect=BridgeTests.connect
+ def test_registered_publisher_metadata_survives_denied_native_focus(self):
+  from semantic_memory.live_bridge import write_private_json
+  self.connect();self.now+=1.5;m=self.msg('heartbeat')
+  write_private_json(self.bridge.directory/'events'/('a'*32+'.json'),m)
+  self.bridge.accept(m,None);self.now+=1
+  self.assertEqual(self.bridge.expire(),[])
+  self.assertFalse(self.bridge.clients['a'*32]['focused'])
+
+class DisconnectLeaseTests(unittest.TestCase):
+ setUp=BridgeTests.setUp
+ tearDown=BridgeTests.tearDown
+ msg=BridgeTests.msg
+ connect=BridgeTests.connect
+ def test_explicit_disconnect_expires_immediately(self):
+  from semantic_memory.live_bridge import write_private_json
+  self.connect();message=self.msg('disconnect')
+  write_private_json(self.bridge.directory/'events'/('a'*32+'.json'),message)
+  self.bridge.accept(message,None)
+  self.assertEqual(self.bridge.expire(),['a'*32])

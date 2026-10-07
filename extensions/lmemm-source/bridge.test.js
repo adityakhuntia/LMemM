@@ -57,6 +57,6 @@ test('host pause clears digest and resume publishes fresh source with new revisi
   grant.active=false;grant.revision=1;fs.writeFileSync(grantPath,JSON.stringify(grant));text='fresh edit';version++;poll();
   assert.match(status.text,/paused/);assert.equal(fs.existsSync(event),false);
   grant.active=true;grant.revision=2;fs.writeFileSync(grantPath,JSON.stringify(grant));poll();m=JSON.parse(fs.readFileSync(event));
-  assert.equal(m.kind,'snapshot');assert.equal(m.spans[0].text,'fresh edit');assert.equal(m.revision,2);extension.deactivate();
+  assert.equal(m.kind,'snapshot');assert.equal(m.spans[0].text,'fresh edit');assert.equal(m.revision,2);fs.unlinkSync(ack);poll();m=JSON.parse(fs.readFileSync(event));assert.equal(m.kind,'connect');assert.equal(m.spans,undefined);extension.deactivate();
  }finally{Module._load=originalLoad;global.setInterval=originalInterval;global.clearInterval=originalClear;fs.rmSync(root,{recursive:true});}
 });

@@ -77,6 +77,15 @@ class SemanticStore:
         # Hash the original envelope to reject changed replays even beyond truncation.
         digest = hashlib.sha256(json.dumps(dataclasses.asdict(envelope), sort_keys=True).encode()).hexdigest()
         s = validate_source(envelope, policy)
+        paused = self.connection.execute("SELECT value FROM meta WHERE key='paused'").fetchone()
+        if paused and paused[0]:
+            raise RuntimeError("Semantic ingestion paused: " + paused[0])
+        from .retention import semantic_bytes
+        limit = self.connection.execute("SELECT value FROM meta WHERE key='semantic_limit'").fetchone()
+        budget = int(limit[0]) if limit else 250 * 1024 * 1024
+        projected = 65536 + 4 * sum(len(p.text.encode()) for p in s.spans)
+        if semantic_bytes(self) + projected > budget:
+            raise RuntimeError("Semantic ingestion paused: projected budget")
         project, artifact = canonical_identity(s)
         ids = tuple(identifier("evidence", s.source_id + "|" + p.span_id) for p in s.spans)
         with self.transaction() as c:

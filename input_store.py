@@ -352,6 +352,17 @@ def recover_deletion(root):
             raise ValueError("invalid deletion manifest path")
     import store
     import notes
+    semantic_path = root / "semantic.sqlite3"
+    if semantic_path.exists():
+        if semantic_path.is_symlink() or not semantic_path.resolve().is_relative_to(root.resolve()):
+            raise ValueError("invalid semantic store path")
+        from semantic_memory.store import SemanticStore
+        from semantic_memory.retention import delete_session as delete_semantic_session
+        semantic = SemanticStore(semantic_path)
+        try:
+            delete_semantic_session(semantic, doc["session"])
+        finally:
+            semantic.close()
     items = sorted(doc["items"].values(), key=lambda i: i["last_seen"], reverse=True)
     private_write(root / ".index.json", {"schema_version": 2, "items": items})
     private_write(root / "memory.json", {"schema_version": 2, "things": [store.readable(i) for i in items], "updated": _now()})

@@ -52,3 +52,14 @@ class InferenceTests(SemanticFixture, unittest.TestCase):
         ids=[r[0] for r in self.db.connection.execute('SELECT id FROM episodes')]
         worker=InferenceWorker(self.db,FakeExtractor())
         self.assertEqual(sum(worker.enqueue(i) for i in ids),8)
+
+    def test_runtime_io_failure_retries_and_marks_unprocessed(self):
+        request=self.request()
+        class Offline(FakeExtractor):
+            def extract(self,request):
+                self.calls+=1
+                raise OSError('local service unavailable')
+        fake=Offline();worker=InferenceWorker(self.db,fake);worker.enqueue(request.episode_id)
+        result=worker.run_one()
+        self.assertEqual((result.status,result.attempts),('unprocessed',2))
+        self.assertEqual(fake.calls,2)

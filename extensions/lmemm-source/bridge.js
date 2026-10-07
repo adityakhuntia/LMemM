@@ -6,14 +6,15 @@ const crypto=require('node:crypto');
 const excluded=new Set(['node_modules','vendor','dist','build','__pycache__','credentials','secrets']);
 function bounded(text,limit){
  let bytes=Buffer.from(text); const truncated=bytes.length>limit;
- if(truncated){ bytes=bytes.subarray(0,limit); while(bytes.length && Buffer.from(bytes.toString('utf8')).length>limit) bytes=bytes.subarray(0,bytes.length-1); }
+ if(truncated){ bytes=bytes.subarray(0,limit); while(bytes.length && !Buffer.from(bytes.toString('utf8')).equals(bytes)) bytes=bytes.subarray(0,bytes.length-1); }
  return {text:bytes.toString('utf8'),truncated};
 }
 function visibleSnapshot(editor,roots,state){
  try{
   if(!state.focused || !state.trusted || !editor || editor.document.uri.scheme!=='file') return null;
   const root=fs.realpathSync(state.workspace); if(!roots.includes(root)) return null;
-  const doc=fs.realpathSync(editor.document.uri.fsPath); const relative=path.relative(root,doc);
+  const doc=fs.realpathSync(editor.document.uri.fsPath);
+  if(path.resolve(editor.document.uri.fsPath)!==doc)return null; const relative=path.relative(root,doc);
   if(!relative || relative.startsWith('..'+path.sep) || relative==='..' || path.isAbsolute(relative)) return null;
   if(relative.split(path.sep).some(p=>p.startsWith('.')||excluded.has(p.toLowerCase())) || /\.(pem|key|p12|pfx)$/i.test(doc)) return null;
   const spans=editor.visibleRanges.slice(0,4).map(range=>bounded(editor.document.getText(range),4096));

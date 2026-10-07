@@ -9,24 +9,26 @@ from semantic_memory.live_focus import Focus, match_window
 class BridgeTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.base = Path(self.temp.name)
+        self.base = Path(self.temp.name).resolve()
         self.roots = [self.base / 'one', self.base / 'two']
         for root in self.roots:
             root.mkdir(); (root / 'a.py').write_text('hello')
         self.now = 1000.0
         self.bridge = Bridge(self.base / 'bridge', self.roots, lambda: self.now)
         self.grant = self.bridge.open_session()
-        self.focus = Focus(1, 10, (0, 0, 800, 600))
+        self.focus = Focus(1, 10, (0, 0, 800, 600),title='LMemM '+'a'*32)
         self.seq = 0
     def tearDown(self): self.temp.cleanup()
     def msg(self, kind='connect', client='a'*32, root=0, **extra):
         self.seq += 1
-        return dict(token=self.grant['token'], session=self.grant['session'], client=client,
+        return dict(revision=self.bridge.revision,token=self.grant['token'], session=self.grant['session'], client=client,
                     seq=self.seq, at=self.now, kind=kind, focused=True, window=10,
                     workspace=self.roots[root].as_uri(), document=(self.roots[root]/'a.py').as_uri(),
                     spans=[dict(text='hello', truncated=False)], **extra)
     def connect(self, **kw):
-        m=self.msg(**kw); m.pop('spans'); self.bridge.accept(m, self.focus)
+        m=self.msg(**kw); m.pop('spans');
+        from dataclasses import replace
+        self.bridge.accept(m, replace(self.focus,title='LMemM '+m['client']))
     def test_projects_and_dedup(self):
         self.connect()
         e=self.bridge.accept(self.msg('snapshot'),self.focus)
@@ -78,3 +80,57 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(match_window(1,(0,0,800,600),rows),self.focus)
         self.assertIsNone(match_window(1,(0,0,800,600),rows+rows[:1]))
         self.assertIsNone(match_window(1,None,rows))
+
+class NativeFocusTests(unittest.TestCase):
+ def test_native_errors_deny(self):
+  from unittest.mock import patch
+  from semantic_memory.live_focus import focused_context
+  with patch('input_monitor.secure_input_enabled',return_value=None):self.assertIsNone(focused_context())
+ def test_nonfinite_clock_deny(self):
+  case=BridgeTests();case.setUp()
+  try:
+   case.connect();m=case.msg('snapshot');m['at']=float('nan')
+   self.assertIsNone(case.bridge.accept(m,case.focus))
+  finally:case.tearDown()
+
+class NativeSecureElementTests(unittest.TestCase):
+ def test_secure_focused_element_denies_even_without_carbon_flag(self):
+  from types import SimpleNamespace as NS
+  from unittest.mock import patch
+  from semantic_memory.live_focus import focused_context
+  app=NS(bundleIdentifier=lambda:'com.microsoft.VSCode',processIdentifier=lambda:1)
+  def attribute(element,name,ignored):
+   return 0,{'AXFocusedWindow':'window','AXPosition':'position','AXSize':'size','AXFocusedUIElement':'element','AXRole':'AXTextField','AXSubrole':'AXSecureTextField'}[name]
+  ax=NS(AXUIElementCreateApplication=lambda pid:'app',AXUIElementCreateSystemWide=lambda:'system',AXUIElementCopyAttributeValue=attribute,AXUIElementGetPid=lambda e,x:(0,1),AXValueGetValue=lambda value,kind,x:(True,NS(x=0,y=0) if value=='position' else NS(width=800,height=600)),kAXValueCGPointType=1,kAXValueCGSizeType=2)
+  quartz=NS(kCGWindowListOptionOnScreenOnly=1,CGWindowListCopyWindowInfo=lambda x,y:[{'kCGWindowLayer':0,'kCGWindowOwnerPID':1,'kCGWindowNumber':10,'kCGWindowBounds':dict(X=0,Y=0,Width=800,Height=600)}])
+  kit=NS(NSWorkspace=NS(sharedWorkspace=lambda:NS(frontmostApplication=lambda:app)))
+  with patch.dict('sys.modules',{'AppKit':kit,'Quartz':quartz,'ApplicationServices':ax}),patch('input_monitor.secure_input_enabled',return_value=False):
+   self.assertIsNone(focused_context())
+
+class ReviewedBridgeTests(unittest.TestCase):
+ setUp=BridgeTests.setUp
+ tearDown=BridgeTests.tearDown
+ msg=BridgeTests.msg
+ connect=BridgeTests.connect
+ def test_excluded_lexical_symlink(self):
+  self.connect();alias=self.roots[0]/'.env';alias.symlink_to(self.roots[0]/'a.py')
+  m=self.msg('snapshot');m['document']=alias.as_uri()
+  self.assertIsNone(self.bridge.accept(m,self.focus))
+ def test_connect_requires_native_challenge_and_no_rebind(self):
+  m=self.msg();m.pop('spans');self.bridge.accept(m,Focus(1,20,(0,0,800,600)))
+  self.assertNotIn('a'*32,self.bridge.clients)
+  self.connect();m=self.msg();m.pop('spans');self.bridge.accept(m,Focus(1,20,(0,0,800,600),title='LMemM '+'a'*32))
+  self.assertEqual(self.bridge.clients['a'*32]['window'],10)
+
+class EpochTests(unittest.TestCase):
+ setUp=BridgeTests.setUp
+ tearDown=BridgeTests.tearDown
+ msg=BridgeTests.msg
+ connect=BridgeTests.connect
+ def test_old_generation_denied(self):
+  self.connect();m=self.msg('snapshot');m['revision']=self.bridge.revision
+  self.bridge.revision+=1
+  self.assertIsNone(self.bridge.accept(m,self.focus))
+ def test_expiry_removes_client_and_ack(self):
+  self.connect();self.now+=3
+  self.assertEqual(self.bridge.expire(),['a'*32]);self.assertFalse(self.bridge.clients)

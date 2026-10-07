@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const crypto=require('node:crypto');
 const {visibleSnapshot,readPrivate,writePrivate,bounded}=require('./bridge');
-let connection=null,paused=false,timer=null,status;
+let connection=null,paused=false,timer=null,status,challenge;
 function state(editor){
  const folder=editor&&vscode.workspace.getWorkspaceFolder(editor.document.uri);
  return {focused:vscode.window.state.focused,trusted:vscode.workspace.isTrusted,
@@ -13,29 +13,34 @@ function state(editor){
 function clear(){
  if(connection){try{fs.unlinkSync(connection.event);}catch{}}
 }
-function stop(){ clear();connection=null;clearInterval(timer);timer=null;if(status)status.hide(); }
+function stop(){ if(challenge){challenge.dispose();challenge=null;}clear();connection=null;clearInterval(timer);timer=null;if(status)status.hide(); }
 function publish(kind,extra={}){
  if(!connection)return;
  const c=connection;
  const grant=readPrivate(path.join(c.directory,'grant.json'));
- if(grant.token!==c.token||grant.session!==c.session||!grant.active){clear();status.text='LMemM: paused by pilot';return;}
- writePrivate(c.event,{token:c.token,session:c.session,client:c.client,seq:++c.seq,at:Date.now()/1000,kind,focused:!paused&&vscode.window.state.focused,window:c.window,...extra});
+ if(grant.token!==c.token||grant.session!==c.session||!grant.active||grant.revision!==c.revision){c.last=null;c.pending=null;clear();status.text='LMemM: paused by pilot';return false;}
+ writePrivate(c.event,{token:c.token,session:c.session,client:c.client,seq:++c.seq,at:Date.now()/1000,kind,revision:c.revision,focused:!paused&&vscode.window.state.focused,window:c.window,...extra});return true;
 }
 function poll(){
  if(!connection)return;
  try{
   const c=connection;
+  const grant=readPrivate(path.join(c.directory,'grant.json'));
+  if(grant.revision!==c.revision){c.revision=grant.revision;c.last=null;c.pending=null;}
+  if(!grant.active){c.last=null;c.pending=null;clear();status.text='LMemM: paused by pilot';return;}
   if(paused||!vscode.window.state.focused){c.last=null;publish('heartbeat');status.text='LMemM: source sharing paused';return;}
   if(!c.window){
-   try{const ack=readPrivate(path.join(c.directory,'acks',c.client+'.json'));if(ack.session===c.session&&Number.isInteger(ack.window))c.window=ack.window;}catch{}
+   try{const ack=readPrivate(path.join(c.directory,'acks',c.client+'.json'));if(ack.session===c.session&&Number.isInteger(ack.window)){c.window=ack.window;if(challenge){challenge.dispose();challenge=null;}return;}}catch{}
    if(!c.window){publish('connect');status.text='LMemM: waiting for native focus';return;}
   }
+  try{const ack=readPrivate(path.join(c.directory,'acks',c.client+'.json'));if(c.pending&&ack.session===c.session&&ack.accepted&&ack.seq===c.pending.seq){c.last=c.pending.digest;c.pending=null;}}catch{}
   const editor=vscode.window.activeTextEditor;
   const snapshot=visibleSnapshot(editor,c.roots,state(editor));
   if(!snapshot){c.last=null;publish('heartbeat');status.text='LMemM: current source excluded';return;}
   const digest=JSON.stringify(snapshot);
-  if(c.last===digest)publish('heartbeat');else{publish('snapshot',snapshot);c.last=digest;}
-  status.text='LMemM: experimental visible-source sharing';
+  let success;
+  if(c.last===digest)success=publish('heartbeat');else{success=publish('snapshot',snapshot);if(success)c.pending={seq:c.seq,digest};}
+  if(success)status.text='LMemM: experimental visible-source sharing';
  }catch(error){clear();status.text='LMemM: bridge unavailable';}
 }
 function activate(context){
@@ -49,6 +54,8 @@ function activate(context){
    for(const name of ['events','acks']){const d=fs.lstatSync(path.join(directory,name));if(!d.isDirectory()||d.isSymbolicLink()||(d.mode&0o777)!==0o700||d.uid!==process.getuid())throw Error('Private bridge directory required');}
    const grant=readPrivate(grantPath);if(!grant.active||!Array.isArray(grant.roots))throw Error('Inactive pilot');
    const client=crypto.randomBytes(16).toString('hex');connection={...grant,directory,client,seq:0,window:null,last:null,event:path.join(directory,'events',client+'.json')};paused=false;
+   challenge=vscode.window.createWebviewPanel('lmemmHandshake','LMemM '+client,vscode.ViewColumn.Active,{enableScripts:false});
+   challenge.webview.html='<p>LMemM is verifying this native window. This tab closes once verified.</p>';
    status.show();poll();timer=setInterval(poll,1000);
   }catch(e){vscode.window.showErrorMessage('LMemM: '+e.message);stop();}
  }));

@@ -44,7 +44,7 @@ def project_context(store,project_id,start,end,scope):
         if len(packet.citations)>=40:
             omitted+=1;continue
         citations=citations[:40-len(packet.citations)]
-        entry={'id':claim['id'],'statement':claim['statement'],'at':claim['at'],'status':claim['status'],
+        entry={'id':claim['id'],'statement':claim['statement'],'at':claim['at'],'status':claim['status'],'kind':claim['kind'],
                'citations':[e['id'] for e in citations]}
         for e in citations: packet.citations[e['id']]=e
         kind=claim['kind']
@@ -76,8 +76,9 @@ def project_context(store,project_id,start,end,scope):
                 if refs and all(resolve_citation(store,r[0],scope) for r in refs):
                     membership=True;break
             if not membership:continue
-        rows=store.connection.execute('SELECT o.id FROM occurrences o JOIN sources s ON s.id=o.source_id WHERE s.artifact_id=? AND s.at BETWEEN ? AND ?',(artifact['id'],start,end)).fetchall()
+        rows=store.connection.execute('SELECT o.id FROM occurrences o JOIN sources s ON s.id=o.source_id WHERE s.artifact_id=? AND s.at BETWEEN ? AND ? ORDER BY s.at DESC,o.rowid DESC',(artifact['id'],start,end)).fetchall()
         permitted=[r[0] for r in rows if resolve_citation(store,r[0],scope)]
+        omitted+=max(0,len(permitted)-3)
         if permitted and len(packet.artifacts)<20:
             packet.artifacts.append({'id':artifact['id'],'locator':artifact['locator'],'citations':permitted[:3]})
             for oid in permitted[:3]:

@@ -83,7 +83,7 @@ class InferenceWorker:
                 try:
                     result=validate_extraction(self.extractor.extract(request),request)
                     break
-                except (ValueError,TimeoutError,RuntimeError):
+                except (ValueError,TimeoutError,RuntimeError,OSError,TypeError,KeyError):
                     pass
             status='processed' if result is not None else 'unprocessed'
             with self.store.transaction() as c:

@@ -30,8 +30,17 @@ CREATE TABLE jobs(episode_id TEXT PRIMARY KEY REFERENCES episodes(id) ON DELETE 
 CREATE TABLE tombstones(source_id TEXT PRIMARY KEY);
 """
 class SemanticStore:
-    def __init__(self, path):
+    def __init__(self, path, readonly=False):
         self.path = Path(path)
+        self.readonly = readonly
+        if readonly:
+            self.lock = threading.RLock()
+            self.connection = sqlite3.connect(self.path.resolve().as_uri() + '?mode=ro', uri=True, check_same_thread=False)
+            self.connection.row_factory = sqlite3.Row
+            if self.connection.execute('PRAGMA user_version').fetchone()[0] != 1:
+                self.connection.close()
+                raise ValueError('Unsupported semantic schema')
+            return
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.lock = threading.RLock()
         fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
@@ -56,6 +65,8 @@ class SemanticStore:
 
     @contextmanager
     def transaction(self):
+        if self.readonly:
+            raise RuntimeError("Read-only semantic store")
         with self.lock:
             try:
                 self.connection.execute("BEGIN IMMEDIATE")

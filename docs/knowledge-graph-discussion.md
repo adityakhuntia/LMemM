@@ -9,8 +9,10 @@ with explicit user app/site access controls and benchmarked resource use.
 Users may assign artifacts to projects manually. Automatic linking is desirable,
 but observed switching/content alone cannot prove a relationship or user intent.
 
-The first agent workflow is pending user selection. Recommended: resume a
-project with what changed, why, and open tasks, each backed by dated sources.
+The user selected **resume work on a project**: what changed, why, and open tasks,
+each backed by dated sources. Project identity/association scope is the next
+open question. Recommended first anchor: a selected workspace folder with
+explicitly attached documents/tabs; inferred links remain proposals.
 
 ## Approaches to compare
 

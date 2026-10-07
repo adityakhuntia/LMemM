@@ -20,9 +20,9 @@ Updated 2026-10-07, America/New_York. Historical context and handover are in
 - Repaired same-second offline command collisions using nanosecond evidence IDs.
 - Existing keyboard/cursor summaries, content excerpts, identity repair,
   dictation safeguards, retention and provenance work remain integrated.
-- Main publication is the next integration action. Keep feature/refactor branches
-  until publication and preservation are verified; no branch deletion requested
-  as part of this execution.
+- Validated integration and repairs published to GitHub `main` and
+  `feat/input-timeline` at **0f3b862**. Current checkout is main. Feature/refactor
+  branches are preserved; branch cleanup is not performed.
 
 ## Verification
 
@@ -55,6 +55,7 @@ Updated 2026-10-07, America/New_York. Historical context and handover are in
 
 ## MVP decision and next work
 
+The user selected **resume work on a project** as the first agent workflow.
 The agreed MVP is accurate project knowledge exposed to AI agents through MCP,
 with acceptable measured performance and low resource use. Broader companion
 features come after this. Graph understanding is now in **brainstorming**;

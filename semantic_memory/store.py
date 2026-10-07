@@ -112,8 +112,7 @@ class SemanticStore:
     def evidence(self, ids):
         result = []
         for oid in ids:
-            row = self.connection.execute("SELECT o.id,o.truncated,b.text,s.* FROM occurrences o JOIN blobs b ON o.blob_id=b.id JOIN sources s ON o.source_id=s.id WHERE o.id=?", (oid,)).fetchone()
+            row = self.connection.execute("SELECT o.id,o.source_id,o.truncated,b.text,s.* FROM occurrences o JOIN blobs b ON o.blob_id=b.id JOIN sources s ON o.source_id=s.id WHERE o.id=?", (oid,)).fetchone()
             if row:
                 result.append(dict(row))
         return result
-

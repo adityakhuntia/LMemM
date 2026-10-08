@@ -77,7 +77,10 @@ class Tracker:
         self.items = store.load_items()      # the memory: one entry per thing, across sessions
         self.events = []                     # this session's timeline, pointing at items
         self.notes = []                      # this session's notes
-        self.raw_item = {}                   # (app, window title) -> the item it last resolved to
+        self.now = None                      # the quick answer to "what am I on?" (see identify_now)
+        self.quick_q = queue.Queue()
+        self.ocr_apps = set()                # apps whose place can only be told by reading the screen
+        self.last_click = 1e9
         self.frame_item = {}                 # capture ts -> memory item it became
         self.lock = threading.Lock()         # the resolver thread and the note window both write memory
         self.q = queue.Queue()
@@ -373,8 +376,13 @@ class Tracker:
                     self.trigger("window_change")
                 elif f["window"] != self.last_sig["window"]:
                     self.trigger("tab_change" if f["app"] in config.BROWSERS else "title_change")
-            if f and self.last_sig and f != self.last_sig:
-                self.last_widget_refresh = 0.0       # the pill follows a switch at once
+            age = macos.input_ages()["click"]
+            clicked = age < config.POLL + 0.1 <= self.last_click
+            self.last_click = age
+            if f and self.last_sig and any(f[k] != self.last_sig[k] for k in ("pid", "win_id", "window")):
+                self.identify_now(f)                 # a new app, window or tab
+            elif f and clicked and f["app"] in self.ocr_apps:
+                self.identify_now(f, delays=(0.25, 0.8))   # a click inside an app whose place is on screen (chats)
             self.last_sig = f or self.last_sig
 
         if self.pending and now >= self.pending[1]:
@@ -527,13 +535,66 @@ class Tracker:
         """What the pill's card shows: the project of the thing you're on right now."""
         with self.lock:
             cur = self.events[-1] if self.events else None
-            # A tab or window you've been on before is known by its title straight away;
-            # waiting for the next capture to be read (~2 s) made the pill show the old one's.
+            # identify_now() answers in well under a second; the full capture (settle + OCR,
+            # ~2 s) is only the fallback, so the pill never shows the thing you just left.
             front = self.last_sig and (self.last_sig["app"], self.last_sig["window"])
-            known = self.raw_item.get(front)
-            if known in self.items:
-                return notes.card(self.items, known)
+            if self.now and self.now["raw"] == front:
+                return notes.card(self.items, self.now["item"]) if self.now["item"] in self.items else None
             return notes.card(self.items, cur["item"]) if cur else None
+
+    # ------------------------------------------------------------ "what am I on?", right now
+
+    def identify_now(self, f, delays=(0.0,)):
+        """The pill must follow a switch at once, not after the next capture is OCR'd.
+        Most places are known from metadata alone (URL, tab title, app: no pixels). When an
+        app only shows where you are on screen (a WhatsApp chat), a quick low-cost read of the
+        screen does it. Either way the answer is only used until the real capture lands."""
+        url, tab_title, _private = macos.browser_info(f["app"])
+        meta = {"app": f["app"], "bundle_id": f["bundle_id"], "window": f["window"], "url": url,
+                "site": re.sub(r"^https?://", "", url or "").split("/")[0] or None, "tab_title": tab_title,
+                "bounds": f["bounds"], "ts": "quick", "image": "quick"}
+        raw = (f["app"], f["window"])
+        st = identity.quick_state(meta)
+        if st is not None:
+            self.ocr_apps.discard(f["app"])
+            with self.lock:
+                self.now = {"raw": raw, "item": identity.find_item(self.items, st)}
+            self.last_widget_refresh = 0.0
+            return
+        self.ocr_apps.add(f["app"])
+        for delay in delays:
+            self.quick_q.put((meta, raw, delay))
+
+    def quick_worker(self):
+        while True:
+            job = self.quick_q.get()
+            if job is None:
+                return
+            while not self.quick_q.empty():            # only the newest request matters
+                job = self.quick_q.get()
+            meta, raw, delay = job
+            try:
+                time.sleep(delay)
+                now = macos.front()
+                if not now or (now["app"], now["window"]) != raw:
+                    continue                           # you've moved on already
+                display, frame = macos.display_for(now["bounds"])
+                shot = macos.grab(display)
+                if shot is None:
+                    continue
+                try:
+                    meta["screen"] = {"w": int(frame.size.width), "h": int(frame.size.height)}
+                    res = resolver.resolve_frame(meta, shot, fast=True)
+                finally:
+                    shot.release()
+                st = identity.quick_state(meta, res)
+                if st is None:
+                    continue
+                with self.lock:
+                    self.now = {"raw": raw, "item": identity.find_item(self.items, st)}
+                self.last_widget_refresh = 0.0
+            except Exception as e:                     # best effort: the full capture is the fallback
+                line(now_hms(), "", f"quick identify failed: {e}")
 
     def widget_heard(self):
         """None, or the words said so far while the ⌃⌥N note window is open."""
@@ -681,7 +742,8 @@ class Tracker:
             cur["mostly"] = max(cur["activity"], key=cur["activity"].get)
         cur["_last_cat"] = act["category"]
         cur["_raw"] = (meta.get("app"), meta.get("window"))
-        self.raw_item[cur["_raw"]] = item_id
+        if self.now and self.now["raw"] == cur["_raw"]:
+            self.now = None                  # a full capture has caught up: its answer is the truth
         if act["new_text"] and act["category"] in ("typing", "receiving"):
             line(t, "", f"  {act['category']}: {act['new_text'][0][:80]}")
 
@@ -865,6 +927,7 @@ class Tracker:
         self._events = macos.subscribe(self)
         self.thread = threading.Thread(target=self.worker, daemon=True)
         self.thread.start()
+        threading.Thread(target=self.quick_worker, daemon=True).start()
 
         macos.quiet_system_logs()
         say(f"LMemM is watching  ·  captures on app/tab switches, else every {self.every}s"

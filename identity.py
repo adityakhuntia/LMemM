@@ -98,3 +98,24 @@ def resolve_item(items, st, cur, res, trigger, scrolled):
         cur_item["ref"] = ref
         return cur_item["id"], ref
     return make_id(st, ref), ref
+
+
+EMPTY_SCREEN = {"objects": [], "image_size": {"w": 1, "h": 1}}
+
+
+def quick_state(meta, res=None):
+    """What a screen with this metadata is, or None when that can't be told without
+    reading the pixels. Without `res` only the URL, tab/window title and app are used,
+    which is enough for pages, docs, AI chats, editors, terminals and most chat apps."""
+    try:
+        st = understand.describe(res or EMPTY_SCREEN, meta)
+    except Exception:
+        return None
+    return st if st.get("target") else None
+
+
+def find_item(items, st):
+    """Id of the most recent item at the place `st` names, or None if you've never been there."""
+    ref = understand.ref(st)
+    seen = [i for i in items.values() if ref in i.get("refs", [i.get("ref")])]
+    return max(seen, key=lambda i: i["last_seen"])["id"] if seen else None

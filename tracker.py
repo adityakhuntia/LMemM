@@ -117,6 +117,8 @@ class Tracker:
         self.panel = dictation.NotePanel()
         self.show_widget = show_widget
         self.widget = None                   # the on-screen pill (widget.py), made in run()
+        self.suggestion = None               # a group offered as one project: {name, ids, reason}
+        self.suggest_answers = self.load_answers()
         self.last_widget_refresh = 0.0
         self.control_file = Path(p.control_file)
         self.status_file = Path(p.status_file)
@@ -188,6 +190,9 @@ class Tracker:
                     self.save(force=True)
             line(now_hms(), "", f"{len(found)} note{'s' * (len(found) != 1)} marked "
                  + ("done" if doc.get("done", True) else "open"))
+
+        elif doc.get("action") == "suggest":
+            self.offer_project(doc.get("name"), doc.get("ids") or [], doc.get("reason", ""))
 
     def publish_status(self):
         private_write(self.status_file, {
@@ -664,6 +669,73 @@ class Tracker:
                 self.save(force=True)
         line(now_hms(), "", f"{len(found)} note{'s' * (len(found) != 1)} marked {'done' if done else 'open'}")
 
+    # ------------------------------------------------------------ projects (suggestions, picker)
+
+    @property
+    def answers_file(self):
+        return os.path.join(config.paths().memory_dir, "project_suggestions.json")
+
+    def load_answers(self):
+        """How many suggestions you have answered: after a few, the pill stops spelling it out."""
+        try:
+            return int(json.loads(Path(self.answers_file).read_text()).get("answered", 0))
+        except (OSError, ValueError, TypeError, AttributeError):
+            return 0
+
+    def count_answer(self):
+        self.suggest_answers += 1
+        try:
+            os.makedirs(os.path.dirname(self.answers_file), exist_ok=True)
+            private_write(self.answers_file, {"answered": self.suggest_answers})
+        except OSError:
+            pass
+
+    def offer_project(self, name, ids, reason=""):
+        """Offer a group of things as one project. The model will call this; until it
+        exists, `lmemm.py suggest [NAME] [ID…]` does. With no ids, the four latest things."""
+        with self.lock:
+            if not ids:
+                ids = [i["id"] for i in sorted(self.items.values(), key=lambda i: i["last_seen"], reverse=True)[:4]]
+            ids = [i for i in ids if i in self.items]
+            if len(ids) < 2 or notes.was_declined(self.items, ids, name or "Project"):
+                line(now_hms(), "", "no project suggestion: needs two known things you have not refused")
+                return
+            self.suggestion = {"name": name or "Project", "ids": ids, "reason": reason or "Opened together"}
+        line(now_hms(), "", f"suggesting project {self.suggestion['name']} ({len(ids)} things)")
+
+    def widget_suggestion(self):
+        with self.lock:
+            return notes.suggestion_view(self.suggestion, self.items, self.suggest_answers)
+
+    def widget_project(self, ids, name):
+        """Put things in a project: by accepting a suggestion, or from the picker."""
+        with self.lock:
+            found = notes.set_project(self.items, ids, name)
+            if found:
+                self.save(force=True)
+            if self.suggestion and set(self.suggestion["ids"]) & set(found):
+                self.suggestion = None
+                self.count_answer()
+        line(now_hms(), "", f"{len(found)} thing{'s' * (len(found) != 1)} filed in {name}")
+
+    def widget_decline(self, forever=True):
+        with self.lock:
+            if self.suggestion and forever:
+                notes.decline_project(self.items, self.suggestion["ids"], self.suggestion["name"])
+                self.save(force=True)
+            self.suggestion = None
+            self.count_answer()
+
+    def widget_picker(self, item_id, query):
+        with self.lock:
+            return notes.picker_view(self.items, item_id, query)
+
+    def widget_unfile(self, item_id):
+        with self.lock:
+            found = notes.clear_project(self.items, [item_id])
+            if found:
+                self.save(force=True)
+
     # ------------------------------------------------------------ resolver thread
 
     def worker(self):
@@ -975,7 +1047,10 @@ class Tracker:
         if self.show_widget:
             self.widget = widget.Widget(self.widget_card, self.widget_tick,
                                         on_add=lambda: setattr(self, "note_request", True),
-                                        heard=self.widget_heard, hotkey=dictation.HOTKEY_LABEL)
+                                        heard=self.widget_heard, hotkey=dictation.HOTKEY_LABEL,
+                                        suggestion=self.widget_suggestion, on_project=self.widget_project,
+                                        on_decline=self.widget_decline, picker=self.widget_picker,
+                                        on_unfile=self.widget_unfile)
         if self.input_monitor:
             self.input_monitor.start(request_permission=True)
             say(f"Input monitoring: {self.input_monitor.status()['state']} · allowed app: VS Code · no key values recorded")

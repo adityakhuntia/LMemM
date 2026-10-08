@@ -74,7 +74,10 @@ def open_notes(item):
 
 
 def project_of(item):
-    """Where an item belongs in the project view."""
+    """Where an item belongs in the project view. A project you (or an accepted
+    suggestion) put it in wins; otherwise it falls back to a guess from the app."""
+    if item.get("project"):
+        return item["project"]
     state = item.get("state") or {}
     if item.get("kind") == "code_file" and state.get("project"):
         return state["project"]
@@ -171,7 +174,8 @@ def card(items, item_id):
     left.sort(key=lambda r: (not r["here"], r["at"]))
     plan.sort(key=lambda r: (bool(r["done"]), r["at"]))
     history.sort(key=lambda h: h["at"], reverse=True)
-    return {"title": item.get("title") or item["doing"], "app": item["app"], "project": project,
+    return {"item": item_id, "filed": item.get("project"),
+            "title": item.get("title") or item["doing"], "app": item["app"], "project": project,
             "left": left, "plan": plan, "history": history,
             "things": len(members), "visits": sum(i.get("visits", 0) for i in members),
             "seconds": sum(i.get("seconds", 0) for i in members)}
@@ -206,4 +210,115 @@ def card_view(data, mode="here", show_done=False, fading=()):
                 "done": done if show_done else [], "done_count": len(done)}
     return {"mode": "here", "title": data["title"], "caption": data["app"],
             "rows": [row(n) for n in shown if n["here"]],
-            "more": sum(1 for n in data["left"] if not n["here"]), "project": data["project"]}
+            "more": sum(1 for n in data["left"] if not n["here"]), "project": data["project"],
+            "item": data.get("item"), "filed": data.get("filed")}
+
+
+# ---------------------------------------------------------------- projects you file things into
+#
+# item["project"] = "Pricing" is a project the user chose (by hand, or by accepting a
+# suggestion). Items without it keep the guessed grouping in project_of(). A project exists
+# as long as something is in it, so there is no separate list to keep in step.
+# item["declined_projects"] = ["Pricing"] remembers a suggestion the user turned down for
+# that thing, so the same group is not offered twice.
+
+def set_project(items, ids, name):
+    """Put these items in project `name`. Returns the ids that were found."""
+    name = " ".join((name or "").split())
+    if not name:
+        return []
+    found = []
+    for iid in ids:
+        item = items.get(iid)
+        if item is not None:
+            item["project"] = name
+            found.append(iid)
+    return found
+
+
+def clear_project(items, ids):
+    """Take these items out of the project you put them in."""
+    found = []
+    for iid in ids:
+        item = items.get(iid)
+        if item is not None and item.pop("project", None) is not None:
+            found.append(iid)
+    return found
+
+
+def decline_project(items, ids, name):
+    """Remember that `name` was refused for these items."""
+    for iid in ids:
+        item = items.get(iid)
+        if item is not None and name not in item.setdefault("declined_projects", []):
+            item["declined_projects"].append(name)
+
+
+def was_declined(items, ids, name):
+    return any(name in (items.get(i) or {}).get("declined_projects", []) for i in ids)
+
+
+def project_names(items):
+    """Projects you have made, most recently worked on first: [{"name", "things", "last_seen"}]."""
+    found = {}
+    for item in items.values():
+        name = item.get("project")
+        if not name:
+            continue
+        entry = found.setdefault(name, {"name": name, "things": 0, "last_seen": ""})
+        entry["things"] += 1
+        entry["last_seen"] = max(entry["last_seen"], item["last_seen"])
+    return sorted(found.values(), key=lambda p: p["last_seen"], reverse=True)
+
+
+def open_now(items, item_id, now_iso, minutes=30, limit=2):
+    """Other things you had in front recently (not already in this one's project), newest first.
+    The picker offers to file them together with this one."""
+    here = items.get(item_id)
+    if here is None:
+        return []
+    near = []
+    for item in items.values():
+        if item["id"] == item_id or (here.get("project") and item.get("project") == here["project"]):
+            continue
+        if _seconds_between(item["last_seen"], now_iso) <= minutes * 60:
+            near.append(item)
+    near.sort(key=lambda i: i["last_seen"], reverse=True)
+    return [{"id": i["id"], "title": i.get("title") or i["doing"]} for i in near[:limit]]
+
+
+def picker_view(items, item_id, query="", now_iso=None):
+    """What the "add to a project" picker draws, as plain data.
+
+    rows: your projects filtered by `query` (the one this thing is in is marked `here`).
+    new:  the name a "New project" row would create: the typed text, or "" while nothing
+          is typed (the row is always there so creating a project is never hidden).
+    also: other things open lately, offered as a tick to file them too."""
+    item = items.get(item_id)
+    if item is None:
+        return None
+    query = " ".join((query or "").split())
+    q = query.lower()
+    rows = [{"name": p["name"], "meta": f"{p['things']} thing{'s' * (p['things'] != 1)}",
+             "here": p["name"] == item.get("project")}
+            for p in project_names(items) if not q or q in p["name"].lower()]
+    exact = any(r["name"].lower() == q for r in rows)
+    return {"title": f"Add {item.get('title') or item['doing']} to a project",
+            "current": item.get("project"), "rows": rows, "new": "" if (not query or exact) else query,
+            "also": open_now(items, item_id, now_iso or datetime.now().isoformat(timespec="seconds"))}
+
+
+def suggestion_view(suggestion, items, answered=0, first_times=3):
+    """What the suggestion card draws. `suggestion` is {"name", "ids", "reason"}.
+    Until you have answered `first_times` suggestions the pill says "Group these?" in words and
+    the card adds a line on what a project is; after that the pill is just the mark."""
+    if not suggestion:
+        return None
+    things = [{"id": i, "title": items[i].get("title") or items[i]["doing"], "app": items[i]["app"],
+               "kind": items[i].get("kind", "")}
+              for i in suggestion["ids"] if i in items]
+    if len(things) < 2:
+        return None
+    return {"name": suggestion["name"], "things": things, "reason": suggestion.get("reason", ""),
+            "peek": f"{suggestion['name']} · {len(things)} things",
+            "first_time": answered < first_times}

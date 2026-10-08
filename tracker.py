@@ -574,6 +574,7 @@ class Tracker:
         self.quick_seq += 1
         self.set_now((front["app"], front["window"]), None)     # never show the chat you just left
         self.last_widget_refresh = 0.0
+        self.trigger("window_change")        # and a full capture soon: the quick read is only a head start
         for delay in (0.05, 0.3):
             self.quick_q.put((self.quick_seq, front["app"], delay))
 
@@ -600,8 +601,10 @@ class Tracker:
                 if st is None or seq != self.quick_seq:
                     continue
                 with self.lock:
-                    self.set_now((f["app"], f["window"]), identity.find_item(self.items, st))
+                    item = identity.find_item(self.items, st)
+                    self.set_now((f["app"], f["window"]), item)
                 self.last_widget_refresh = 0.0
+                line(now_hms(), "", f"quick: {st['target']} -> {'known' if item else 'no notes yet'}")
             except Exception as e:                     # best effort: the full capture is the fallback
                 line(now_hms(), "", f"quick identify failed: {e}")
 

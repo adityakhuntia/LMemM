@@ -21,10 +21,63 @@ Updated 2026-10-08, America/New_York. Historical context and handover are in
   all semantic work and current main integration; records below are historical checkpoints.
 - [Current handover](docs/handover-2026-10-08.md) is the primary continuation guide.
 
+## Next session — start here
+
+1. Work in `.worktrees/semantic-project-memory` on `feat/semantic-project-memory`,
+   not the root main checkout. Read [handover.md](handover.md), then the
+   [detailed handover](docs/handover-2026-10-08.md). Fetch origin, inspect Aditya's
+   changes/review, and compare ancestry before building or merging. Latest published
+   code/docs checkpoint before this closing update: `804d40f`; main included through
+   `e5cd6ed`. This closing documentation commit is also published on the same branch.
+2. Do not repeat the completed note-delivery repair or ask for the same notes again.
+   One-project cited decision/task recall is closed at the tested scope. Check retained
+   results if needed; cancelled duplicate jobs are expected to remain visible after
+   bounded recovery, not something to clear or silently mark complete.
+3. First upcoming work: establish representative performance and lifecycle evidence
+   for the merged build. Run a short baseline/worker comparison, two approved projects,
+   lock/sleep/restart, exclusion and deletion checks. Include the normal widget/Plan smoke
+   the user deferred. Start smaller than a long soak, then measure CPU/RAM/power and
+   quota behavior with actual workloads. No optimization claim exists yet.
+4. In parallel in product planning (not an instruction to spawn agents), define the
+   minimum read-only MCP surface around existing scoped project context and citation
+   resolution. The first product milestone is an agent resuming a real project with
+   decisions/reasons/open tasks and evidence. Keep experimental accuracy/coverage visible;
+   agent permissions must not grant wider capture. Use a spec/plan before implementation.
+5. Fresh semantic/privacy evaluation is required before accepting v2.5 or letting
+   semantic assertions drive agent answers by default. Improve precision/corroboration;
+   preserve deterministic TODO parsing as explicit intent, not general understanding.
+6. Next source expansion: browser adapters with website-level permissions, then richer
+   automatic cross-artifact relationships. Switching patterns are weak signals only.
+   Manual artifact attachment is not the default; hosted inference remains unresolved.
+
+### End-of-day runtime and restart
+
+Experimental collector stopped cleanly after the user's end-of-day request (closed=true);
+78 sources retained, 12 processed jobs and 11 cancelled jobs at shutdown. Data/model cache
+are ignored and remain local; the saved supported decision/task is not deleted. The local
+Ollama terminal is user-managed; do not assume it survives overnight. The `.env` canary is
+an untracked local test file, deliberately not included in publication. Do not git-add it.
+
+For another live run follow [the runbook](docs/live-semantic-pilot.md): start the existing
+cloud-disabled Ollama service if needed, start the experimental collector, launch/reconnect
+the VS Code development extension with the newly issued grant, and focus an approved file.
+A stopped collector needs `start`, not `resume`; a running collector paused by sleep needs
+explicit `resume`. Use `retry_notes` only for a deliberate bounded recovery test, not
+routine startup once supported claims exist. Do not assume the normal tracker/widget and
+semantic pilot are the same process or share task data.
+
+### Closure and open boundaries
+
+Published/closed: semantic engineering core, live bridge and note-delivery repairs,
+source-backed one-project recall repair, latest Aditya main integration, detailed and
+Claude entry-point handovers. Verification: 251 Python / 92 semantic / 6 Node tests pass.
+Still open: general model acceptance, broader native QA, sustained resources, browser
+scope, live inferred relationships, MCP and real agent handoff. Main merge/release is
+not done. No new feature should be marked complete solely from the synthetic tests.
+
 ## Document map
 
 - [Claude entry-point handover](handover.md): branch, verified state and continuation instructions.
-
 - [README](README.md): normal tracker setup and user commands.
 - [Architecture](ARCHITECTURE.md): capture modules and experimental semantic boundary.
 - [Semantic handover](docs/semantic-project-memory-status.md): implemented interfaces,

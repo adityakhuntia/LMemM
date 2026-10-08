@@ -176,10 +176,12 @@ class _PillView(NSView):
             self._bars(PILL_MARGIN[0] + 12, mid)
             self._text(w.heard_text(), 13, False, on_ink, NSMakeRect(PILL_MARGIN[0] + 26, 0, cw - 36, bh))
 
+    @objc.python_method
     def _dot(self, x, y):
         NSColor.systemOrangeColor().setFill()
         NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(x - 4, y - 4, 8, 8)).fill()
 
+    @objc.python_method
     def _bars(self, x, y):
         NSColor.systemOrangeColor().setFill()
         for i, base in enumerate((5, 12, 8, 13, 6)):
@@ -187,6 +189,7 @@ class _PillView(NSView):
             NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
                 NSMakeRect(x - 7 + i * 3.6, y - h / 2, 2.5, h), 1.2, 1.2).fill()
 
+    @objc.python_method
     def _text(self, text, size, bold, color, area, centre=False):
         font = NSFont.systemFontOfSize_weight_(size, 0.4) if bold else NSFont.systemFontOfSize_(size)
         attrs = {NSFontAttributeName: font, NSForegroundColorAttributeName: color}

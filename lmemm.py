@@ -9,6 +9,7 @@ LMemM - the one command.
                                       what's remembered + the latest session's timeline
     lmemm.py notes [--all] [PROJECT]  pending edits (your ⌃⌥N notes) by project
     lmemm.py notes done ID… | notes reopen ID…
+    lmemm.py suggest [NAME] [ID…]     offer things as one project (stands in for the model)
     lmemm.py context [SESSION] [--days N]
                                       a clean export for handing to an AI: what you did
                                       and why, grouped by project, with no operational detail
@@ -154,6 +155,14 @@ def cmd_memory(args):
     except ValueError:
         sys.exit("usage: lmemm.py memory [N] [--content] [--events]")
     show_memory(count, show_content="--content" in args, show_events="--events" in args)
+
+
+def cmd_suggest(args):
+    """Offer a project on the pill. With no ids, the four most recent things."""
+    name = args[0] if args else "Project"
+    if not tracker.send_control("suggest", name=name, ids=args[1:], reason="Opened together"):
+        sys.exit("LMemM isn't running.")
+    print(f"offered '{name}' on the pill.")
 
 
 def cmd_notes(args):
@@ -372,6 +381,8 @@ def main():
         cmd_memory(rest)
     elif cmd == "notes":
         cmd_notes(rest)
+    elif cmd == "suggest":
+        cmd_suggest(rest)
     elif cmd in {"status", "pause", "resume"}:
         cmd_control(cmd)
     elif cmd == "pin":

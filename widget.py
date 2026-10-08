@@ -9,6 +9,14 @@
               deeper to the whole project (grouped by thing, finished notes behind "Done").
               Click the pill again, or anywhere else, to close it.
 
+    suggest   when the model thinks some things belong together and you have no notes waiting
+              here, the pill shows a small link mark (the first few times with the words "Group
+              these?"). Its card shows the things as icons, a name you can change, "Create project"
+              and "Not these". Clicking anywhere else is "not now".
+    project   the card's last row says where this thing lives ("Not in a project. Add…").
+              It opens a picker: your projects, search, "+ New project", and a tick to file the
+              other things open lately along with this one.
+
 Everything is a non-activating panel: it never takes focus from the app you're in,
 and it shows on every Space and over full-screen apps. It follows the system light/dark
 setting. What the card shows is decided in notes.card_view() (plain data, tested);
@@ -19,9 +27,9 @@ import math
 import time
 
 import objc
-from Foundation import NSPointInRect
-from AppKit import (NSApplication, NSBackingStoreBuffered, NSBezierPath, NSColor, NSEvent,
-                    NSFont, NSFontAttributeName, NSForegroundColorAttributeName, NSMakeRect,
+from Foundation import NSObject, NSPointInRect
+from AppKit import (NSApplication, NSBackingStoreBuffered, NSBezierPath, NSColor, NSEvent, NSImage,
+                    NSImageView, NSFont, NSFontAttributeName, NSForegroundColorAttributeName, NSMakeRect,
                     NSPanel, NSScreen, NSScrollView, NSStrikethroughStyleAttributeName, NSTextField,
                     NSTrackingArea, NSView, NSVisualEffectView, NSAttributedString)
 
@@ -40,6 +48,17 @@ POPOVER_MATERIAL, BEHIND_WINDOW, ACTIVE = 6, 0, 1
 CLICK_MASK = (1 << 1) | (1 << 3)    # left and right mouse down, in any app
 FADE_SECONDS = 0.8                  # a ticked note stays struck through this long
 ADD_LABEL = "Add a note…"
+SEARCH_PLACEHOLDER = "Find or name a project"
+ICONS = {"code_file": ("chevron.left.forwardslash.chevron.right", (0.48, 0.35, 0.94)),
+         "document": ("doc.text", (0.25, 0.48, 0.88)), "spreadsheet": ("tablecells", (0.18, 0.61, 0.38)),
+         "chat": ("bubble.left", (0.09, 0.65, 0.54)), "chat_list": ("bubble.left", (0.09, 0.65, 0.54)),
+         "email_draft": ("envelope", (0.84, 0.34, 0.24)), "email": ("envelope", (0.84, 0.34, 0.24)),
+         "mailbox": ("envelope", (0.84, 0.34, 0.24))}
+DEFAULT_ICON = ("square.on.square", (0.45, 0.45, 0.5))
+DONE_SECONDS = 1.5                  # "Pricing created." stays this long, then the card closes
+SUGGEST_WORDS = "Group these?"
+PROJECT_EXPLAINER = ("A project keeps related things and your notes together, so you can pick up "
+                     "where you left off. You can change this any time.")
 EMPTY_HINT = "Nothing left here. Hold {key} and say what to remember for this page."
 
 
@@ -75,8 +94,16 @@ def _label(text, size=11, bold=False, color=None, frame=(0, 0, 10, 10), wrap=Fal
     return field, h
 
 
-def _panel(width, height):
-    panel = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
+class _KeyPanel(NSPanel):
+    """A panel that can take the keyboard (for the name and search fields) without
+    activating LMemM, so the app you were in stays in front."""
+
+    def canBecomeKeyWindow(self):
+        return True
+
+
+def _panel(width, height, keyable=False):
+    panel = (_KeyPanel if keyable else NSPanel).alloc().initWithContentRect_styleMask_backing_defer_(
         NSMakeRect(0, 0, width, height), BORDERLESS | NONACTIVATING, NSBackingStoreBuffered, False)
     panel.setLevel_(FLOATING)
     panel.setCollectionBehavior_(COLLECTION)
@@ -101,10 +128,14 @@ class _Tap(_Flipped):
         self = objc.super(_Tap, self).initWithFrame_(frame)
         self.callback = callback
         self.fill = False
+        self.tint = None                               # a solid colour, for a primary button
         return self
 
     def drawRect_(self, rect):
-        if self.fill:
+        if self.tint is not None:
+            self.tint.setFill()
+            NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(self.bounds(), 10, 10).fill()
+        elif self.fill:
             NSColor.labelColor().colorWithAlphaComponent_(0.07).setFill()
             NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(self.bounds(), 10, 10).fill()
 
@@ -113,6 +144,60 @@ class _Tap(_Flipped):
 
     def acceptsFirstMouse_(self, event):
         return True
+
+
+class _Fields(NSObject):
+    """Delegate for the card's text fields: report typing, Return and Esc."""
+
+    def initWithChange_submit_cancel_(self, change, submit, cancel):
+        self = objc.super(_Fields, self).init()
+        self.change, self.submit, self.cancel = change, submit, cancel
+        return self
+
+    def controlTextDidChange_(self, note):
+        self.change(note.object().stringValue())
+
+    def control_textView_doCommandBySelector_(self, control, view, selector):
+        if selector == "insertNewline:":
+            self.submit(control.stringValue())
+            return True
+        if selector == "cancelOperation:":
+            self.cancel()
+            return True
+        return False
+
+
+def _field(text, placeholder, size, bold, frame, delegate):
+    """An editable one-line text field with no box, styled like a label."""
+    field = NSTextField.alloc().initWithFrame_(NSMakeRect(*frame))
+    field.setStringValue_(text)
+    field.setPlaceholderString_(placeholder)
+    field.setFont_(NSFont.systemFontOfSize_weight_(size, 0.4) if bold else NSFont.systemFontOfSize_(size))
+    field.setBordered_(False)
+    field.setDrawsBackground_(False)
+    field.setFocusRingType_(1)                       # none
+    field.setDelegate_(delegate)
+    return field
+
+
+class _Tile(_Flipped):
+    """An app icon square: a symbol for the kind of thing, white on a colour."""
+
+    def initWithKind_size_(self, kind, size):
+        self = objc.super(_Tile, self).initWithFrame_(NSMakeRect(0, 0, size, size))
+        self.symbol, self.rgb = ICONS.get(kind, DEFAULT_ICON)
+        self.size = size
+        image = NSImage.imageWithSystemSymbolName_accessibilityDescription_(self.symbol, None)
+        if image is not None:
+            holder = NSImageView.alloc().initWithFrame_(NSMakeRect(size * 0.22, size * 0.22, size * 0.56, size * 0.56))
+            holder.setImage_(image)
+            holder.setContentTintColor_(NSColor.whiteColor())
+            self.addSubview_(holder)
+        return self
+
+    def drawRect_(self, rect):
+        NSColor.colorWithRed_green_blue_alpha_(*self.rgb, 1.0).setFill()
+        NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(self.bounds(), self.size * .27, self.size * .27).fill()
 
 
 class _Ring(_Flipped):
@@ -170,9 +255,18 @@ class _PillView(NSView):
         mid = PILL_MARGIN[1] + ch / 2
         if state == "count":
             self._text(str(w.count), 12, True, on_ink, capsule, centre=True)
+        elif state == "suggest":
+            if w.sug["first_time"]:
+                self._link(PILL_MARGIN[0] + 15, mid, on_ink)
+                self._text(SUGGEST_WORDS, 13, False, on_ink, NSMakeRect(PILL_MARGIN[0] + 29, 0, cw - 38, bh))
+            else:
+                self._link(PILL_MARGIN[0] + cw / 2, mid, on_ink)
         elif state == "peek":
-            self._dot(PILL_MARGIN[0] + 11, mid, lit=bool(w.count))
-            self._text(w.peek_text(), 13, False, on_ink, NSMakeRect(PILL_MARGIN[0] + 22, 0, cw - 32, bh))
+            if w.count or not w.sug:
+                self._dot(PILL_MARGIN[0] + 11, mid, lit=bool(w.count))
+            else:
+                self._link(PILL_MARGIN[0] + 14, mid, on_ink)
+            self._text(w.peek_text(), 13, False, on_ink, NSMakeRect(PILL_MARGIN[0] + 22 + (4 if not w.count and w.sug else 0), 0, cw - 32, bh))
         elif state == "listening":
             self._bars(PILL_MARGIN[0] + 12, mid)
             self._text(w.heard_text(), 13, False, on_ink, NSMakeRect(PILL_MARGIN[0] + 26, 0, cw - 36, bh))
@@ -181,6 +275,15 @@ class _PillView(NSView):
     def _dot(self, x, y, lit=True):
         (NSColor.systemOrangeColor() if lit else NSColor.colorWithWhite_alpha_(0.5, 0.8)).setFill()
         NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(x - 4, y - 4, 8, 8)).fill()
+
+    @objc.python_method
+    def _link(self, x, y, color):
+        """The project mark: two rings that overlap."""
+        color.setStroke()
+        for dx in (-2.6, 2.6):
+            ring = NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(x + dx - 4.2, y - 4.2, 8.4, 8.4))
+            ring.setLineWidth_(1.5)
+            ring.stroke()
 
     @objc.python_method
     def _bars(self, x, y):
@@ -225,16 +328,29 @@ class Widget:
     """provider() -> notes.card(...) for the thing in front, or None.
     on_tick(note ids, done) marks notes done / open again.
     on_add() opens the ⌃⌥N note window.
-    heard() -> None, or the words so far while the note window is open (the pill shows them)."""
+    heard() -> None, or the words so far while the note window is open (the pill shows them).
+    suggestion() -> notes.suggestion_view(...) or None: a group the model thinks is one project.
+    on_project(ids, name) files things in a project; on_decline(forever) answers a suggestion;
+    picker(item id, typed text) -> notes.picker_view(...); on_unfile(item id) takes a thing out."""
 
-    def __init__(self, provider, on_tick, on_add=None, heard=None, hotkey="⌃⌥N"):
+    def __init__(self, provider, on_tick, on_add=None, heard=None, hotkey="⌃⌥N",
+                 suggestion=None, on_project=None, on_decline=None, picker=None, on_unfile=None):
         self.provider = provider
         self.on_tick = on_tick
         self.on_add = on_add or (lambda: None)
         self.heard = heard or (lambda: None)
+        self.suggestion = suggestion or (lambda: None)
+        self.on_project = on_project or (lambda ids, name: None)
+        self.on_decline = on_decline or (lambda forever: None)
+        self.picker = picker or (lambda item, query: None)
+        self.on_unfile = on_unfile or (lambda item: None)
+        self.search = self.name = None      # the card's text fields while they exist
+        self.sug = None                     # the suggestion in hand (None when there is none)
+        self.query, self.also, self.done_text, self.close_at = "", True, "", 0.0
+        self.fields = _Fields.alloc().initWithChange_submit_cancel_(self._typed, self._submitted, self._cancelled)
         self.hotkey = hotkey
         self.card_open = False
-        self.mode = "here"                  # "here" | "project"
+        self.mode = "here"                  # "here" | "project" | "suggest" | "pick" | "done"
         self.show_done = False
         self.fading = {}                    # note id -> when it was ticked
         self.data = None
@@ -245,7 +361,7 @@ class Widget:
         self.pill = _panel(80, 20)
         self.pill_view = _PillView.alloc().initWithWidget_(self)
         self.pill.setContentView_(self.pill_view)
-        self.card = _panel(CARD_W, 200)
+        self.card = _panel(CARD_W, 200, keyable=True)
         self.layout()
         self.pill.orderFrontRegardless()
         self.monitor = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(CLICK_MASK, self._clicked_elsewhere)
@@ -257,11 +373,13 @@ class Widget:
             return "listening"
         if self.pill_view.hover and not self.card_open:
             return "peek"
-        return "count" if self.count else "rest"
+        if self.count:
+            return "count"
+        return "suggest" if self.sug else "rest"
 
     def peek_text(self):
         if not self.count:
-            return "No notes here"
+            return self.sug["peek"] if self.sug else "No notes here"
         text = self.first.replace("\n", " ")
         return text if len(text) <= 32 else text[:31] + "…"
 
@@ -275,11 +393,13 @@ class Widget:
         """Size of the drawn capsule for the current state."""
         state = self.mode_of_pill()
         if state == "peek":
-            return _text_width(self.peek_text(), NSFont.systemFontOfSize_(13)) + 44, 28
+            return _text_width(self.peek_text(), NSFont.systemFontOfSize_(13)) + 44 + (4 if not self.count and self.sug else 0), 28
         if state == "listening":
             return _text_width(self.heard_text(), NSFont.systemFontOfSize_(13)) + 48, 30
         if state == "count":
             return 44, 22
+        if state == "suggest":
+            return (_text_width(SUGGEST_WORDS, NSFont.systemFontOfSize_(13)) + 52, 28) if self.sug["first_time"] else (44, 22)
         return 36, 5
 
     def layout(self, animate=False):
@@ -318,9 +438,12 @@ class Widget:
             self.layout()
         self.data = self.provider()
         count, first = notes.pill_summary(self.data)
-        if (count, first) != (self.count, self.first):
-            self.count, self.first = count, first
+        sug = self.suggestion()
+        if (count, first, sug) != (self.count, self.first, self.sug):
+            self.count, self.first, self.sug = count, first, sug
             self.layout()
+        if self.mode == "done" and self.card_open and time.time() >= self.close_at:
+            self.toggle_card()
         now = time.time()
         for nid in [n for n, at in self.fading.items() if now - at > FADE_SECONDS]:
             del self.fading[nid]
@@ -330,7 +453,8 @@ class Widget:
     def toggle_card(self):
         self.card_open = not self.card_open
         if self.card_open:
-            self.mode, self.show_done, self.scroll = "here", False, None
+            self.mode, self.show_done, self.scroll = ("suggest" if self.sug and not self.count else "here"), False, None
+            self.query, self.also = "", True
             self.data = self.provider()
             self.render()
             self.card.orderFrontRegardless()
@@ -372,15 +496,25 @@ class Widget:
     # -- the card
 
     def _key(self):
-        return repr((self.data, self.mode, self.show_done, sorted(self.fading)))
+        if self.mode in ("pick", "suggest"):          # fields in use: don't rebuild under the typing
+            return repr((self.mode, self.sug))
+        return repr((self.data, self.mode, self.show_done, sorted(self.fading), self.sug, self.done_text))
 
     def render(self):
         self.shown = self._key()
-        view = notes.card_view(self.data, self.mode, self.show_done, self.fading)
+        if self.mode == "suggest" and not self.sug:
+            self.mode = "here"
+        view = notes.card_view(self.data, self.mode if self.mode == "project" else "here", self.show_done, self.fading)
         kept = self.scroll.contentView().bounds().origin.y if self.scroll is not None else 0
         body = _Flipped.alloc().initWithFrame_(NSMakeRect(0, 0, CARD_W, 10))
         y = 14
-        if view.get("empty"):
+        if self.mode == "suggest":
+            y = self._suggest(body, y)
+        elif self.mode == "pick":
+            y = self._pick(body, y)
+        elif self.mode == "done":
+            y = self._done(body, y)
+        elif view.get("empty"):
             y = self._empty(body, y)
         elif view["mode"] == "project":
             y = self._project(body, view, y)
@@ -410,6 +544,8 @@ class Widget:
         self.scroll = scroll
         self.card_height = height
         self._place_card()
+        if self.mode == "pick":
+            self._focus(self.search)
 
     def _place_card(self):
         pill = self.pill.frame()
@@ -482,7 +618,176 @@ class Widget:
         y = self._add_row(body, y + 4)
         if view["more"]:
             y = self._link(body, y, f"{view['more']} more in {view['project']}", "›", lambda: self._go("project"))
+        if self.sug and self.count:                  # notes come first; the offer is one quiet line
+            y = self._link(body, y, f"Part of a project? {self.sug['peek']}", "›", lambda: self._go("suggest"))
+        elif view.get("item"):
+            left = f"In {view['filed']}" if view.get("filed") else "Not in a project. Add…"
+            y = self._link(body, y, left, "›", lambda: self._go("pick"))
         return y
+
+    # -- projects: the suggestion, the picker, and the confirmation
+
+    def _focus(self, field):
+        if field is None:
+            return
+        self.card.makeKeyWindow()
+        self.card.makeFirstResponder_(field)
+        editor = field.currentEditor()
+        if editor is not None:
+            editor.setSelectedRange_((len(field.stringValue()), 0))
+
+    def _item_id(self):
+        return (self.data or {}).get("item")
+
+    def _typed(self, text):
+        if self.mode == "pick":
+            self.query = text
+            self.render()
+
+    def _submitted(self, text):
+        if self.mode == "pick" and text.strip():
+            self._file(" ".join(text.split()))
+        elif self.mode == "suggest":
+            self._accept()
+
+    def _cancelled(self):
+        if self.card_open:
+            self.toggle_card()
+
+    def _finish(self, text):
+        self.done_text = text
+        self.mode, self.close_at = "done", time.time() + DONE_SECONDS
+        self.data = self.provider()
+        self.render()
+
+    def _accept(self):
+        sug = self.sug
+        if not sug:
+            return
+        name = " ".join(self.name.stringValue().split()) or sug["name"]
+        self.on_project([t["id"] for t in sug["things"]], name)
+        self._finish(f"{name} created with {len(sug['things'])} things.")
+
+    def _refuse(self):
+        self.on_decline(True)
+        self.sug = None
+        self.toggle_card()
+
+    def _file(self, name):
+        view = self.picker(self._item_id(), self.query) or {"also": []}
+        ids = [self._item_id()] + ([a["id"] for a in view["also"]] if self.also else [])
+        self.on_project(ids, name)
+        others = len(ids) - 1
+        self._finish(f"Added to {name}" + (f" with {others} other{'s' * (others != 1)}." if others else "."))
+
+    def _button(self, body, frame, text, callback, primary=False):
+        tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(*frame), callback)
+        dark = _dark()
+        if primary:
+            tap.tint = NSColor.colorWithWhite_alpha_(0.97 if dark else 0.09, 1.0)
+            color = NSColor.colorWithWhite_alpha_(0.09 if dark else 1.0, 1.0)
+        else:
+            color = NSColor.secondaryLabelColor()
+        label = _label(text, 13, bold=primary, color=color, frame=(0, 8, frame[2], 17))[0]
+        label.setAlignment_(1)                      # centre
+        tap.addSubview_(label)
+        body.addSubview_(tap)
+
+    def _suggest(self, body, y):
+        sug = self.sug
+        body.addSubview_(_label("Looks like one project", 12, color=NSColor.secondaryLabelColor(),
+                                frame=(PAD, y, CARD_W - 2 * PAD, 16))[0])
+        y += 19
+        self.name = _field(sug["name"], "Project name", 16, True, (PAD - 2, y, CARD_W - 2 * PAD + 4, 22), self.fields)
+        body.addSubview_(self.name)
+        y += 30
+        shown = sug["things"][:4]
+        for i, thing in enumerate(shown):
+            x = PAD + i * 63
+            tile = _Tile.alloc().initWithKind_size_(thing["kind"], 34)
+            tile.setFrame_(NSMakeRect(x + 11, y, 34, 34))
+            body.addSubview_(tile)
+            name = _label(thing["title"], 11, color=NSColor.secondaryLabelColor(), frame=(x, y + 38, 56, 14))[0]
+            name.setAlignment_(1)
+            body.addSubview_(name)
+        y += 58
+        if len(sug["things"]) > len(shown):
+            body.addSubview_(_label(f"and {len(sug['things']) - len(shown)} more", 11, color=NSColor.tertiaryLabelColor(),
+                                    frame=(PAD, y - 4, CARD_W - 2 * PAD, 14))[0])
+            y += 14
+        if sug["reason"]:
+            body.addSubview_(_label(sug["reason"], 12, color=NSColor.secondaryLabelColor(),
+                                    frame=(PAD, y, CARD_W - 2 * PAD, 16))[0])
+            y += 22
+        if sug["first_time"]:
+            field, h = _label(PROJECT_EXPLAINER, 12, color=NSColor.secondaryLabelColor(),
+                              frame=(PAD, y + 6, CARD_W - 2 * PAD, 16), wrap=True)
+            body.addSubview_(field)
+            y += h + 14
+        self._button(body, (8, y, 150, 33), "Create project", self._accept, primary=True)
+        self._button(body, (164, y, CARD_W - 164 - 8, 33), "Not these", self._refuse)
+        return y + 41
+
+    def _pick(self, body, y):
+        view = self.picker(self._item_id(), self.query)
+        if view is None:
+            return self._empty(body, y)
+        y = self._header(body, y, "Add to a project", "", back=(view["title"].replace("Add ", "", 1).replace(" to a project", ""),
+                                                                lambda: self._go("here")))
+        box = _Tap.alloc().initWithFrame_callback_(NSMakeRect(8, y - 6, CARD_W - 16, 34), lambda: None)
+        box.fill = True
+        self.search = _field(self.query, SEARCH_PLACEHOLDER, 13, False, (12, 8, CARD_W - 16 - 24, 18), self.fields)
+        box.addSubview_(self.search)
+        body.addSubview_(box)
+        y += 36
+
+        def row(y, mark, title, small, callback):
+            tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(6, y, CARD_W - 12, 40), callback)
+            dot = _Flipped.alloc().initWithFrame_(NSMakeRect(PAD - 6 + 2, 7, 26, 26))
+            dot.setWantsLayer_(True)
+            dot.layer().setCornerRadius_(8)
+            dot.layer().setBackgroundColor_(NSColor.labelColor().colorWithAlphaComponent_(0.12).CGColor())
+            dot.addSubview_(_label(mark, 13, bold=True, frame=(0, 4, 26, 17))[0])
+            dot.subviews()[0].setAlignment_(1)
+            tap.addSubview_(dot)
+            tap.addSubview_(_label(title, 13, frame=(PAD + 32, 5, CARD_W - 100, 17))[0])
+            tap.addSubview_(_label(small, 11, color=NSColor.secondaryLabelColor(), frame=(PAD + 32, 22, CARD_W - 100, 14))[0])
+            body.addSubview_(tap)
+            return y + 40
+
+        typed = view["new"]
+        y = row(y, "+", f"New project “{typed}”" if typed else "New project",
+                "Create and add this" if typed else "Name it above, then press Return",
+                (lambda: self._file(typed)) if typed else (lambda: self._focus(self.search)))
+        for p in view["rows"]:
+            if p["here"]:
+                y = row(y, p["name"][:1].upper(), p["name"], "Here now. Click to take it out.",
+                        lambda: (self.on_unfile(self._item_id()), self._finish("Taken out of the project.")))
+            else:
+                y = row(y, p["name"][:1].upper(), p["name"], p["meta"], lambda name=p["name"]: self._file(name))
+        if view["also"]:
+            names = " and ".join(a["title"] for a in view["also"])
+            tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(6, y + 4, CARD_W - 12, 36),
+                                                       lambda: (setattr(self, "also", not self.also), self.render()))
+            ring = _Ring.alloc().initWithChecked_(self.also)
+            ring.setFrame_(NSMakeRect(PAD - 6 + 2, 9, 17, 17))
+            tap.addSubview_(ring)
+            note, h = _label(f"Also add {names}, open now", 12, color=NSColor.secondaryLabelColor(),
+                             frame=(PAD + 24, 5, CARD_W - 12 - PAD - 30, 16), wrap=True)
+            note.setFrame_(NSMakeRect(PAD + 24, 8, CARD_W - 12 - PAD - 30, h))
+            tap.addSubview_(note)
+            body.addSubview_(tap)
+            y += 44
+        return y
+
+    def _done(self, body, y):
+        ring = _Ring.alloc().initWithChecked_(True)
+        ring.setFrame_(NSMakeRect(PAD, y + 2, 17, 17))
+        body.addSubview_(ring)
+        body.addSubview_(_label(self.done_text, 14, bold=True, frame=(PAD + 27, y, CARD_W - 2 * PAD - 27, 18))[0])
+        body.addSubview_(_label("It will show on the project page.", 12, color=NSColor.secondaryLabelColor(),
+                                frame=(PAD + 27, y + 20, CARD_W - 2 * PAD - 27, 16))[0])
+        return y + 40
 
     def _project(self, body, view, y):
         y = self._header(body, y, view["title"], view["caption"], back=(view["back"], lambda: self._go("here")))

@@ -19,6 +19,7 @@ import math
 import time
 
 import objc
+from Foundation import NSPointInRect
 from AppKit import (NSApplication, NSBackingStoreBuffered, NSBezierPath, NSColor, NSEvent,
                     NSFont, NSFontAttributeName, NSForegroundColorAttributeName, NSMakeRect,
                     NSPanel, NSScreen, NSScrollView, NSStrikethroughStyleAttributeName, NSTextField,
@@ -170,15 +171,15 @@ class _PillView(NSView):
         if state == "count":
             self._text(str(w.count), 12, True, on_ink, capsule, centre=True)
         elif state == "peek":
-            self._dot(PILL_MARGIN[0] + 11, mid)
+            self._dot(PILL_MARGIN[0] + 11, mid, lit=bool(w.count))
             self._text(w.peek_text(), 13, False, on_ink, NSMakeRect(PILL_MARGIN[0] + 22, 0, cw - 32, bh))
         elif state == "listening":
             self._bars(PILL_MARGIN[0] + 12, mid)
             self._text(w.heard_text(), 13, False, on_ink, NSMakeRect(PILL_MARGIN[0] + 26, 0, cw - 36, bh))
 
     @objc.python_method
-    def _dot(self, x, y):
-        NSColor.systemOrangeColor().setFill()
+    def _dot(self, x, y, lit=True):
+        (NSColor.systemOrangeColor() if lit else NSColor.colorWithWhite_alpha_(0.5, 0.8)).setFill()
         NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(x - 4, y - 4, 8, 8)).fill()
 
     @objc.python_method
@@ -200,15 +201,21 @@ class _PillView(NSView):
         NSAttributedString.alloc().initWithString_attributes_(text, attrs).drawAtPoint_((x, text_y))
 
     def mouseEntered_(self, event):
-        self.hover = True
-        self.widget.layout()
+        if not self.hover:
+            self.hover = True
+            self.widget.layout()
 
     def mouseExited_(self, event):
-        self.hover = False
-        self.widget.layout()
+        if self.hover:
+            self.hover = False
+            self.widget.layout()
 
     def mouseDown_(self, event):
-        self.widget.toggle_card()
+        try:
+            self.widget.toggle_card()
+        except Exception:                      # never swallow it silently: say what broke
+            import traceback
+            traceback.print_exc()
 
     def acceptsFirstMouse_(self, event):
         return True
@@ -239,7 +246,7 @@ class Widget:
         self.pill_view = _PillView.alloc().initWithWidget_(self)
         self.pill.setContentView_(self.pill_view)
         self.card = _panel(CARD_W, 200)
-        self.layout(animate=False)
+        self.layout()
         self.pill.orderFrontRegardless()
         self.monitor = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(CLICK_MASK, self._clicked_elsewhere)
 
@@ -248,11 +255,13 @@ class Widget:
     def mode_of_pill(self):
         if self.listening is not None:
             return "listening"
-        if self.count and (self.pill_view.hover and not self.card_open):
+        if self.pill_view.hover and not self.card_open:
             return "peek"
         return "count" if self.count else "rest"
 
     def peek_text(self):
+        if not self.count:
+            return "No notes here"
         text = self.first.replace("\n", " ")
         return text if len(text) <= 32 else text[:31] + "…"
 
@@ -271,15 +280,18 @@ class Widget:
             return _text_width(self.heard_text(), NSFont.systemFontOfSize_(13)) + 48, 30
         if state == "count":
             return 44, 22
-        return (44, 10) if self.pill_view.hover else (36, 5)
+        return 36, 5
 
-    def layout(self, animate=True):
-        """Resize and place the pill panel for its state (smoothly), keeping it bottom-centre."""
+    def layout(self, animate=False):
+        """Resize and place the pill panel for its state, keeping it bottom-centre.
+        Never animated: a panel that is mid-resize under the pointer sends enter/exit events
+        and the pill flickers between hovered and not."""
         cw, ch = self._capsule()
         w, h = cw + 2 * PILL_MARGIN[0], ch + 2 * PILL_MARGIN[1]
         scr = NSScreen.mainScreen().visibleFrame()
         frame = NSMakeRect(scr.origin.x + (scr.size.width - w) / 2, scr.origin.y + PILL_BOTTOM - PILL_MARGIN[1], w, h)
-        self.pill.setFrame_display_animate_(frame, True, animate)
+        if frame != self.pill.frame():
+            self.pill.setFrame_display_(frame, True)
         self.pill_view.setNeedsDisplay_(True)
         if self.card_open:
             self._place_card()
@@ -301,6 +313,9 @@ class Widget:
 
     def refresh(self):
         """Called ~once a second: keep the count (and an open card) current."""
+        if self.pill_view.hover and not NSPointInRect(NSEvent.mouseLocation(), self.pill.frame()):
+            self.pill_view.hover = False        # the exit event was missed while the panel resized
+            self.layout()
         self.data = self.provider()
         count, first = notes.pill_summary(self.data)
         if (count, first) != (self.count, self.first):
@@ -323,7 +338,7 @@ class Widget:
             self.card.animator().setAlphaValue_(1.0)
         else:
             self.card.orderOut_(None)
-        self.layout(animate=False)
+        self.layout()
 
     def _clicked_elsewhere(self, event):
         # global monitors only see clicks in *other* apps, so this never fires for our own panels

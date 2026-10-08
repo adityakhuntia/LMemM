@@ -184,6 +184,14 @@ def pill_summary(data):
     return len(here), (here[0]["text"] if here else "")
 
 
+def blank_card(title, app):
+    """The card for a place with no notes (and nothing remembered yet) so the pill can
+    say "No notes here" instead of staying blank."""
+    return {"title": title, "app": app, "project": app, "left": [], "plan": [], "history": [],
+            "things": 0, "visits": 0, "seconds": 0}
+
+
+
 def card_view(data, mode="here", show_done=False, fading=()):
     """What the pill's card draws, as plain data (widget.py only turns it into views).
 
@@ -207,10 +215,3 @@ def card_view(data, mode="here", show_done=False, fading=()):
     return {"mode": "here", "title": data["title"], "caption": data["app"],
             "rows": [row(n) for n in shown if n["here"]],
             "more": sum(1 for n in data["left"] if not n["here"]), "project": data["project"]}
-
-
-def blank_card(title, app):
-    """The card for a place with no notes (and nothing remembered yet) so the pill can
-    say "No notes here" instead of staying blank."""
-    return {"title": title, "app": app, "project": app, "left": [], "plan": [], "history": [],
-            "things": 0, "visits": 0, "seconds": 0}

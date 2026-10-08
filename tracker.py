@@ -523,14 +523,17 @@ class Tracker:
         label = meta["app"] + (f": {meta['tab_title'] or meta['window']}"
                                if meta.get("tab_title") or meta.get("window") else "")
         target = ("frame", meta["ts"])
-        self.panel.show(label, lambda text: self.save_note(target, text))
+        here = notes.note_target(self.widget_card() if self.widget else None, label)
+        self.panel.show(here["crumb"], lambda text: self.save_note(target, text, here["where"]))
         self.poll_input()
         return True
 
-    def save_note(self, target, text):
+    def save_note(self, target, text, where=None):
         if not text:
             line(now_hms(), "", "note cancelled")
             return
+        if self.widget and where:
+            self.widget.flash(f"Saved to {where}"[:44])
         at = datetime.now().isoformat(timespec="seconds")
         with self.lock:
             item = notes.record(self.items, self.frame_item, self.notes, target, text, at)
@@ -676,8 +679,8 @@ class Tracker:
                 line(now_hms(), "", f"accessibility read failed: {e}")
 
     def widget_heard(self):
-        """None, or the words said so far while the ⌃⌥N note window is open."""
-        return self.panel.shown if self.panel.open else None
+        """The pill no longer shows the words (the note card does), so this is always None."""
+        return None                     # the note card shows the waveform and words itself
 
     def widget_tick(self, ids, done):
         with self.lock:

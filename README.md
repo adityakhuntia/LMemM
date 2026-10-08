@@ -90,9 +90,10 @@ LMemM is watching  ·  captures on app/tab switches, else every 5s  ·  pauses a
 
 ## Notes and pending edits (⌃⌥N)
 
-Press **⌃⌥N** in any app. A small window opens for what's in front ("Note for: Google
-Docs: Q3 plan") and it is **already listening**: talk, and your words appear as you
-speak. You can type or fix words too. **Return** saves, **Esc** cancels.
+Press **⌃⌥N** in any app. A small card opens above the pill for what's in front ("Note
+for Pricing › Q3 plan") and it is **already listening**: talk, and your words appear as
+you speak. Click in to type or fix a word. **Return** saves, **Esc** cancels; on save the
+pill says "Saved to Q3 plan" and the count rises. The app you were in stays in front.
 
 - The note goes on the memory entry for that thing, kept apart from what LMemM
   observed. If OCR hasn't caught up yet, it waits for that screen; it never lands on
@@ -125,7 +126,8 @@ follows light/dark, and shows over every app, Space and full-screen window.
 
 - Nothing waiting: it is nearly invisible.
 - Notes waiting on the thing you're on: it shows a number. Hover to see the first one.
-- While you dictate a note (⌃⌥N): a waveform and the words so far.
+- While you dictate a note (⌃⌥N): the note card shows the waveform and the words; the pill stays quiet.
+- Right after a note is saved: a check and "Saved to <thing>".
 
 Click it for a small card about what you're on. It lists that thing's open notes: click
 one to tick it off (it fades out). "Add a note…" opens the dictation window. If the

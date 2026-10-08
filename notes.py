@@ -181,6 +181,17 @@ def card(items, item_id):
             "seconds": sum(i.get("seconds", 0) for i in members)}
 
 
+def note_target(data, label):
+    """The note card's "Note for" line and the name the pill confirms with. A thing you put
+    in a project reads "Pricing › Q3 plan"; one that is not in a project is just its name.
+    With nothing known yet it falls back to the app and tab (label)."""
+    title = ((data or {}).get("title") or "").strip()
+    if not title:
+        return {"crumb": label, "where": label}
+    filed = (data.get("filed") or "").strip()
+    return {"crumb": f"{filed} › {title}" if filed else title, "where": title}
+
+
 def pill_summary(data):
     """(open notes on the thing in front, text of the first one) for the pill itself.
     Notes on other things in the project don't light the pill: it is about *here*."""

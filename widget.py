@@ -4,6 +4,8 @@
     notes     a small pill with a number: edits waiting on the thing in front
     hover     the pill unfolds to show the first one
     speaking  while the ⌃⌥N note window is open: a waveform and the words so far
+              (the note card, notecard.py, now shows these itself, so the pill stays quiet)
+    saved     right after a note: a check and "Saved to <thing>", then the count rises
     click     a quiet card above it for the thing in front: its open notes, tick one to
               finish it, and an "Add a note…" row. "N more in <project>" goes one level
               deeper to the whole project (grouped by thing, finished notes behind "Done").
@@ -57,6 +59,7 @@ ICONS = {"code_file": ("chevron.left.forwardslash.chevron.right", (0.48, 0.35, 0
 DEFAULT_ICON = ("square.on.square", (0.45, 0.45, 0.5))
 DONE_SECONDS = 1.5                  # "Pricing created." stays this long, then the card closes
 SUGGEST_WORDS = "Group these?"
+SAVED_SECONDS = 1.8                 # "Saved to Q3 plan" stays on the pill this long
 PROJECT_EXPLAINER = ("A project keeps related things and your notes together, so you can pick up "
                      "where you left off. You can change this any time.")
 EMPTY_HINT = "Nothing left here. Hold {key} and say what to remember for this page."
@@ -267,6 +270,9 @@ class _PillView(NSView):
             else:
                 self._link(PILL_MARGIN[0] + 14, mid, on_ink)
             self._text(w.peek_text(), 13, False, on_ink, NSMakeRect(PILL_MARGIN[0] + 22 + (4 if not w.count and w.sug else 0), 0, cw - 32, bh))
+        elif state == "saved":
+            self._tick(PILL_MARGIN[0] + 15, mid)
+            self._text(w.saved, 13, False, on_ink, NSMakeRect(PILL_MARGIN[0] + 29, 0, cw - 38, bh))
         elif state == "listening":
             self._bars(PILL_MARGIN[0] + 12, mid)
             self._text(w.heard_text(), 13, False, on_ink, NSMakeRect(PILL_MARGIN[0] + 26, 0, cw - 36, bh))
@@ -275,6 +281,17 @@ class _PillView(NSView):
     def _dot(self, x, y, lit=True):
         (NSColor.systemOrangeColor() if lit else NSColor.colorWithWhite_alpha_(0.5, 0.8)).setFill()
         NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(x - 4, y - 4, 8, 8)).fill()
+
+    @objc.python_method
+    def _tick(self, x, y):
+        """A small orange check."""
+        NSColor.systemOrangeColor().setStroke()
+        path = NSBezierPath.bezierPath()
+        path.moveToPoint_((x - 4, y))
+        path.lineToPoint_((x - 1, y + 3.2))
+        path.lineToPoint_((x + 4.5, y - 3.4))
+        path.setLineWidth_(1.8)
+        path.stroke()
 
     @objc.python_method
     def _link(self, x, y, color):
@@ -329,6 +346,7 @@ class Widget:
     on_tick(note ids, done) marks notes done / open again.
     on_add() opens the ⌃⌥N note window.
     heard() -> None, or the words so far while the note window is open (the pill shows them).
+    flash(text) shows a short confirmation on the pill ("Saved to Q3 plan").
     suggestion() -> notes.suggestion_view(...) or None: a group the model thinks is one project.
     on_project(ids, name) files things in a project; on_decline(forever) answers a suggestion;
     picker(item id, typed text) -> notes.picker_view(...); on_unfile(item id) takes a thing out."""
@@ -356,6 +374,7 @@ class Widget:
         self.data = None
         self.count, self.first = 0, ""
         self.listening = None               # None, or the words so far
+        self.saved, self.saved_until = None, 0     # "Saved to Q3 plan", shown for a moment after a note
         self.shown = None                   # what the open card currently shows
         self.scroll = None
         self.pill = _panel(80, 20)
@@ -368,7 +387,14 @@ class Widget:
 
     # -- the pill
 
+    def flash(self, text):
+        """Confirm something on the pill for a moment ("Saved to Q3 plan"); the count then rises."""
+        self.saved, self.saved_until = text, time.time() + SAVED_SECONDS
+        self.layout()
+
     def mode_of_pill(self):
+        if self.saved:
+            return "saved"
         if self.listening is not None:
             return "listening"
         if self.pill_view.hover and not self.card_open:
@@ -394,6 +420,8 @@ class Widget:
         state = self.mode_of_pill()
         if state == "peek":
             return _text_width(self.peek_text(), NSFont.systemFontOfSize_(13)) + 44 + (4 if not self.count and self.sug else 0), 28
+        if state == "saved":
+            return _text_width(self.saved, NSFont.systemFontOfSize_(13)) + 48, 28
         if state == "listening":
             return _text_width(self.heard_text(), NSFont.systemFontOfSize_(13)) + 48, 30
         if state == "count":
@@ -419,6 +447,9 @@ class Widget:
     def pulse(self, heard):
         """Called on every tick of the tracker's loop: moves the waveform and follows the
         note window (open/closed, words so far)."""
+        if self.saved and time.time() >= self.saved_until:
+            self.saved = None
+            self.layout()
         was = self.listening is not None
         self.listening = heard
         if (heard is not None) != was:

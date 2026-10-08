@@ -46,6 +46,18 @@ class QuickIdentityTests(unittest.TestCase):
         m = meta(app="WhatsApp", bundle_id="net.whatsapp.WhatsApp", window="WhatsApp")
         self.assertIsNone(identity.quick_state(m))
 
+    def test_a_page_from_its_url_and_window_title_finds_the_same_item_a_capture_made(self):
+        captured = identity.quick_state(meta(url="https://rm.example.edu/portal/home", site="rm.example.edu",
+                                             tab_title="Portal"))
+        items = {"p": item("p", captured)}
+        st = identity.page_state("Google Chrome", "https://rm.example.edu/portal/home", "Portal - Google Chrome")
+        self.assertEqual(identity.find_item(items, st), "p")
+
+    def test_a_page_you_have_never_been_on_finds_nothing(self):
+        st = identity.page_state("Google Chrome", "https://other.example.edu/", "Other - Google Chrome")
+        self.assertIsNotNone(st)
+        self.assertIsNone(identity.find_item({}, st))
+
 
 if __name__ == "__main__":
     unittest.main()

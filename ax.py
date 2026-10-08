@@ -32,6 +32,7 @@ def read(pid, app):
         _enabled[pid] = time.time()
     win = _get(el, "AXFocusedWindow") or _get(el, "AXMainWindow")
     doc = str(_get(win, "AXDocument") or "") if win is not None else ""
+    title = str(_get(win, "AXTitle") or "") if win is not None else ""
     focus = _get(el, "AXFocusedUIElement")
     label = ""
     if focus is not None and _get(focus, "AXRole") in TEXT_ROLES:
@@ -42,7 +43,7 @@ def read(pid, app):
                 break
     if not doc and not label:
         return None
-    return {"doc": doc.split("#")[0], "label": label}
+    return {"doc": doc.split("#")[0], "label": label, "title": title}
 
 
 def key(app, sig):

@@ -188,3 +188,12 @@ def find_place(items, key, label=""):
     if any(SequenceMatcher(None, names[0], n).ratio() < 0.85 for n in names[1:]):
         return None
     return max(found, key=lambda i: (open_notes(i), i["last_seen"]))["id"]
+
+
+def page_state(app, url, title):
+    """What a browser page is, from its URL and window title alone (what the Accessibility API
+    gives in a millisecond); the same state a capture would build, so it finds the same item."""
+    site = re.sub(r"^https?://", "", url).split("/")[0] or None
+    names = {app, "Brave", "Google Chrome", "Microsoft Edge", "Arc", "Safari"}
+    tab = re.sub(r"\s[-–—]\s(?:%s)(?:\s.*)?$" % "|".join(map(re.escape, names)), "", title or "")
+    return quick_state({"app": app, "bundle_id": "", "window": title, "url": url, "site": site, "tab_title": tab})

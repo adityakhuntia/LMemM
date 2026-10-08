@@ -311,6 +311,13 @@ def next_event(app, timeout=0.25):
         app.sendEvent_(ev)
 
 
+def wake(app):
+    """Wake the main loop out of next_event() from any thread, so it runs a tick now."""
+    ev = NSEvent.otherEventWithType_location_modifierFlags_timestamp_windowNumber_context_subtype_data1_data2_(
+        15, (0, 0), 0, 0, 0, None, 0, 0, 0)               # NSEventTypeApplicationDefined
+    app.postEvent_atStart_(ev, True)
+
+
 def quiet_system_logs():
     """macOS input-method frameworks NSLog noise straight to the terminal whenever a text
     box gets focus. Send the raw stderr fd to /dev/null; keep Python's errors visible."""

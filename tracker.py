@@ -83,6 +83,7 @@ class Tracker:
         self.quick_q = queue.Queue()
         self.ocr_apps = {}                   # app -> metadata, for apps whose place can only be told by reading the screen
         self.last_read = 0.0
+        self.nsapp = None
         self.ax_now = None                   # the app-reported place (ax.py), when it names a known item
         self.quick_seq = 0
         self.frame_item = {}                 # capture ts -> memory item it became
@@ -537,8 +538,10 @@ class Tracker:
         """What the pill's card shows: the project of the thing you're on right now."""
         with self.lock:
             cur = self.events[-1] if self.events else None
-            if self.ax_now and self.ax_now["item"] in self.items and self.ax_now["pid"] == (self.last_sig or {}).get("pid"):
-                return notes.card(self.items, self.ax_now["item"])      # named by the app itself
+            if self.ax_now and self.ax_now["pid"] == (self.last_sig or {}).get("pid"):
+                # named by the app itself (a labelled input, or the page's URL); an item of None
+                # means a page you have no notes on, which must not show the one you just left
+                return notes.card(self.items, self.ax_now["item"]) if self.ax_now["item"] in self.items else None
             # identify_now() answers in well under a second; the full capture (settle + OCR,
             # ~2 s) is only the fallback, so the pill never shows the thing you just left.
             front = self.last_sig and (self.last_sig["app"], self.last_sig["window"])
@@ -631,11 +634,12 @@ class Tracker:
         return None
 
     def ax_loop(self):
-        """Every ~0.15 s: ask the app in front where you are (a millisecond, no pixels). When
-        its signature names an item you've been on, the pill switches to it at once."""
+        """Every ~0.1 s: ask the app in front where you are (a millisecond, no pixels). Its
+        focused input's label names a chat or channel; a browser's page URL names a page.
+        When that names an item you've been on, the pill switches to it at once."""
         last = None
         while self.running:
-            time.sleep(0.15)
+            time.sleep(0.1)
             try:
                 app = macos.NSWorkspace.sharedWorkspace().frontmostApplication()
                 if app is None:
@@ -643,13 +647,23 @@ class Tracker:
                 pid, name = app.processIdentifier(), app.localizedName()
                 sig = ax.read(pid, name)
                 key = ax.key(name, sig)
-                if (pid, key) == last:
+                page = (sig["doc"], sig["title"]) if sig and not key and sig["doc"] and name in config.BROWSERS else None
+                if (pid, key, page) == last:
                     continue
-                last = (pid, key)
+                last = (pid, key, page)
                 with self.lock:
-                    item = identity.find_place(self.items, key, sig["label"] if sig else "")
-                    self.ax_now = {"pid": pid, "key": key, "item": item} if item else None
+                    if key:
+                        item = identity.find_place(self.items, key, sig["label"])
+                        self.ax_now = {"pid": pid, "key": key, "item": item} if item else None
+                    elif page:
+                        st = identity.page_state(name, *page)      # the same identity a capture would give it
+                        self.ax_now = ({"pid": pid, "key": None, "item": identity.find_item(self.items, st)}
+                                       if st else None)
+                    else:
+                        self.ax_now = None
                 self.last_widget_refresh = 0.0
+                if self.nsapp is not None:
+                    macos.wake(self.nsapp)              # tick now, not at the next 0.25 s boundary
             except Exception as e:
                 line(now_hms(), "", f"accessibility read failed: {e}")
 
@@ -970,6 +984,7 @@ class Tracker:
         signal.signal(signal.SIGUSR1, lambda *_: setattr(self, "pin", True))
         signal.signal(signal.SIGUSR2, lambda *_: setattr(self, "note_request", True))
         app = dictation.start_app()
+        self.nsapp = app
         hotkey_ok = dictation.register_hotkey(lambda: setattr(self, "note_request", True))
         dictation.ensure_listener()        # build the speech helper now, not on first ⌃⌥N
         if self.show_widget:

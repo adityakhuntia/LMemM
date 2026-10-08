@@ -342,8 +342,12 @@ class Widget:
 
     def _clicked_elsewhere(self, event):
         # global monitors only see clicks in *other* apps, so this never fires for our own panels
-        if self.card_open:
-            self.toggle_card()
+        if not self.card_open:
+            return
+        where = NSEvent.mouseLocation()
+        if NSPointInRect(where, self.pill.frame()) or NSPointInRect(where, self.card.frame()):
+            return                          # a click on the pill or card itself is never "elsewhere"
+        self.toggle_card()
 
     def ticked(self, nid, done):
         if done:

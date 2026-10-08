@@ -203,12 +203,16 @@ def grab(display):
         return None
 
 
+STRIP_MIN = 360         # points: a browser's tabs, address and bookmarks bars take ~160 before the page starts
+
+
 def grab_strip(bounds, height):
-    """The top `height` points of a window as a CGImage (~5 ms), or None. For the quick
+    """The top of a window as a CGImage (~5 ms), or None; at least STRIP_MIN points so the
+    page's own header (a chat's name) is in it even under a browser's toolbars. For the quick
     "which chat is open?" read, where the whole screen would be wasted work."""
     try:
         import Quartz
-        rect = Quartz.CGRectMake(bounds["X"], bounds["Y"], bounds["Width"], min(height, bounds["Height"]))
+        rect = Quartz.CGRectMake(bounds["X"], bounds["Y"], bounds["Width"], min(max(height, STRIP_MIN), bounds["Height"]))
         return Quartz.CGWindowListCreateImage(
             rect, Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID,
             Quartz.kCGWindowImageNominalResolution | Quartz.kCGWindowImageBoundsIgnoreFraming)

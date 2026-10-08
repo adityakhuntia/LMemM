@@ -1,7 +1,25 @@
 # LMemM — current context
 
-Updated 2026-10-07, America/New_York. Historical context and handover are in
+Updated 2026-10-08, America/New_York. Historical context and handover are in
 `docs/history/`. This file records current decisions and verification limits.
+
+## Current handoff snapshot — 2026-10-08
+
+- Worktree/branch: `.worktrees/semantic-project-memory`, `feat/semantic-project-memory`.
+- Integrated all four new Aditya main commits through `e5cd6ed`: lighter capture,
+  cost-control docs, rule-based context export, consolidated memory and CLI menu.
+- Normal tracker and semantic VS Code pilot remain separate flows. `lmemm.py` now
+  opens the menu; `lmemm.py start` starts capture. Normal storage uses schema-3
+  `memory.json` with readable things and internal items, not `.index.json`/`pending.json`.
+- Live one-project semantic test passes capture, exclusion canary, saved notes,
+  bounded recovery, a supported SQLite decision/reason, an open restart-test task
+  and exact source citations in recall. This is a small case, not general model acceptance.
+- Current regression verification after merge: 251 Python / 92 semantic / 6 Node tests pass.
+- Open: general semantic quality, browser/site permissions, representative resources,
+  broader lifecycle and multiple-project native acceptance, scoped MCP/agent handoff.
+- Main checkout was not changed by this feature merge. This feature publication includes
+  all semantic work and current main integration; records below are historical checkpoints.
+- [Current handover](docs/handover-2026-10-08.md) is the primary continuation guide.
 
 ## Document map
 
@@ -13,7 +31,7 @@ Updated 2026-10-07, America/New_York. Historical context and handover are in
   measured claims, privacy probes, model failures and reproduction.
 - [Live semantic pilot design](docs/specs/2026-10-07-live-semantic-pilot-design.md):
   VS Code source bridge, foreground checks and opt-in experimental testing across
-  approved projects; implemented, native live acceptance pending.
+  approved projects; implemented, one-project native acceptance demonstrated.
 - [Live pilot runbook](docs/live-semantic-pilot.md): exact start/connect/control/test commands.
 - [Live pilot implementation plan](docs/plans/2026-10-07-live-semantic-pilot.md): task/review status.
 - [Approved semantic design](docs/specs/2026-10-07-automatic-project-memory-design.md)

@@ -1,147 +1,61 @@
-# Semantic project-memory increment — 2026-10-07
+# Semantic project memory — current implementation status
 
-Status: engineering core and opt-in live VS Code pilot implemented on `feat/semantic-project-memory`
-in `.worktrees/semantic-project-memory`. No accepted model or confirmed native live semantic capture,
-or MCP integration. Existing tracker behavior is unchanged.
+Updated 2026-10-08. Branch `feat/semantic-project-memory`; isolated worktree
+`.worktrees/semantic-project-memory`. The [handover](handover-2026-10-08.md)
+is the current continuation guide; [context](../context.md) includes live checkpoints.
 
-## Flow and interfaces
+## Implemented path
 
-`SourceEnvelope` + explicit `AccessPolicy` → `SemanticStore.ingest` →
-`EpisodeBuilder` → bounded `EpisodeRequest` → `InferenceWorker` / `LocalRuntime`
-→ validated candidates → deterministic relationship policy → scoped
-`project_context` / `resolve_citation`.
+Approved VS Code visible excerpts / intentional notes → private native-window-bound
+bridge → permission-checked SQLite evidence → bounded episodes → local extraction
+→ validated source-backed claims/relationships → scoped project recall and citations.
+Normal Mac screenshot/input/dictation capture remains a separate process and store.
 
-SQLite owns source occurrences separately even when text blobs deduplicate. Workspace
-and artifact locators establish durable identities across sessions; unknown identity
-stays unassigned. Episodes close on context boundaries and bound extraction evidence.
-The worker limits its queue and retries, checks policy revision at commit, and preserves
-unprocessed coverage. Models cannot execute commands or choose endpoints.
+Canonical workspace/file identities survive sessions. Text blobs deduplicate while
+source occurrences retain timestamps and provenance. Claims distinguish observations,
+suggestions, decisions and tasks; reasons must occur in supporting evidence.
+Corrections, explicit task transitions, contradiction/support relationships, deletion
+and scope-aware retrieval exist in the core; not all are exercised by the live adapter.
 
-Claims distinguish observations, suggestions, tasks and decisions. Supported explicit
-claims require actual source quotes; reasons must also occur in source evidence.
-Task completion/reopening and user corrections preserve history. Contradiction edges
-remain separate from original claims. Browser project membership requires supported
-references; retrieval checks supporting evidence against the caller’s scope.
+The opt-in pilot enforces private files, fresh ordered messages, strict native focus,
+canonical approved roots, excluded paths, bounded evidence/queues, stale-commit barriers,
+scheduled retention and SQLite page caps. One extraction job runs at a time. Focus-only
+cancellation may retry twice after verification returns; pause/access cancellation does
+not automatically retry. Explicit retry_notes recovers authorized cancelled notes.
+Short single-line intentional TODO notes use deterministic exact-quote task parsing;
+observed document TODOs receive no such promotion. See the [runbook](live-semantic-pilot.md).
 
-Deletion removes owned evidence, recomputes support, invalidates queued/running work,
-and blocks deleted source replay. Existing session-deletion recovery invokes this
-cleanup when a semantic database exists. Retention accounts for SQLite side files,
-prunes unpinned sources and pauses under unreclaimable pressure. Logical deletion is
-not a claim of forensic erasure from SSDs/backups.
+## Verification and acceptance
 
-## What to test
+After merging Aditya's main through e5cd6ed: **251 Python tests (92 semantic) and
+6 Node tests pass**. Native full-suite execution requires macOS framework access.
+Tests use temporary data, mocked input events and generated OCR images, not a live
+microphone or global input tap. One upstream test emitted an unclosed-image ResourceWarning;
+the suite passed.
 
-From the feature worktree, using the main repository’s virtual environment:
+Real one-project pilot validated native registration, approved visible-source storage,
+stable-view dedup, reconnect/resumed intake, saved .env canary exclusion, intentional-note
+acknowledgement, recovery and cited recall. Retained user notes yielded a supported
+SQLite decision with its exact reason and a supported open restart-recovery task.
+This proves the tested pipeline, not general semantic understanding. Some duplicate
+jobs exhausted bounded retries and remain visibly cancelled; coverage reports omissions.
 
-```bash
-../../.venv/bin/python -m unittest discover -s tests -v
-../../.venv/bin/python -m unittest discover -s tests -p 'test_semantic*.py' -v
-```
+## Model acceptance and remaining work
 
-Verification: all 163 tests pass, including 53 semantic tests; syntax compilation
-and `git diff --check` pass. The native full-suite run required macOS framework access.
+Inference is local-only against an explicitly running cloud-disabled Ollama service.
+No model downloads/service startup/default model inference occur in normal capture.
+V2.4 reviewed heldout precision/recall: Qwen2.5 0.5B 67%/40%, Qwen2.5 1.5B 83%/100%,
+Qwen3 1.7B 71%/100%. No configuration passed precision acceptance. See the
+[benchmark index](benchmarks/project-memory/README.md) for actual evidence and limits.
+The v2.5 intentional-TODO adapter change needs fresh general-quality evaluation;
+one live note test does not replace it.
 
-Tests use synthetic envelopes and temporary databases. They do not start global
-keyboard monitoring, screenshots, microphone capture or hosted inference. The suite
-covers identity/replay, permission rejection, evidence ownership, episodes, malformed
-extraction, stale commits, explicit claim grounding, task history, scoped retrieval,
-deleted derived content and deletion recovery.
+Next: representative resource baseline; fresh semantic/privacy evaluation and source
+quality; broader native lifecycle/multiple-project checks; permissioned browser adapters;
+scoped read-only MCP and a real agent project-resume test. Rich automatic cross-artifact
+relationships remain incomplete; switching patterns alone are not proof of association.
+No MCP service, graph UI or agent integration exists yet. Storage is local plaintext.
 
-For offline model evaluation, see `docs/benchmarks/project-memory/candidates.md`,
-`scripts/evaluate_project_memory.py --help`, and the checked-in result files. Runtime
-configuration requires locally cached approved manifests/weights and the isolated
-Ollama endpoint at `127.0.0.1:11455`. Normal tracker startup never starts or pulls a model.
-Downloaded weights remain ignored under the worktree’s `data/model-cache`.
-
-## Continuation: factual evaluation and local extraction
-
-The [benchmark index](benchmarks/project-memory/README.md) is the current record.
-V2 scores exact supported assertions, reasons, states and each citation against
-labelled gold quotes; it no longer treats a matching type as factual correctness.
-Reviewed privacy probes add mixed public/private support and whole-packet canary
-checks after revocation, plus denied/private/unknown intake and deletion checks.
-
-The local model now selects numbered source quotes and types; host code supplies
-original text/IDs and resolves only boundary-safe explicit project paths. Source
-units are at most 1 KiB, selected evidence still uses the existing 4/16 KiB source/
-request limits. Closed reason choices currently cover explicit “because” excerpts.
-This narrower adapter does not yet infer arbitrary reasons, task transitions or
-contradictions through the local model, even though core APIs/tests support them.
-
-Three configurations were tested without widening the 3 GiB runtime budget.
-Reviewed heldout precision/recall: Qwen2.5 0.5B 67%/40%, Qwen2.5 1.5B 83%/100%,
-Qwen3 1.7B 71%/100%. The two larger models recalled all five labelled claims but
-still emitted extra misclassified content. All failed precision; no model selected.
-Follow the benchmark links for hashes, original development failures, repeated
-32-timing heldout runs, audit revisions and resource-measurement limitations.
-
-Independent continuation review found and fixed unrelated extra citation scoring,
-legacy project-index bypasses and private-derived text missed by the revocation
-audit. Whole-suite verification now passes 163 tests. New model tuning requires
-a fresh heldout split; current outputs have been inspected.
-
-## Historical v1 evaluation and limits
-
-Mac14,9 / M2 Pro / 32 GiB; Ollama 0.33.3; Qwen2.5 Q4_K_M 0.5B and 1.5B.
-The fixed synthetic corpus contains 16 development and eight held-out cases. Prompt
-and schema were adjusted only on development data, then frozen for held-out runs.
-Each held-out run records 32 timings; quality denominators remain eight unique cases.
-
-| Held-out result | 0.5B | 1.5B |
-| --- | ---: | ---: |
-| Candidate type precision | 12.5% | 37.5% |
-| Candidate type recall | 16.7% | 50% |
-| Supported association precision | 100% | 100% |
-| Artifact recall | 83.3% | 83.3% |
-
-Association results largely reflect deterministic workspace anchors. They do not
-prove meaningful semantic understanding. Candidate-type scoring does not verify
-propositions, reasons or zero forbidden-source leakage; `unsupported_assertions` in
-archived metrics counts misclassified decision candidates, not supported assertions.
-Reports explicitly leave acceptance incomplete and selection false. Neither model is
-enabled. Recorded RAM is an estimate from sampled process-tree RSS / Ollama model
-memory, not a complete power or Metal peak measurement. Energy remains unmeasured.
-
-Independent review found and fixed: private-derived claim survival after deletion,
-unrelated decision promotion, excessive pruning under pressure, and project membership
-leaking across caller scopes. Regression tests preserve those cases.
-
-## Remaining implementation and acceptance work
-
-1. Broaden the implemented assertion/privacy evaluation and improve local precision
-   and browser grouping on development data; use fresh held-out cases
-   if tuning follows inspection of this held-out set. Keep all acceptance gates explicit.
-2. Complete FTS-based candidate selection and independent-episode corroboration;
-   current selection uses recent anchors and browser promotion uses explicit references.
-3. Enforce the total semantic budget across every writer, make retention scheduling
-   operational, and validate concurrent quota pressure. Current ingestion checks and
-   explicit retention calls are not a complete automatic quota lifecycle.
-4. Harden lifecycle coverage: generic extractor timeouts/failure classes, cancellation
-   of in-flight native work, manual/automatic task-event ordering, and restart boundaries.
-5. Measure enabled-worker versus baseline RAM/CPU and actual power over representative
-   longer sessions. Isolated idle-service measurements alone are insufficient.
-6. Validate the implemented VS Code pilot natively, build browser source adapters
-   with website permissions, then expose scoped read-only project context through MCP and validate an
-   agent resuming a real project. Agent access must not grant wider capture permissions.
-
-Keep this increment isolated from main until the remaining acceptance work is reviewed.
-
-## Live pilot increment (2026-10-07)
-
-The [runbook](live-semantic-pilot.md) describes the new opt-in VS Code path across
-approved projects, private challenge-bound bridge, native focus gates, source quotes,
-experimental worker and recall/control/deletion CLI. Normal capture remains separate.
-The pilot enforces scheduled retention and page caps across its database writers;
-this does not complete every legacy/core quota or generic extractor lifecycle task.
-
-Current verification: 191 Python/81 semantic and 6 Node tests pass. One independent
-review identified nine important issues; regression repairs cover binding/excluded
-aliases, cancellation order/focus denial, stale generations, resumed publication,
-client expiry, recent recall and CLI symlink handling. Native metadata smoke denied
-non-VS-Code foreground. Real extension-host handshake/capture and model usefulness
-remain pending user live testing. No user-content model inference or push occurred.
-
-Next: live acceptance and handover/push after confirmation, richer automatic semantic
-understanding/corroboration, representative resources, browser source permissions,
-then scoped MCP. Existing failed model precision remains an acceptance limitation,
-not a restriction on explicitly experimental pilot testing.
+Aditya's normal-tracker context export is a separate rule-based distillation for AI use,
+not the semantic SQLite graph. His lighter-capture, consolidated-memory and interactive
+CLI changes are integrated on this branch without replacing the semantic pilot.

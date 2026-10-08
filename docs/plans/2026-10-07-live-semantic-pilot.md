@@ -68,11 +68,14 @@
 ## Completion and live acceptance
 
 Engineering steps completed with one independent review and regression repairs.
-Final verification: 191 Python tests (81 semantic), 6 Node tests; syntax/whitespace
-checks. Native metadata smoke: Accessibility trusted, approved foreground denied.
-The [runbook](../live-semantic-pilot.md) supplies the live checklist; actual host
-handshake/content capture and model usefulness remain pending user execution.
-The live-result record and push are intentionally pending that confirmation.
+Current merged verification: 251 Python tests (92 semantic) and 6 Node tests pass;
+whitespace checks pass. Original engineering checkpoint was 191/81 Python tests.
+One-project native handshake/capture, saved canary exclusion, stable-view dedup,
+intentional-note acknowledgement, bounded recovery and cited decision/task recall
+are confirmed. This repair increment is closed at that scope. General model acceptance,
+full lifecycle/deletion, representative resources and two-project live acceptance remain
+open. See the [handover](../handover-2026-10-08.md) and [runbook](../live-semantic-pilot.md).
+User authorized handover and feature-branch publication after this confirmation.
 
 Rulings: one-second polling inside two-second freshness (extra idle file reads);
 resume retry while cancelled work drains (up to timeout); one-third SQLite page

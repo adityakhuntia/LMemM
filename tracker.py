@@ -541,7 +541,10 @@ class Tracker:
             if self.ax_now and self.ax_now["pid"] == (self.last_sig or {}).get("pid"):
                 # named by the app itself (a labelled input, or the page's URL); an item of None
                 # means a page you have no notes on, which must not show the one you just left
-                return notes.card(self.items, self.ax_now["item"]) if self.ax_now["item"] in self.items else None
+                if self.ax_now["item"] in self.items:
+                    return notes.card(self.items, self.ax_now["item"])
+                app = (self.last_sig or {}).get("app") or ""
+                return notes.blank_card(app, app)          # a place with no notes: say so
             # identify_now() answers in well under a second; the full capture (settle + OCR,
             # ~2 s) is only the fallback, so the pill never shows the thing you just left.
             front = self.last_sig and (self.last_sig["app"], self.last_sig["window"])

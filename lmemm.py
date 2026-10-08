@@ -2,34 +2,45 @@
 """
 LMemM - the one command.
 
-    lmemm.py [start] [--every N] [--no-widget] [--input-events --input-app com.microsoft.VSCode]
+    lmemm.py                          a menu of everything below - start here
+    lmemm.py start [--every N] [--no-widget] [--input-events --input-app com.microsoft.VSCode]
                                       watch and remember (Ctrl-C to stop)
     lmemm.py memory [N] [--content] [--events]
                                       what's remembered + the latest session's timeline
     lmemm.py notes [--all] [PROJECT]  pending edits (your ⌃⌥N notes) by project
     lmemm.py notes done ID… | notes reopen ID…
+    lmemm.py context [SESSION] [--days N]
+                                      a clean export for handing to an AI: what you did
+                                      and why, grouped by project, with no operational detail
     lmemm.py status | pause | resume  the running tracker
     lmemm.py pin                      force-save the current screen
     lmemm.py note                     open the note window (same as ⌃⌥N)
     lmemm.py delete-session ID (--dry-run | --confirm ID)
+
+Any of these also works by number from the menu (`lmemm.py`), which prompts for the
+same arguments shown above when an action takes them.
 
 How it fits together: see ARCHITECTURE.md.
 """
 
 import argparse
 import json
+import shlex
 import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import config
+import context as context_mod
 import notes
 import store
 import tracker
 
-USAGE = ("usage: lmemm.py [start] [--every N] [--input-events --input-app APP] | memory [N] [--content] [--events]"
+USAGE = ("usage: lmemm.py [menu] | start [--every N] [--input-events --input-app APP]"
+         " | memory [N] [--content] [--events]"
          " | notes [--all] [PROJECT] | notes done|reopen ID…"
+         " | context [SESSION] [--days N]"
          " | status | pause | resume | pin | note | delete-session ID (--dry-run | --confirm ID)")
 
 
@@ -215,6 +226,21 @@ def cmd_control(action):
         print(f"{action} requested; use status to check acknowledgement")
 
 
+def cmd_context(args):
+    parser = argparse.ArgumentParser(prog="lmemm.py context")
+    parser.add_argument("session", nargs="?")
+    parser.add_argument("--days", type=float)
+    opts = parser.parse_args(args)
+    if opts.session and opts.days is not None:
+        parser.error("give a session or --days, not both")
+    try:
+        doc, path = context_mod.export(session_id=opts.session, days=opts.days)
+    except ValueError as error:
+        sys.exit(str(error))
+    print(json.dumps(doc, indent=1, ensure_ascii=False))
+    print(f"\n{doc['things']} things, {doc['notes_open']} open notes -> {path}", file=sys.stderr)
+
+
 def cmd_delete_session(args):
     from input_store import delete_session, plan_session_deletion
     parser = argparse.ArgumentParser(prog="lmemm.py delete-session")
@@ -234,11 +260,113 @@ def cmd_delete_session(args):
         sys.exit(str(error))
 
 
+# ---------------------------------------------------------------- the menu
+
+class MenuItem:
+    def __init__(self, key, label, hint, hint_example, action):
+        self.key, self.label, self.hint, self.hint_example, self.action = key, label, hint, hint_example, action
+
+
+def menu_status(args):
+    cmd_control("status")
+
+
+def menu_pause_resume(args):
+    """One option that toggles: pause if running and not paused, resume if paused."""
+    pid = tracker.running_pid()
+    if pid is None:
+        sys.exit("tracker is not running")
+    try:
+        paused = json.loads(Path(config.paths().status_file).read_text()).get("paused", False)
+    except (OSError, ValueError, KeyError):
+        paused = False
+    cmd_control("resume" if paused else "pause")
+
+
+def menu_note(args):
+    tracker.note()
+
+
+def menu_pin(args):
+    tracker.pin()
+
+
+MENU = [
+    MenuItem("1", "Start watching", "capture + remember what you do; Ctrl-C stops",
+             "--every 10, --no-widget, --input-events --input-app com.microsoft.VSCode", cmd_start),
+    MenuItem("2", "See what's remembered", "memory.json: what you did, notes, activity",
+             "a count, --content, --events", cmd_memory),
+    MenuItem("3", "Pending edits", "your ⌃⌥N notes, grouped by project",
+             "--all, a project name, or 'done <id>' / 'reopen <id>'", cmd_notes),
+    MenuItem("4", "Export context for an AI", "a clean summary - just what you did and why",
+             "a session id, or --days 2", cmd_context),
+    MenuItem("5", "Status", "is a session running, paused, what it's costing", None, menu_status),
+    MenuItem("6", "Pause / resume", "toggle a session that's already running", None, menu_pause_resume),
+    MenuItem("7", "Dictate a note now", "same as pressing ⌃⌥N", None, menu_note),
+    MenuItem("8", "Force-save the current screen", "same as the pin hotkey", None, menu_pin),
+    MenuItem("9", "Delete a session's data", "review with --dry-run first, then --confirm",
+             "SESSION --dry-run", cmd_delete_session),
+]
+
+
+def menu_text():
+    lines = ["", "LMemM", "─────"]
+    for item in MENU:
+        lines.append(f" {item.key}  {item.label:<28} {item.hint}")
+    lines.append(" 0  Quit")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def interactive_menu(read=input, write=print):
+    """The front door: `lmemm.py` with no arguments. Pick a number, optionally add the
+    same flags the command-line form takes, Enter for the common case. 0 or Ctrl-D/Ctrl-C
+    to leave. Every action runs in this same process and returns you to the menu."""
+    write(menu_text())
+    while True:
+        try:
+            choice = read("> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            write("")
+            return
+        if not choice:
+            continue
+        if choice in ("0", "q", "quit", "exit"):
+            return
+        item = next((m for m in MENU if m.key == choice), None)
+        if item is None:
+            write(f"'{choice}' isn't one of the options above - type a number, 0 to quit.")
+            continue
+        args = []
+        if item.hint_example:
+            try:
+                raw = read(f"  {item.label} ({item.hint_example}) - Enter for the plain version: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                write("")
+                continue
+            if raw:
+                args = shlex.split(raw)
+        write("")
+        try:
+            item.action(args)
+        except SystemExit as exc:
+            if exc.code:
+                write(str(exc.code))
+        except KeyboardInterrupt:
+            write("")
+        write(menu_text())
+
+
 def main():
     args = sys.argv[1:]
-    cmd = args[0] if args and not args[0].startswith("-") else "start"
-    rest = args[1:] if args and args[0] == cmd else args
-    if cmd == "start":
+    if not args:
+        interactive_menu()
+        return
+    cmd = args[0] if not args[0].startswith("-") else "start"
+    rest = args[1:] if args[0] == cmd else args
+    if cmd == "menu":
+        interactive_menu()
+    elif cmd == "start":
         cmd_start(rest)
     elif cmd == "memory":
         cmd_memory(rest)
@@ -252,6 +380,8 @@ def main():
         tracker.note()
     elif cmd == "delete-session":
         cmd_delete_session(rest)
+    elif cmd == "context":
+        cmd_context(rest)
     else:
         sys.exit(USAGE)
 

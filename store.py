@@ -1,11 +1,16 @@
-"""LMemM - persistence. Where memory lives on disk and how it reads.
+"""LMemM - persistence. Three files, nothing else.
 
-    data/memory/.index.json          full internal state, one entry per thing (source of truth)
-    data/memory/memory.json          the same, as a person would read it
-    data/memory/pending.json         open notes (pending edits), grouped by project
+    data/memory/memory.json          every thing LMemM remembers, across all sessions
     data/memory/sessions/<id>.json   one session's timeline: when you were on what
+    data/memory/context/<id>.json    a clean export of one session for handing to an AI (context.py)
 
-Writes are atomic (temp file + rename). Schema 2; every newer field is additive.
+memory.json carries two views of the same items in one file: "things" (what a person
+would read - see `readable`) and "items" (everything, including the bookkeeping the
+tracker needs - refs, content hashes, typing areas - to keep identity and resurfacing
+working). Open notes-by-project (what `notes done` used to need a separate pending.json
+for) is computed on demand from "items"; nothing reads a stored copy, so there isn't one.
+
+Writes are atomic (temp file + rename). Schema 3; every newer field is additive.
 """
 
 import json
@@ -16,7 +21,7 @@ from datetime import datetime
 import config
 import notes
 
-SCHEMA = 2
+SCHEMA = 3
 CATEGORIES = ("typing", "reading", "receiving", "focus")
 
 
@@ -25,6 +30,17 @@ def write_json(path, doc):
     with open(path + ".tmp", "w") as fh:
         json.dump(doc, fh, indent=1, ensure_ascii=False)
     os.replace(path + ".tmp", path)
+
+
+def _migrate_split_items(memory_dir):
+    """Before schema 3, the full items lived in a separate .index.json next to the
+    readable memory.json. Read it once; save_memory() folds everything into one file
+    and clears the old ones out the next time it runs."""
+    legacy = os.path.join(memory_dir, ".index.json")
+    if not os.path.exists(legacy):
+        return None
+    with open(legacy) as fh:
+        return json.load(fh).get("items")
 
 
 def nice_time(iso):
@@ -48,15 +64,20 @@ def load_items():
     from input_store import recover_deletion
     p = config.paths()
     recover_deletion(p.memory_dir)
-    src = p.index_file if os.path.exists(p.index_file) else p.items_file
+    src = p.items_file
     if not os.path.exists(src):
         return {}
     try:
         with open(src) as fh:
             doc = json.load(fh)
-        if not isinstance(doc, dict) or not isinstance(doc.get("items"), list):
-            raise ValueError("missing full internal items; restore .index.json rather than replacing readable memory")
-        if doc.get("schema_version", 1) not in (1, SCHEMA):
+        if not isinstance(doc, dict):
+            raise ValueError("memory.json is not a JSON object")
+        if not isinstance(doc.get("items"), list):
+            doc["items"] = _migrate_split_items(p.memory_dir)      # pre-schema-3 layout
+        if not isinstance(doc.get("items"), list):
+            raise ValueError("memory.json is missing its full item list ('items'); "
+                             "a readable-only copy isn't enough to resume from")
+        if doc.get("schema_version", 1) not in (1, 2, SCHEMA):
             raise ValueError("unsupported memory schema version")
         items = {i["id"]: i for i in doc["items"]}
         if len(items) != len(doc["items"]):
@@ -98,7 +119,8 @@ def readable(i):
         out["activity"] = acts
     out["time"] = {"total": duration(i["seconds"]), "visits": i["visits"],
                    "first": nice_time(i["first_seen"]), "last": nice_time(i["last_seen"])}
-    out["screenshot"] = i["screenshot"]
+    if i.get("screenshot"):                       # gone once its retention has passed
+        out["screenshot"] = i["screenshot"]
     if i.get("pinned"):
         out["pinned"] = True
     return out
@@ -127,14 +149,21 @@ def session_doc(session, events, notes):
 # ---------------------------------------------------------------- save
 
 def save_memory(items):
-    """Write the index (source of truth) and the two readable views of it."""
-    p = config.paths()
+    """Write the one memory file: the readable view first, the full items after. Clears
+    out any pre-schema-3 .index.json / pending.json left over from before they merged."""
+    memory_dir = config.paths().memory_dir
     ordered = sorted(items.values(), key=lambda i: i["last_seen"], reverse=True)
-    write_json(p.index_file, {"schema_version": SCHEMA, "items": ordered})
-    write_json(p.items_file, {"schema_version": SCHEMA,
-                              "updated": nice_time(datetime.now().isoformat(timespec="seconds")),
-                              "things": [readable(i) for i in ordered]})
-    write_json(p.pending_file, notes.pending_view(items))
+    write_json(config.paths().items_file, {
+        "schema_version": SCHEMA,
+        "updated": nice_time(datetime.now().isoformat(timespec="seconds")),
+        "things": [readable(i) for i in ordered],
+        "items": ordered,
+    })
+    for stale in (".index.json", "pending.json"):
+        try:
+            os.remove(os.path.join(memory_dir, stale))
+        except OSError:
+            pass
 
 
 def save_session(session, events, notes):

@@ -55,7 +55,7 @@ class DictationIntegrationTests(unittest.TestCase):
         capture.save()
         self.assertEqual(memstore.load_items()[old["id"]], old)
         public = json.loads((self.mem / "memory.json").read_text())
-        self.assertEqual(public["schema_version"], 2)
+        self.assertEqual(public["schema_version"], 3)
         self.assertEqual(public["things"][0]["content"], old["content"])
         self.assertEqual(public["things"][0]["your_notes"][0]["text"], "Next: test migration.")
         timeline = json.loads(next((self.mem / "sessions").glob("*.json")).read_text())["timeline"]
@@ -64,13 +64,14 @@ class DictationIntegrationTests(unittest.TestCase):
         self.assertEqual(timeline[0]["seconds"], 10)
         self.assertEqual(timeline[0]["activity"], {"reading": 10})
 
-    def test_corrupt_internal_store_is_not_silently_replaced_with_empty_memory(self):
-        (self.mem / ".index.json").write_text("not json")
+    def test_corrupt_memory_file_is_not_silently_replaced_with_empty_memory(self):
+        (self.mem / "memory.json").write_text("not json")
         with self.assertRaises(ValueError):
             tracker.Tracker()
-        self.assertEqual((self.mem / ".index.json").read_text(), "not json")
+        self.assertEqual((self.mem / "memory.json").read_text(), "not json")
 
-    def test_readable_store_without_index_is_not_treated_as_empty(self):
+    def test_a_things_only_memory_file_is_not_treated_as_empty(self):
+        # a readable-only export, missing the full "items" list needed to resume
         (self.mem / "memory.json").write_text(json.dumps({"things": [{"id": "valuable"}]}))
         with self.assertRaises(ValueError):
             tracker.Tracker()

@@ -62,21 +62,30 @@ def vision():
     return _VN
 
 
-def run_vision(path, w, h):
+def _handler(vn, source):
+    """A request handler for a file path or an in-memory CGImage. Vision probes optional
+    keys, so pass a native dictionary rather than the Python mapping proxy."""
+    options = Foundation.NSDictionary.dictionary()
+    if isinstance(source, str):
+        return vn["VNImageRequestHandler"].alloc().initWithURL_options_(
+            Foundation.NSURL.fileURLWithPath_(source), options)
+    return vn["VNImageRequestHandler"].alloc().initWithCGImage_options_(source, options)
+
+
+def run_vision(source, w, h, fast=None):
     """
-    OCR lines, rectangle regions and scene labels for one image.
+    OCR lines and rectangle regions for one image (a file path or an in-memory CGImage).
     Boxes come back as [x, y, w, h] in image pixels, top-left origin.
+    `fast` picks Vision's fast OCR (~9x cheaper, a little less accurate); None = FAST_OCR.
     """
     vn = vision()
-    url = Foundation.NSURL.fileURLWithPath_(path)
-    # Vision probes optional keys; use a native dictionary rather than the
-    # Python mapping proxy, which can raise for missing keys on this path.
-    handler = vn["VNImageRequestHandler"].alloc().initWithURL_options_(
-        url, Foundation.NSDictionary.dictionary())
+    fast = FAST_OCR if fast is None else fast
+    path = source if isinstance(source, str) else "<in-memory frame>"
+    handler = _handler(vn, source)
 
     ocr = vn["VNRecognizeTextRequest"].alloc().init()
-    ocr.setRecognitionLevel_(1 if FAST_OCR else 0)      # 0 accurate, 1 fast
-    ocr.setUsesLanguageCorrection_(not FAST_OCR)
+    ocr.setRecognitionLevel_(1 if fast else 0)          # 0 accurate, 1 fast
+    ocr.setUsesLanguageCorrection_(not fast)
 
     rects = vn["VNDetectRectanglesRequest"].alloc().init()
     rects.setMaximumObservations_(0)                    # no cap
@@ -84,22 +93,19 @@ def run_vision(path, w, h):
     rects.setMinimumAspectRatio_(0.05)
     rects.setMinimumConfidence_(0.6)
 
-    scene = vn["VNClassifyImageRequest"].alloc().init()
-
-    success, error = handler.performRequests_error_([ocr, rects, scene], None)
+    success, error = handler.performRequests_error_([ocr, rects], None)
     if not success:
         # Retry OCR separately, preserving the native dictionary and NSError tuple
         # handling required by the official PyObjC Vision bindings.
-        geometry_ok, _ = handler.performRequests_error_([rects, scene], None)
+        geometry_ok, _ = handler.performRequests_error_([rects], None)
         if not geometry_ok:
-            rects, scene = None, None
+            rects = None
         for level, auto in ((0, True), (1, False)):
             ocr = vn["VNRecognizeTextRequest"].alloc().init()
             ocr.setRecognitionLevel_(level)
             ocr.setUsesLanguageCorrection_(level == 0)
             ocr.setAutomaticallyDetectsLanguage_(auto)
-            retry = vn["VNImageRequestHandler"].alloc().initWithURL_options_(
-                url, Foundation.NSDictionary.dictionary())
+            retry = _handler(vn, source)
             success, error = retry.performRequests_error_([ocr], None)
             if success:
                 break
@@ -123,9 +129,7 @@ def run_vision(path, w, h):
                       "box": px(o.boundingBox())})
 
     boxes = [px(o.boundingBox()) for o in (rects.results() or [])] if rects else []
-    labels = [{"label": o.identifier(), "conf": round(o.confidence(), 2)}
-              for o in (scene.results() or []) if o.confidence() > 0.1][:8] if scene else []
-    return lines, boxes, labels
+    return lines, boxes, []         # (the old scene-label request was never used downstream)
 
 
 # ---------------------------------------------------------------- geometry
@@ -279,16 +283,26 @@ def classify(lines, rects, meta, img_w, img_h):
     return objs, panels
 
 
-def resolve(meta_path):
+def resolve(meta_path, fast=None):
+    """Resolve the screenshot a capture-metadata file points at."""
     with open(meta_path) as f:
         meta = json.load(f)
     img_path = os.path.join(config.paths().data_dir, meta["image"])
     if not os.path.exists(img_path):
         raise FileNotFoundError(img_path)
-
     w, h = image_size(img_path)
+    return resolve_image(meta, img_path, w, h, fast)
+
+
+def resolve_frame(meta, frame, fast=None):
+    """Resolve an in-memory frame (macos.Frame); nothing is read from or written to disk."""
+    return resolve_image(meta, frame.cg, frame.width, frame.height, fast)
+
+
+def resolve_image(meta, source, w, h, fast=None):
+    fast = FAST_OCR if fast is None else fast
     t0 = time.time()
-    lines, rects, labels = run_vision(img_path, w, h)
+    lines, rects, labels = run_vision(source, w, h, fast)
     objs, panels = classify(lines, rects, meta, w, h)
 
     # reading order, then ids; panels first so children can point at them
@@ -335,7 +349,7 @@ def resolve(meta_path):
         "focus": focus,
         "entities": ents,
         "objects": everything,
-        "resolver": {"engine": "apple-vision", "fast": FAST_OCR,
+        "resolver": {"engine": "apple-vision", "fast": fast,
                      "seconds": round(time.time() - t0, 2)},
     }
 

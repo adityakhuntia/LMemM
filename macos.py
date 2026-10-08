@@ -9,6 +9,7 @@ from in-process AppleScript compiled once; idle/input counters are system counte
 import os
 import subprocess
 import sys
+import tempfile
 
 try:
     import objc
@@ -140,11 +141,86 @@ def display_bounds(display):
             "Width": frame.size.width, "Height": frame.size.height}
 
 
-def screenshot(path, display):
-    subprocess.run(["screencapture", "-x", "-o", "-t", "jpg", "-D", str(display), path],
-                   check=False)
-    if os.path.exists(path):
-        subprocess.run(["sips", "-Z", str(config.SCALE_PX), path], capture_output=True, check=False)
+class Frame:
+    """One captured screen, held in memory. Nothing touches the disk unless it's kept.
+
+    cg      the CGImage Vision reads
+    gray    int16 luminance array, for the pixel diff
+    rgba    the pixels (kept until the frame is saved or dropped)
+    """
+
+    def __init__(self, cg, rgba, width, height):
+        import numpy as np
+        self.cg, self.rgba, self.width, self.height = cg, rgba, width, height
+        px = np.frombuffer(rgba, np.uint8).reshape(height, width, 4)
+        weighted = (px[..., 0].astype(np.int32) * 299 + px[..., 1].astype(np.int32) * 587
+                    + px[..., 2].astype(np.int32) * 114)             # int32: 255 * 1000 overflows int16
+        self.gray = (weighted // 1000).astype(np.int16)              # same weights as PIL's "L"
+
+    def image(self, long_edge=None):
+        """A PIL RGB image of the frame, optionally shrunk so its long edge is `long_edge`."""
+        import numpy as np
+        from PIL import Image
+        img = Image.fromarray(np.frombuffer(self.rgba, np.uint8).reshape(self.height, self.width, 4)[..., :3])
+        if long_edge and max(img.size) > long_edge:
+            img.thumbnail((long_edge, long_edge), Image.LANCZOS)
+        return img
+
+    def save(self, path, long_edge=None, quality=70):
+        self.image(long_edge).save(path, quality=quality)
+
+    def release(self):
+        self.cg = self.rgba = self.gray = None
+
+
+def _frame_from_cg(cg):
+    import Quartz
+    w, h = Quartz.CGImageGetWidth(cg), Quartz.CGImageGetHeight(cg)
+    if max(w, h) > config.MAX_PX:                     # very large displays: scale down
+        scale = config.MAX_PX / max(w, h)
+        w, h = round(w * scale), round(h * scale)
+    buf = bytearray(w * h * 4)
+    ctx = Quartz.CGBitmapContextCreate(
+        buf, w, h, 8, w * 4, Quartz.CGColorSpaceCreateWithName(Quartz.kCGColorSpaceSRGB),
+        Quartz.kCGImageAlphaPremultipliedLast | Quartz.kCGBitmapByteOrder32Big)
+    Quartz.CGContextSetInterpolationQuality(ctx, Quartz.kCGInterpolationHigh)
+    Quartz.CGContextDrawImage(ctx, Quartz.CGRectMake(0, 0, w, h), cg)
+    return Frame(Quartz.CGBitmapContextCreateImage(ctx), buf, w, h)
+
+
+def grab(display):
+    """The display as an in-memory Frame (~25 ms), or None if the OS won't give it to us.
+    Uses the screen-image API at nominal (1x) resolution, so no resize step is needed."""
+    try:
+        import Quartz
+        b = display_bounds(display)
+        cg = Quartz.CGWindowListCreateImage(
+            Quartz.CGRectMake(b["X"], b["Y"], b["Width"], b["Height"]),
+            Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID,
+            Quartz.kCGWindowImageNominalResolution | Quartz.kCGWindowImageBoundsIgnoreFraming)
+        return _frame_from_cg(cg) if cg is not None else None
+    except Exception:
+        return None
+
+
+def grab_with_screencapture(display):
+    """Fallback if the in-process API is unavailable: the old subprocess route, still
+    returned as an in-memory Frame (the temp file is deleted at once)."""
+    import Quartz
+    path = os.path.join(tempfile.mkdtemp(prefix="lmemm-"), "frame.png")
+    try:
+        subprocess.run(["screencapture", "-x", "-o", "-t", "png", "-D", str(display), path], check=False)
+        if not os.path.exists(path):
+            return None
+        source = Quartz.CGImageSourceCreateWithURL(Foundation.NSURL.fileURLWithPath_(path), None)
+        cg = Quartz.CGImageSourceCreateImageAtIndex(source, 0, None) if source else None
+        return _frame_from_cg(cg) if cg is not None else None
+    finally:
+        try:
+            os.remove(path)
+            os.rmdir(os.path.dirname(path))
+        except OSError:
+            pass
 
 
 def notify(title, message):

@@ -28,12 +28,13 @@ Normal tracker: one process, two threads, plain files. The experimental pilot is
 | `memory_content.py` | bounded excerpts + unverified decision quotes | no |
 | `notes.py` | notes: record/attach, ids, done-state, resurfacing rule, project view | no |
 | `store.py` | load/save `.index.json`, readable `memory.json` / `pending.json`, sessions | no |
+| `context.py` | distills memory into a clean export for an AI: notes + real content, no operational detail | no |
 | `dictation.py` + `listen/` | ⌃⌥N hotkey (Carbon), note window, on-device speech helper app | **yes** |
 | `widget.py` | the on-screen pill and its Left / Plan card (non-activating panels) | **yes** |
 | `input_monitor.py` | opt-in listen-only event tap + privacy gate | **yes** |
 | `input_events.py` | input summaries, ordering, context boundaries | no |
 | `input_store.py` | input files, capture links, provenance, session deletion | no |
-| `lmemm.py` | CLI | no |
+| `lmemm.py` | CLI: the interactive menu, and one direct command per menu item | no |
 
 Rules that keep this cohesive:
 
@@ -50,16 +51,34 @@ Rules that keep this cohesive:
 1. **Trigger** (`tracker.tick`, ~4×/s): a workspace notification, a title/window change
    (one CGWindowList call), the timer, a pin, a note, or input activity. Triggers wait
    `SETTLE` s so a burst of switches becomes one capture.
-2. **Capture** (`tracker.capture`): skip-list check, screenshot of the window's display,
-   re-check that the front window didn't change, write `<ts>.jpg/json`, enqueue.
+2. **Capture** (`tracker.capture`): skip-list check, grab the window's display **in
+   memory** (`macos.grab`, ~25 ms, a `macos.Frame`; falls back to `screencapture` if the OS
+   API is unavailable), re-check that the front window didn't change, enqueue. Nothing is
+   written to disk.
 3. **Resolve** (resolver thread, `tracker.handle`): if the pixels didn't change since the
-   last frame of the same window, reuse its OCR. Otherwise OCR → `understand.describe`.
-   OCR runs outside the memory lock, so saving a note never waits for Vision.
+   last frame of the same window, reuse its OCR. Otherwise `tracker.read`: **fast OCR**
+   for a changed later frame of the same window, **accurate OCR** for the first look,
+   notes, pins, and any fast pass that finds under `THIN_RATIO` of the previous line count.
+   Then `understand.describe`. OCR runs outside the memory lock, so saving a note never
+   waits for Vision.
 4. **Remember** (`tracker.remember`, under the lock):
-   `identity.resolve_item` → `activity.classify` → update the item, keeping one
-   screenshot per thing and dropping redundant frames → extend or start a timeline
-   event → **resurface** open notes on a new visit → attach notes waiting for this
-   frame → `store.save_*`.
+   `identity.resolve_item` → `activity.classify` → update the item → extend or start a
+   timeline event → **resurface** open notes on a new visit → attach notes waiting for
+   this frame → if the frame became the thing's screenshot, write it as a thumbnail
+   (`keep_thumbnail`) → `save()`. A redundant frame is simply released.
+
+## Cost control
+
+| Mechanism | Where | Effect |
+|---|---|---|
+| timer back-off | `Tracker.current_interval`, `idle_steps` | 5 → 10 → 20 → 30 s (15 s in chats) while frames are identical and you give no input; any trigger or input resets it |
+| in-memory capture | `macos.grab`, `Frame` | no subprocesses, no JPEG for frames that aren't kept |
+| fast OCR on continuation | `Tracker.read`, `resolver.resolve_frame(fast=…)` | ~10× less OCR CPU; thin results are redone accurately |
+| thumbnails + retention | `Tracker.keep_thumbnail`, `retention.py` | 480 px / ~15 KB per thing, deleted after `SCREENSHOT_DAYS` unless pinned or an open note |
+| batched writes | `Tracker.save(force=…)`, `maintain()` | memory files at most every `SAVE_EVERY` s; notes, ticks and shutdown write at once |
+| self-measurement | `Tracker.cost_report`, `sample_resources` | CPU, memory, OCR counts and timings in `status` and the session summary; warns on high memory or sustained CPU |
+
+All the knobs are in `config.py`.
 
 ## Notes as pending edits
 
@@ -91,11 +110,46 @@ Rules that keep this cohesive:
 - `tick()` refreshes the pill's dot about once a second. While the card is open, it skips
   capture, so the card never gets OCR'd into memory.
 
+## Context export (context.py)
+
+`memory.json` and the session files are the tracker's own working data (every visit,
+trigger, activity second — it needs all of it to decide identity and timing). `context.py`
+builds a separate, much smaller document for anything that should only see *what you did
+and why*:
+
+- `distill(item)`: one thing → `{app, what, doing, when, notes, content, details}`, or
+  `None` if it has neither a note nor kept content — nothing to tell an AI, so it's left
+  out entirely. `when` collapses first/last/visits into one sentence.
+- `_content(item)`: excerpts, deduplicated after stripping UI chrome (menu bars etc. that
+  slipped past `memory_content`'s own filter) with `_clean`.
+- `by_project` / `for_session` / `since`: group distilled things by `notes.project_of`,
+  scoped to one session's timeline or a day range.
+- `export()` / `lmemm.py context`: builds the document, writes it to
+  `data/memory/context/<session or range>.json`, and returns it for printing.
+
+No screenshots, item ids, triggers, per-visit timing or activity-category seconds appear
+anywhere in the output.
+
 ## Talking to a running tracker
 
 `.lmemm.pid` names the process. `lmemm.py pause|resume|notes done` write a PID-scoped
 `.lmemm.control.json`, which the tracker applies on its next tick. `status` reads
 `.lmemm.status.json`. `pin` and `note` use SIGUSR1 / SIGUSR2.
+
+## The menu (lmemm.py)
+
+`lmemm.py` with no arguments calls `interactive_menu()` instead of starting the tracker
+(any explicit subcommand, including `start`, still goes straight there - this only
+changes the bare-invocation default). `MENU` is one list of `MenuItem(key, label, hint,
+hint_example, action)`; `action` is the same `cmd_*` function the direct command uses, so
+there is exactly one implementation of each command's argument parsing, used by both the
+CLI and the menu. Picking an item with a `hint_example` prompts once for an optional
+argument string, `shlex.split` into the same `args` list `cmd_*` already expects.
+
+The loop calls the action, catches `SystemExit` (several `cmd_*` functions call
+`sys.exit` on bad input or "nothing yet") and `KeyboardInterrupt` so one mistake or an
+empty state doesn't end the session, then redraws the menu. `read`/`write` are
+parameters (default `input`/`print`) so tests drive it without a real terminal.
 
 ## Extending
 
@@ -109,7 +163,7 @@ Rules that keep this cohesive:
 
 ## Testing
 
-`python3 -m unittest discover -s tests` runs 191 tests: real Vision OCR on generated
+`python3 -m unittest discover -s tests` runs 251 tests: real Vision OCR on generated
 images, identity, content, migration, notes/resurfacing/project view, the CLI, input
 events with fake native data, retention and deletion recovery. No test uses the real
 microphone, input tap or your data.

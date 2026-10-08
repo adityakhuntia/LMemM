@@ -23,6 +23,8 @@ Updated 2026-10-08, America/New_York. Historical context and handover are in
 
 ## Document map
 
+- [Claude entry-point handover](handover.md): branch, verified state and continuation instructions.
+
 - [README](README.md): normal tracker setup and user commands.
 - [Architecture](ARCHITECTURE.md): capture modules and experimental semantic boundary.
 - [Semantic handover](docs/semantic-project-memory-status.md): implemented interfaces,

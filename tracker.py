@@ -31,6 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import objc
+from AppKit import NSEvent
 
 import activity
 import config
@@ -79,8 +80,8 @@ class Tracker:
         self.notes = []                      # this session's notes
         self.now = None                      # the quick answer to "what am I on?" (see identify_now)
         self.quick_q = queue.Queue()
-        self.ocr_apps = set()                # apps whose place can only be told by reading the screen
-        self.last_click = 1e9
+        self.ocr_apps = {}                   # app -> metadata, for apps whose place can only be told by reading the screen
+        self.quick_seq = 0
         self.frame_item = {}                 # capture ts -> memory item it became
         self.lock = threading.Lock()         # the resolver thread and the note window both write memory
         self.q = queue.Queue()
@@ -376,13 +377,8 @@ class Tracker:
                     self.trigger("window_change")
                 elif f["window"] != self.last_sig["window"]:
                     self.trigger("tab_change" if f["app"] in config.BROWSERS else "title_change")
-            age = macos.input_ages()["click"]
-            clicked = age < config.POLL + 0.1 <= self.last_click
-            self.last_click = age
             if f and self.last_sig and any(f[k] != self.last_sig[k] for k in ("pid", "win_id", "window")):
                 self.identify_now(f)                 # a new app, window or tab
-            elif f and clicked and f["app"] in self.ocr_apps:
-                self.identify_now(f, delays=(0.25, 0.8))   # a click inside an app whose place is on screen (chats)
             self.last_sig = f or self.last_sig
 
         if self.pending and now >= self.pending[1]:
@@ -544,54 +540,67 @@ class Tracker:
 
     # ------------------------------------------------------------ "what am I on?", right now
 
-    def identify_now(self, f, delays=(0.0,)):
+    def set_now(self, raw, item):
+        self.now = {"raw": raw, "item": item, "mono": time.monotonic_ns()}
+
+    def identify_now(self, f):
         """The pill must follow a switch at once, not after the next capture is OCR'd.
         Most places are known from metadata alone (URL, tab title, app: no pixels). When an
-        app only shows where you are on screen (a WhatsApp chat), a quick low-cost read of the
-        screen does it. Either way the answer is only used until the real capture lands."""
+        app only shows where you are on screen (a WhatsApp chat), clicks in it start a quick
+        read of the window's top strip instead (see on_click). Either way the answer is only
+        used until the real capture lands."""
         url, tab_title, _private = macos.browser_info(f["app"])
         meta = {"app": f["app"], "bundle_id": f["bundle_id"], "window": f["window"], "url": url,
                 "site": re.sub(r"^https?://", "", url or "").split("/")[0] or None, "tab_title": tab_title,
-                "bounds": f["bounds"], "ts": "quick", "image": "quick"}
-        raw = (f["app"], f["window"])
+                "ts": "quick", "image": "quick", "quick": True}
         st = identity.quick_state(meta)
         if st is not None:
-            self.ocr_apps.discard(f["app"])
+            self.ocr_apps.pop(f["app"], None)
             with self.lock:
-                self.now = {"raw": raw, "item": identity.find_item(self.items, st)}
-            self.last_widget_refresh = 0.0
-            return
-        self.ocr_apps.add(f["app"])
-        for delay in delays:
-            self.quick_q.put((meta, raw, delay))
+                self.set_now((f["app"], f["window"]), identity.find_item(self.items, st))
+        else:
+            self.ocr_apps[f["app"]] = meta
+            self.start_read(f)               # read the screen for it right away
+        self.last_widget_refresh = 0.0
+
+    def on_click(self, event):
+        """A click in an app whose place is only on screen (a chat list): drop the old answer
+        now, then read the window's header, twice (the screen may still be redrawing)."""
+        front = self.last_sig
+        if front and front["app"] in self.ocr_apps:
+            self.start_read(front)
+
+    def start_read(self, front):
+        self.quick_seq += 1
+        self.set_now((front["app"], front["window"]), None)     # never show the chat you just left
+        self.last_widget_refresh = 0.0
+        for delay in (0.05, 0.3):
+            self.quick_q.put((self.quick_seq, front["app"], delay))
 
     def quick_worker(self):
         while True:
             job = self.quick_q.get()
             if job is None:
                 return
-            while not self.quick_q.empty():            # only the newest request matters
-                job = self.quick_q.get()
-            meta, raw, delay = job
+            seq, app, delay = job
             try:
                 time.sleep(delay)
-                now = macos.front()
-                if not now or (now["app"], now["window"]) != raw:
-                    continue                           # you've moved on already
-                display, frame = macos.display_for(now["bounds"])
-                shot = macos.grab(display)
-                if shot is None:
+                if seq != self.quick_seq:
+                    continue                           # a newer click superseded this read
+                f = macos.front()
+                meta = dict(self.ocr_apps.get(app) or {})
+                if not f or f["app"] != app or not meta or not f["bounds"]:
                     continue
-                try:
-                    meta["screen"] = {"w": int(frame.size.width), "h": int(frame.size.height)}
-                    res = resolver.resolve_frame(meta, shot, fast=True)
-                finally:
-                    shot.release()
+                cg = macos.grab_strip(f["bounds"], 120)
+                if cg is None:
+                    continue
+                import Quartz
+                res = resolver.resolve_image(meta, cg, Quartz.CGImageGetWidth(cg), Quartz.CGImageGetHeight(cg), fast=True)
                 st = identity.quick_state(meta, res)
-                if st is None:
+                if st is None or seq != self.quick_seq:
                     continue
                 with self.lock:
-                    self.now = {"raw": raw, "item": identity.find_item(self.items, st)}
+                    self.set_now((f["app"], f["window"]), identity.find_item(self.items, st))
                 self.last_widget_refresh = 0.0
             except Exception as e:                     # best effort: the full capture is the fallback
                 line(now_hms(), "", f"quick identify failed: {e}")
@@ -742,8 +751,9 @@ class Tracker:
             cur["mostly"] = max(cur["activity"], key=cur["activity"].get)
         cur["_last_cat"] = act["category"]
         cur["_raw"] = (meta.get("app"), meta.get("window"))
-        if self.now and self.now["raw"] == cur["_raw"]:
-            self.now = None                  # a full capture has caught up: its answer is the truth
+        if (self.now and self.now["raw"] == cur["_raw"]
+                and meta["capture_start_offset_ns"] + self.origin_ns > self.now["mono"]):
+            self.now = None                  # a capture taken after the quick answer: it is the truth
         if act["new_text"] and act["category"] in ("typing", "receiving"):
             line(t, "", f"  {act['category']}: {act['new_text'][0][:80]}")
 
@@ -928,6 +938,7 @@ class Tracker:
         self.thread = threading.Thread(target=self.worker, daemon=True)
         self.thread.start()
         threading.Thread(target=self.quick_worker, daemon=True).start()
+        self.click_monitor = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(1 << 1, self.on_click)
 
         macos.quiet_system_logs()
         say(f"LMemM is watching  ·  captures on app/tab switches, else every {self.every}s"
@@ -936,6 +947,8 @@ class Tracker:
              else f"(couldn't register {dictation.HOTKEY_LABEL}: use  python3 lmemm.py note)")
             + "  ·  Ctrl-C stop\n")
         self.last_sig = macos.front()
+        if self.last_sig:
+            self.identify_now(self.last_sig)     # so the app you start in is followed too
         self.last_capture = time.time()      # the "start" trigger takes the first frame
         self.trigger("start")
         try:

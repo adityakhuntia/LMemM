@@ -203,6 +203,19 @@ def grab(display):
         return None
 
 
+def grab_strip(bounds, height):
+    """The top `height` points of a window as a CGImage (~5 ms), or None. For the quick
+    "which chat is open?" read, where the whole screen would be wasted work."""
+    try:
+        import Quartz
+        rect = Quartz.CGRectMake(bounds["X"], bounds["Y"], bounds["Width"], min(height, bounds["Height"]))
+        return Quartz.CGWindowListCreateImage(
+            rect, Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID,
+            Quartz.kCGWindowImageNominalResolution | Quartz.kCGWindowImageBoundsIgnoreFraming)
+    except Exception:
+        return None
+
+
 def grab_with_screencapture(display):
     """Fallback if the in-process API is unavailable: the old subprocess route, still
     returned as an in-memory Frame (the temp file is deleted at once)."""

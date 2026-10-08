@@ -208,11 +208,12 @@ STRIP_MIN = 360         # points: a browser's tabs, address and bookmarks bars t
 
 def grab_strip(bounds, height):
     """The top of a window as a CGImage (~5 ms), or None; at least STRIP_MIN points so the
-    page's own header (a chat's name) is in it even under a browser's toolbars. For the quick
+    page's own header (a chat's name) is in it even under a browser's toolbars. Not clipped to the
+    window's height: front() can pick a short helper window of the app (a 159 pt toolbar strip). For the quick
     "which chat is open?" read, where the whole screen would be wasted work."""
     try:
         import Quartz
-        rect = Quartz.CGRectMake(bounds["X"], bounds["Y"], bounds["Width"], min(max(height, STRIP_MIN), bounds["Height"]))
+        rect = Quartz.CGRectMake(bounds["X"], bounds["Y"], bounds["Width"], max(height, STRIP_MIN))
         return Quartz.CGWindowListCreateImage(
             rect, Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID,
             Quartz.kCGWindowImageNominalResolution | Quartz.kCGWindowImageBoundsIgnoreFraming)

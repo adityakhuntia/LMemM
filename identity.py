@@ -158,3 +158,33 @@ def find_item(items, st):
     ref = understand.ref(st)
     seen = [i for i in items.values() if ref in i.get("refs", [i.get("ref")])]
     return max(seen, key=lambda i: i["last_seen"])["id"] if seen else None
+
+
+def places(item):
+    return item.setdefault("places", [])
+
+
+def learn_place(item, key):
+    """Remember that this signature (see ax.key) was seen while this item was in front."""
+    if key and key not in places(item):
+        places(item).append(key)
+        del item["places"][:-8]
+
+
+def find_place(items, key, label=""):
+    """The item a signature names, or None. Exact for every place seen before. A spelling
+    twin (OCR once read the same chat two ways) resolves to the one with open notes; two
+    genuinely different items on one signature means it can't tell, so None."""
+    if not key:
+        return None
+    found = [i for i in items.values() if key in i.get("places", [])]
+    if not found and label:                               # never seen: does an item's title end the label?
+        tail = _squash(label)
+        found = [i for i in items.values() if len(_squash(i.get("title"))) >= 4
+                 and tail.endswith(_squash(i["title"]))]
+    if not found:
+        return None
+    names = [_squash(i.get("title")) for i in found]
+    if any(SequenceMatcher(None, names[0], n).ratio() < 0.85 for n in names[1:]):
+        return None
+    return max(found, key=lambda i: (open_notes(i), i["last_seen"]))["id"]

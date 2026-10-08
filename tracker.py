@@ -31,6 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import objc
+import ax
 from AppKit import NSEvent
 
 import activity
@@ -82,6 +83,7 @@ class Tracker:
         self.quick_q = queue.Queue()
         self.ocr_apps = {}                   # app -> metadata, for apps whose place can only be told by reading the screen
         self.last_read = 0.0
+        self.ax_now = None                   # the app-reported place (ax.py), when it names a known item
         self.quick_seq = 0
         self.frame_item = {}                 # capture ts -> memory item it became
         self.lock = threading.Lock()         # the resolver thread and the note window both write memory
@@ -479,6 +481,7 @@ class Tracker:
             "screen": {"w": int(size.width), "h": int(size.height)}, "display": display,
             "image": ts + ".jpg",       # the thumbnail's name, if this frame ends up kept
             "trigger": trigger, "pinned": pinned, "session": self.session,
+            "place": ax.key(f["app"], ax.read(f["pid"], f["app"])),
             "inputs": inputs, "pointer": pointer,
             "window_region": visible_window_region(f["bounds"], macos.display_bounds(display)),
             "capture_start_offset_ns": capture_start_ns - self.origin_ns,
@@ -534,6 +537,8 @@ class Tracker:
         """What the pill's card shows: the project of the thing you're on right now."""
         with self.lock:
             cur = self.events[-1] if self.events else None
+            if self.ax_now and self.ax_now["item"] in self.items and self.ax_now["pid"] == (self.last_sig or {}).get("pid"):
+                return notes.card(self.items, self.ax_now["item"])      # named by the app itself
             # identify_now() answers in well under a second; the full capture (settle + OCR,
             # ~2 s) is only the fallback, so the pill never shows the thing you just left.
             front = self.last_sig and (self.last_sig["app"], self.last_sig["window"])
@@ -624,6 +629,29 @@ class Tracker:
             if found:
                 return found
         return None
+
+    def ax_loop(self):
+        """Every ~0.15 s: ask the app in front where you are (a millisecond, no pixels). When
+        its signature names an item you've been on, the pill switches to it at once."""
+        last = None
+        while self.running:
+            time.sleep(0.15)
+            try:
+                app = macos.NSWorkspace.sharedWorkspace().frontmostApplication()
+                if app is None:
+                    continue
+                pid, name = app.processIdentifier(), app.localizedName()
+                sig = ax.read(pid, name)
+                key = ax.key(name, sig)
+                if (pid, key) == last:
+                    continue
+                last = (pid, key)
+                with self.lock:
+                    item = identity.find_place(self.items, key, sig["label"] if sig else "")
+                    self.ax_now = {"pid": pid, "key": key, "item": item} if item else None
+                self.last_widget_refresh = 0.0
+            except Exception as e:
+                line(now_hms(), "", f"accessibility read failed: {e}")
 
     def widget_heard(self):
         """None, or the words said so far while the ⌃⌥N note window is open."""
@@ -744,6 +772,7 @@ class Tracker:
 
         # 3. the memory entry for it
         item, frame_used = self.update_item(item, item_id, ref, st, meta, content, pinned)
+        identity.learn_place(item, meta.get("place"))
         self.record_activity(item, act, dt, res)
 
         # 4. the timeline
@@ -958,6 +987,7 @@ class Tracker:
         self.thread = threading.Thread(target=self.worker, daemon=True)
         self.thread.start()
         threading.Thread(target=self.quick_worker, daemon=True).start()
+        threading.Thread(target=self.ax_loop, daemon=True).start()
         self.click_monitor = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(1 << 1, self.on_click)
 
         macos.quiet_system_logs()

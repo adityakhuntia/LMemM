@@ -63,3 +63,23 @@ class InferenceTests(SemanticFixture, unittest.TestCase):
         result=worker.run_one()
         self.assertEqual((result.status,result.attempts),('unprocessed',2))
         self.assertEqual(fake.calls,2)
+    def test_focus_retry_is_bounded_and_pause_is_not_retried(self):
+        request=self.request();worker=InferenceWorker(self.db,FakeExtractor())
+        worker.enqueue(request.episode_id)
+        for _ in range(2):
+            with self.db.transaction() as c:c.execute("UPDATE jobs SET status='cancelled',error='native_focus_boundary'")
+            self.assertTrue(worker.enqueue(request.episode_id,retry_focus=True))
+        with self.db.transaction() as c:c.execute("UPDATE jobs SET status='cancelled',error='native_focus_boundary'")
+        self.assertFalse(worker.enqueue(request.episode_id,retry_focus=True))
+        with self.db.transaction() as c:c.execute("UPDATE jobs SET status='cancelled',error='Paused by user'")
+        self.assertFalse(worker.enqueue(request.episode_id,retry_focus=True))
+    def test_cancellation_reason_survives_late_completion(self):
+        request=self.request();db=self.db
+        class Canceller(FakeExtractor):
+            def extract(self,request):
+                with db.transaction() as c:c.execute("UPDATE jobs SET status='cancelled',error='Paused by user'")
+                return super().extract(request)
+        worker=InferenceWorker(self.db,Canceller());worker.enqueue(request.episode_id)
+        self.assertEqual(worker.run_one().status,'cancelled')
+        self.assertEqual(self.db.connection.execute('SELECT error FROM jobs').fetchone()[0],'Paused by user')
+        self.assertFalse(worker.enqueue(request.episode_id,retry_focus=True))

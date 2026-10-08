@@ -80,3 +80,13 @@ class LocalSelectionTests(SemanticFixture,unittest.TestCase):
         req=self.request();req=dataclasses.replace(req,evidence=(dict(req.evidence[0],text='For /projects/one-other/retry.py.'),))
         output={'selections':[{'kind':'belongs_to','source':0,'project':0,'reason':None}]}
         with self.assertRaises(ValueError):decode_selections(json.dumps(output),req)
+    def test_explicit_todo_is_task_even_if_model_omits_or_mislabels(self):
+        req=self.request();req=dataclasses.replace(req,evidence=(dict(req.evidence[0],origin_type='user_note',text='TODO: Test Restart Recovery\\'),))
+        for selections in ([],[{'kind':'suggestion','source':0,'reason':None}]):
+            result=validate_extraction(decode_selections(json.dumps({'selections':selections}),req),req)
+            self.assertEqual(len(result.candidates),1)
+            self.assertEqual(result.candidates[0]['type'],'task')
+            self.assertEqual(result.candidates[0]['statement'],req.evidence[0]['text'])
+        req=dataclasses.replace(req,evidence=(dict(req.evidence[0],origin_type='trusted_artifact_snapshot'),))
+        result=validate_extraction(decode_selections('{"selections":[]}',req),req)
+        self.assertEqual(result.candidates,())

@@ -88,10 +88,10 @@ $PY scripts/live_project_memory.py --data-dir "$PWD/data/live-pilot" stop
 Ctrl-C also stops. Context requires retained evidence for that exact workspace root.
 Use `--json` for structured inspection. Source snapshots show observed content;
 they do not prove authorship, changes completed or decisions made. Intentional
-notes through **LMemM: Record Intentional Project Note** are user-authored sources. Wait for **LMemM: project note saved locally** before submitting another note. A failed or interrupted delivery reports an error; submit again after reconnecting. Test decisions and tasks as separate notes, for example `We chose SQLite because memory should stay local.` and `TODO: test restart recovery.`
+notes through **LMemM: Record Intentional Project Note** are user-authored sources. Short, single-line `TODO:` notes use deterministic source-backed task classification; observed-file TODOs are not promoted. This is explicit-note parsing, not a claim of general semantic accuracy. Wait for **LMemM: project note saved locally** before submitting another note. A failed or interrupted delivery reports an error; submit again after reconnecting. Test decisions and tasks as separate notes, for example `We chose SQLite because memory should stay local.` and `TODO: test restart recovery.`
 Noncanonical/symlink document aliases are denied; open canonical paths. No manual project linking is required: canonical roots anchor project identity.
 
-Closed episodes without an inference job are recovered in bounded batches when native VS Code focus is verified, including retained notes across restart. Only evidence from currently approved roots is eligible. Cancelled or failed jobs are not automatically retried.
+Closed episodes without an inference job are recovered in bounded batches when native VS Code focus is verified, including retained notes across restart. Only evidence from currently approved roots is eligible. Only jobs cancelled specifically by a native-focus boundary may automatically retry, at most twice per episode. Pause/access cancellations and failures do not automatically retry. The explicit `retry_notes` control requests bounded retries of cancelled intentional-note episodes in currently approved roots; it waits for verified native focus and is cleared by pause.
 
 Pause cancels queued/in-flight results and advances the policy revision. If a
 cancelled runtime request is still finishing, Resume asks you to retry once it

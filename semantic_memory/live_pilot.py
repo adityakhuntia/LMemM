@@ -40,7 +40,7 @@ class Pilot:
   revision=self.store.connection.execute("SELECT value FROM meta WHERE key='revision'").fetchone()
   self.revision=int(revision[0]) if revision else 0
   self.bridge=Bridge(self.directory/'bridge',roots,clock);self.bridge.revision=self.revision;self.bridge.open_session()
-  self.episodes=EpisodeBuilder(self.store);self.last_retention=0;self.last_focus=self.focus_provider();self.reset_worker=False
+  self.episodes=EpisodeBuilder(self.store);self.last_retention=0;self.last_focus=self.focus_provider();self.reset_worker=False;self.retry_note_requested=False
   self.episodes.boundary('restart',timestamp(clock()))
   if self.factory:self.worker=InferenceWorker(self.store,self.factory())
   self.status()
@@ -49,13 +49,17 @@ class Pilot:
  def schedule(self,ids):
   if self.worker:
    for eid in ids:self.worker.enqueue(eid)
- def recover_unscheduled(self):
-  # Only orphaned episodes: cancellation/error jobs never become automatic retries.
+ def recover_unscheduled(self,retry_notes=False):
+  if self.paused or self.closed:return
+  # Automatic recovery is restricted to transient native-focus cancellation.
   roots=tuple(str(r) for r in self.bridge.roots)
   placeholders=','.join('?' for _ in roots)
   with self.store.lock:
    rows=self.store.connection.execute("""SELECT e.id FROM episodes e
-    WHERE e.status='unprocessed' AND NOT EXISTS(SELECT 1 FROM jobs j WHERE j.episode_id=e.id)
+    WHERE coalesce((SELECT CAST(value AS INTEGER) FROM meta WHERE key='focus_retries:'||e.id),0)<2
+    AND (e.status='unprocessed' AND NOT EXISTS(SELECT 1 FROM jobs j WHERE j.episode_id=e.id)
+      OR EXISTS(SELECT 1 FROM jobs j WHERE j.episode_id=e.id AND j.status='cancelled'
+        AND (j.error='native_focus_boundary' OR ?)))
     AND EXISTS(SELECT 1 FROM episode_evidence ee WHERE ee.episode_id=e.id)
     AND NOT EXISTS(SELECT 1 FROM episode_evidence ee
       JOIN occurrences o ON o.id=ee.occurrence_id JOIN sources s ON s.id=o.source_id
@@ -63,8 +67,9 @@ class Pilot:
       WHERE ee.episode_id=e.id AND (s.app_id!=? OR p.locator IS NULL OR p.locator NOT IN ("""+placeholders+""")))
     ORDER BY EXISTS(SELECT 1 FROM episode_evidence ee JOIN occurrences o ON o.id=ee.occurrence_id
       JOIN sources s ON s.id=o.source_id WHERE ee.episode_id=e.id AND s.origin_type='user_note') DESC,
-      e.ended DESC LIMIT 8""",(APP,*roots)).fetchall()
-   self.schedule([row[0] for row in rows])
+      e.ended DESC LIMIT 8""",(retry_notes,APP,*roots)).fetchall()
+   if self.worker:
+    for row in rows:self.worker.enqueue(row[0],retry_focus=True,retry_note=retry_notes)
  def ingest(self,envelope):
   if self.paused or self.closed:return None
   with self.store.lock:
@@ -111,11 +116,14 @@ class Pilot:
      if self.factory:self.worker=InferenceWorker(self.store,self.factory())
      self.reset_worker=False
     if focus is not None and self.worker and (not self.thread or not self.thread.is_alive()):
-     self.recover_unscheduled()
+     self.recover_unscheduled(retry_notes=self.retry_note_requested)
+     self.retry_note_requested=False
      self.thread=threading.Thread(target=self._run,daemon=True);self.thread.start()
   except (sqlite3.DatabaseError,RuntimeError) as error:
    self.pause('Storage unavailable: '+type(error).__name__)
   self.status()
+ def retry_notes(self):
+  if not self.paused and not self.closed:self.retry_note_requested=True
  def flush(self):
   with self.store.lock:self.schedule(self.episodes.boundary('explicit_flush',timestamp(self.clock())))
  def invalidate(self,reason):
@@ -130,6 +138,7 @@ class Pilot:
   self.reset_worker=True
   if self.worker:self.worker.extractor.cancel()
  def pause(self,reason='Paused by user'):
+  self.retry_note_requested=False
   self.paused=True;self.reason=reason
   self.invalidate(reason)
   self.bridge.active=False;self.bridge.publish_grant()

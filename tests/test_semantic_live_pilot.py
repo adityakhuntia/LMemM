@@ -184,3 +184,14 @@ class BoundarySchedulingTests(unittest.TestCase):
     with p.store.transaction() as c:c.execute("UPDATE jobs SET status='cancelled'")
     p.recover_unscheduled();self.assertEqual(p.worker.status(),{'cancelled':1})
    finally:p.close()
+
+class ExplicitRetryTests(unittest.TestCase):
+ def test_retry_request_waits_for_focus_and_pause_clears_it(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp).resolve();p=Pilot(root/'data',[root],focus_provider=lambda:None)
+   try:
+    p.retry_notes();self.assertTrue(p.retry_note_requested)
+    p.tick();self.assertTrue(p.retry_note_requested)
+    p.pause();self.assertFalse(p.retry_note_requested)
+    p.retry_notes();self.assertFalse(p.retry_note_requested)
+   finally:p.close()

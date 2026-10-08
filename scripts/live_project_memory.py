@@ -16,7 +16,7 @@ def main():
  sub=parser.add_subparsers(dest='command',required=True)
  start=sub.add_parser('start');start.add_argument('--workspace',type=Path,action='append',required=True)
  start.add_argument('--runtime-config',type=Path);start.add_argument('--experimental-model',action='store_true')
- for name in ('status','pause','resume','flush','stop'):sub.add_parser(name)
+ for name in ('status','pause','resume','flush','retry_notes','stop'):sub.add_parser(name)
  query=sub.add_parser('context');query.add_argument('--project',type=Path,required=True);query.add_argument('--days',type=int,default=2);query.add_argument('--json',action='store_true')
  delete=sub.add_parser('delete-session');delete.add_argument('--session',required=True);delete.add_argument('--confirm',action='store_true')
  args=parser.parse_args()
@@ -88,7 +88,7 @@ def main():
        command=value.get('command')
        if command=='stop':break
        if command=='resume' and lifecycle.flags:print('Resume blocked by system state')
-       elif command in ('pause','resume','flush'):
+       elif command in ('pause','resume','flush','retry_notes'):
         try:getattr(pilot,command)()
         except RuntimeError as error:print(error)
      except (ValueError,OSError):control.unlink(missing_ok=True)

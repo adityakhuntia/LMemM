@@ -194,3 +194,7 @@ current grant revision, preventing pre-pause sources from being relabelled after
 resume. Any noncanonical/symlink document URI is rejected, including benign aliases.
 These are stricter safeguards within the approved project/workflow direction; actual
 extension-host title/accessibility behavior remains pending the user live test.
+
+### Live-validation repair: transient focus recovery
+
+Native capture gates remain strict. Focus invalidation cancels in-flight output before commit; the cancellation reason must survive late completion. Once native focus is verified again, retained episodes whose only job cancellation reason is native_focus_boundary may be requeued within the existing eight-job/128KiB limits, at most twice per episode. Every evidence source must still belong to an approved canonical root and app. No automatic retry for pause/access/runtime cancellations. Explicit retry_notes permits bounded recovery of cancelled user-note episodes, waits for verified focus, and is cleared by pause. The user authorized this repair after live trace. Runtime selection v2.5 parses short single-line intentional TODO notes as exact quoted tasks even when model output omits/mislabels them; ordinary artifact snapshots receive no such promotion. Existing model benchmark results apply to v2.4; v2.5 requires a fresh general-quality evaluation.

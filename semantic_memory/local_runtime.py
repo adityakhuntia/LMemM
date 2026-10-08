@@ -33,7 +33,7 @@ browser "Guide for /projects/one/retry.py." => {"selections":[{"kind":"belongs_t
 browser "Weather forecast." => {"selections":[]}
 user_note "Completed rollback testing." => {"selections":[{"kind":"observation","source":0,"reason":null}]}
 """
-VERSION='indexed-source-selection-v2.4'
+VERSION='indexed-source-selection-v2.5'
 
 def _source_units(request):
     units=[]
@@ -86,6 +86,14 @@ def decode_selections(payload,request):
             for target in targets:candidates.append(dict(candidate,object_id=target))
         else:
             candidates.append(candidate)
+    # A short, single-line intentional TODO is an explicit user instruction.
+    # Preserve its exact quote; never promote TODOs from observed documents.
+    for unit in units:
+        e=request.evidence[unit['evidence_index']]
+        if e['origin_type']=='user_note' and e['text']==unit['text'] and re.fullmatch(r'\s*TODO:\s*[^\s][^\r\n]*',unit['text'],re.I):
+            candidates=[c for c in candidates if c['evidence_ids']!=[e['id']]]
+            candidates.append(dict(type='task',subject_id=e['artifact_id'],evidence_ids=[e['id']],
+                statement=unit['text'],extraction_status='explicit'))
     return json.dumps({'candidates':candidates},ensure_ascii=False)
 
 @dataclass(frozen=True)

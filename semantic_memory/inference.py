@@ -49,7 +49,7 @@ class InferenceWorker:
         self.store=store; self.extractor=extractor; self.guard=threading.Lock()
         with store.transaction() as c:
             c.execute("UPDATE jobs SET status='unprocessed',error='interrupted' WHERE status='running'")
-    def enqueue(self,episode_id):
+    def enqueue(self,episode_id,retry_focus=False,retry_note=False):
         from .episodes import build_request
         request=build_request(self.store,episode_id)
         if not request.evidence:
@@ -57,9 +57,18 @@ class InferenceWorker:
         size=sum(len(e['text'].encode()) for e in request.evidence)
         with self.store.transaction() as c:
             queued=c.execute("SELECT count(*),coalesce(sum(bytes),0) FROM jobs WHERE status IN ('queued','running')").fetchone()
-            if queued[0]>=8 or queued[1]+size>131072 or c.execute("SELECT 1 FROM jobs WHERE episode_id=?",(episode_id,)).fetchone():
-                return False
-            c.execute("INSERT INTO jobs(episode_id,status,bytes) VALUES(?,'queued',?)",(episode_id,size))
+            old=c.execute("SELECT status,error FROM jobs WHERE episode_id=?",(episode_id,)).fetchone()
+            if queued[0]>=8 or queued[1]+size>131072:return False
+            if old:
+                eligible=old['status']=='cancelled' and ((retry_focus and old['error']=='native_focus_boundary') or
+                    (retry_note and any(e['origin_type']=='user_note' for e in request.evidence)))
+                key='focus_retries:'+episode_id
+                count=c.execute("SELECT value FROM meta WHERE key=?",(key,)).fetchone()
+                count=int(count[0]) if count else 0
+                if not eligible or count>=2:return False
+                c.execute("INSERT OR REPLACE INTO meta VALUES(?,?)",(key,str(count+1)))
+                c.execute("UPDATE jobs SET status='queued',error=NULL,bytes=? WHERE episode_id=?",(size,episode_id))
+            else:c.execute("INSERT INTO jobs(episode_id,status,bytes) VALUES(?,'queued',?)",(episode_id,size))
             return True
     def status(self):
         return dict(self.store.connection.execute("SELECT status,count(*) FROM jobs GROUP BY status").fetchall())
@@ -88,14 +97,15 @@ class InferenceWorker:
             status='processed' if result is not None else 'unprocessed'
             with self.store.transaction() as c:
                 revision=int(c.execute("SELECT value FROM meta WHERE key='revision'").fetchone()[0])
-                job=c.execute("SELECT status FROM jobs WHERE episode_id=?",(eid,)).fetchone()
+                job=c.execute("SELECT status,error FROM jobs WHERE episode_id=?",(eid,)).fetchone()
                 if not job or job[0]!='running' or revision!=request.revision:
                     status='cancelled'
                 elif result is not None:
                     # Relationship implementation runs inside this transaction.
                     from .relationships import apply_extraction_in_transaction
                     apply_extraction_in_transaction(self.store,eid,result,request)
-                c.execute("UPDATE jobs SET status=?,attempts=?,error=? WHERE episode_id=?",(status,attempt,None if status=='processed' else status,eid))
+                error=None if status=='processed' else (job['error'] if job and job['status']=='cancelled' else status)
+                c.execute("UPDATE jobs SET status=?,attempts=?,error=? WHERE episode_id=?",(status,attempt,error,eid))
                 c.execute("UPDATE episodes SET status=? WHERE id=?",(status,eid))
             return JobResult(eid,status,attempt)
         finally: self.guard.release()

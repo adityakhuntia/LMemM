@@ -104,10 +104,14 @@ All the knobs are in `config.py`.
   non-activating, at status-window level, on all Spaces, so clicking them never takes
   focus from the app you're in.
 - `Tracker.widget_card()` hands it `notes.card(items, current item)` for the last thing
-  you were on. That gives the project, the **left** edits (this thing first), the full
-  **plan** (open, then done) and the **history** (added / done, newest first). Ticking a
-  box calls `Tracker.widget_tick`, which runs `notes.set_done` and saves under the lock.
-- `tick()` refreshes the pill's dot about once a second. While the card is open, it skips
+  you were on. `notes.card_view` / `notes.pill_summary` (plain data, unit-tested in
+  `tests/test_card_view.py`) turn that into what is drawn: the count on the pill, and the card's
+  "here" and "project" views. `widget.py` only draws it. Ticking a note calls `Tracker.widget_tick`,
+  which runs `notes.set_done` and saves under the lock; the note stays struck through for under
+  a second before leaving the card.
+- `Tracker.widget_heard` feeds the pill the words from the open ⌃⌥N note window, and the
+  "Add a note…" row sets `note_request`, so the pill and the hotkey share one path.
+- `tick()` refreshes the pill's count about once a second, and animates it on every tick. While the card is open, it skips
   capture, so the card never gets OCR'd into memory.
 
 ## Context export (context.py)

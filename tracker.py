@@ -320,6 +320,8 @@ class Tracker:
         if self.widget and time.time() - self.last_widget_refresh >= 1:
             self.last_widget_refresh = time.time()
             self.widget.refresh()
+        if self.widget:
+            self.widget.pulse(self.widget_heard())      # waveform + words while the note window is open
         if self.manual_paused:
             return
         if self.widget and self.widget.card_open:
@@ -523,6 +525,10 @@ class Tracker:
         with self.lock:
             cur = self.events[-1] if self.events else None
             return notes.card(self.items, cur["item"]) if cur else None
+
+    def widget_heard(self):
+        """None, or the words said so far while the ⌃⌥N note window is open."""
+        return self.panel.shown if self.panel.open else None
 
     def widget_tick(self, ids, done):
         with self.lock:
@@ -836,7 +842,9 @@ class Tracker:
         hotkey_ok = dictation.register_hotkey(lambda: setattr(self, "note_request", True))
         dictation.ensure_listener()        # build the speech helper now, not on first ⌃⌥N
         if self.show_widget:
-            self.widget = widget.Widget(self.widget_card, self.widget_tick)
+            self.widget = widget.Widget(self.widget_card, self.widget_tick,
+                                        on_add=lambda: setattr(self, "note_request", True),
+                                        heard=self.widget_heard, hotkey=dictation.HOTKEY_LABEL)
         if self.input_monitor:
             self.input_monitor.start(request_permission=True)
             say(f"Input monitoring: {self.input_monitor.status()['state']} · allowed app: VS Code · no key values recorded")

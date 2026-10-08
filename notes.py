@@ -175,3 +175,43 @@ def card(items, item_id):
             "left": left, "plan": plan, "history": history,
             "things": len(members), "visits": sum(i.get("visits", 0) for i in members),
             "seconds": sum(i.get("seconds", 0) for i in members)}
+
+
+def pill_summary(data):
+    """(open notes on the thing in front, text of the first one) for the pill itself.
+    Notes on other things in the project don't light the pill: it is about *here*."""
+    here = [n for n in (data or {}).get("left", []) if n["here"]]
+    return len(here), (here[0]["text"] if here else "")
+
+
+def blank_card(title, app):
+    """The card for a place with no notes (and nothing remembered yet) so the pill can
+    say "No notes here" instead of staying blank."""
+    return {"title": title, "app": app, "project": app, "left": [], "plan": [], "history": [],
+            "things": 0, "visits": 0, "seconds": 0}
+
+
+
+def card_view(data, mode="here", show_done=False, fading=()):
+    """What the pill's card draws, as plain data (widget.py only turns it into views).
+
+    mode "here": the open notes on this thing, plus how many more wait elsewhere in the project.
+    mode "project": every open note on the project grouped by thing, with the done ones
+    behind a "Done · N" row. `fading` holds note ids ticked a moment ago: they stay on
+    screen struck through for a beat instead of vanishing under the cursor."""
+    if data is None:
+        return {"empty": True}
+    fading = set(fading)
+    shown = [n for n in data["plan"] if not n["done"] or n["id"] in fading]
+    row = lambda n: {"id": n["id"], "text": n["text"], "done": bool(n["done"])}
+    if mode == "project":
+        groups = {}
+        for n in sorted(shown, key=lambda n: not n["here"]):
+            groups.setdefault(n["on"], []).append(row(n))
+        done = [row(n) for n in data["plan"] if n["done"] and n["id"] not in fading]
+        return {"mode": "project", "title": data["project"], "caption": f"{len(data['left'])} open",
+                "back": data["title"], "groups": list(groups.items()),
+                "done": done if show_done else [], "done_count": len(done)}
+    return {"mode": "here", "title": data["title"], "caption": data["app"],
+            "rows": [row(n) for n in shown if n["here"]],
+            "more": sum(1 for n in data["left"] if not n["here"]), "project": data["project"]}

@@ -203,6 +203,24 @@ def grab(display):
         return None
 
 
+STRIP_MIN = 360         # points: a browser's tabs, address and bookmarks bars take ~160 before the page starts
+
+
+def grab_strip(bounds, height):
+    """The top of a window as a CGImage (~5 ms), or None; at least STRIP_MIN points so the
+    page's own header (a chat's name) is in it even under a browser's toolbars. Not clipped to the
+    window's height: front() can pick a short helper window of the app (a 159 pt toolbar strip). For the quick
+    "which chat is open?" read, where the whole screen would be wasted work."""
+    try:
+        import Quartz
+        rect = Quartz.CGRectMake(bounds["X"], bounds["Y"], bounds["Width"], max(height, STRIP_MIN))
+        return Quartz.CGWindowListCreateImage(
+            rect, Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID,
+            Quartz.kCGWindowImageNominalResolution | Quartz.kCGWindowImageBoundsIgnoreFraming)
+    except Exception:
+        return None
+
+
 def grab_with_screencapture(display):
     """Fallback if the in-process API is unavailable: the old subprocess route, still
     returned as an in-memory Frame (the temp file is deleted at once)."""
@@ -291,6 +309,13 @@ def next_event(app, timeout=0.25):
         Foundation.NSDefaultRunLoopMode, True)
     if ev is not None:
         app.sendEvent_(ev)
+
+
+def wake(app):
+    """Wake the main loop out of next_event() from any thread, so it runs a tick now."""
+    ev = NSEvent.otherEventWithType_location_modifierFlags_timestamp_windowNumber_context_subtype_data1_data2_(
+        15, (0, 0), 0, 0, 0, None, 0, 0, 0)               # NSEventTypeApplicationDefined
+    app.postEvent_atStart_(ev, True)
 
 
 def quiet_system_logs():

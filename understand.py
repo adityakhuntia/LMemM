@@ -177,6 +177,9 @@ def chat(res, meta, app):
         # the open chat's name sits at the top of the right-hand pane
         head = next((o for o in objs if o["box"][0] > w * 0.33 and top < o["box"][1] < top + 45
                      and len(o["text"]) > 1), None)
+        if head is None and meta.get("quick"):     # a strip: no toolbar found, take the first line of the right pane
+            head = next((o for o in sorted(objs, key=lambda o: o["box"][1])
+                         if o["box"][0] > w * 0.33 and len(o["text"]) > 1), None)
         who = head["text"] if head else None
     else:
         who = meta.get("window") if meta.get("window") not in (None, app) else None

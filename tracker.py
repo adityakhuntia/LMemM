@@ -31,6 +31,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import objc
+import ax
+from AppKit import NSEvent
 
 import activity
 import config
@@ -77,6 +79,13 @@ class Tracker:
         self.items = store.load_items()      # the memory: one entry per thing, across sessions
         self.events = []                     # this session's timeline, pointing at items
         self.notes = []                      # this session's notes
+        self.now = None                      # the quick answer to "what am I on?" (see identify_now)
+        self.quick_q = queue.Queue()
+        self.ocr_apps = {}                   # app -> metadata, for apps whose place can only be told by reading the screen
+        self.last_read = 0.0
+        self.nsapp = None
+        self.ax_now = None                   # the app-reported place (ax.py), when it names a known item
+        self.quick_seq = 0
         self.frame_item = {}                 # capture ts -> memory item it became
         self.lock = threading.Lock()         # the resolver thread and the note window both write memory
         self.q = queue.Queue()
@@ -320,6 +329,8 @@ class Tracker:
         if self.widget and time.time() - self.last_widget_refresh >= 1:
             self.last_widget_refresh = time.time()
             self.widget.refresh()
+        if self.widget:
+            self.widget.pulse(self.widget_heard())      # waveform + words while the note window is open
         if self.manual_paused:
             return
         if self.widget and self.widget.card_open:
@@ -370,6 +381,10 @@ class Tracker:
                     self.trigger("window_change")
                 elif f["window"] != self.last_sig["window"]:
                     self.trigger("tab_change" if f["app"] in config.BROWSERS else "title_change")
+            if f and f["app"] in self.ocr_apps and time.monotonic() - self.last_read > 0.7:
+                self.start_read(f, clear=False)      # keyboard, notifications and redraws don't click
+            if f and self.last_sig and any(f[k] != self.last_sig[k] for k in ("pid", "win_id", "window")):
+                self.identify_now(f)                 # a new app, window or tab
             self.last_sig = f or self.last_sig
 
         if self.pending and now >= self.pending[1]:
@@ -467,6 +482,7 @@ class Tracker:
             "screen": {"w": int(size.width), "h": int(size.height)}, "display": display,
             "image": ts + ".jpg",       # the thumbnail's name, if this frame ends up kept
             "trigger": trigger, "pinned": pinned, "session": self.session,
+            "place": ax.key(f["app"], ax.read(f["pid"], f["app"])),
             "inputs": inputs, "pointer": pointer,
             "window_region": visible_window_region(f["bounds"], macos.display_bounds(display)),
             "capture_start_offset_ns": capture_start_ns - self.origin_ns,
@@ -522,7 +538,141 @@ class Tracker:
         """What the pill's card shows: the project of the thing you're on right now."""
         with self.lock:
             cur = self.events[-1] if self.events else None
+            if self.ax_now and self.ax_now["pid"] == (self.last_sig or {}).get("pid"):
+                # named by the app itself (a labelled input, or the page's URL); an item of None
+                # means a page you have no notes on, which must not show the one you just left
+                if self.ax_now["item"] in self.items:
+                    return notes.card(self.items, self.ax_now["item"])
+                app = (self.last_sig or {}).get("app") or ""
+                return notes.blank_card(app, app)          # a place with no notes: say so
+            # identify_now() answers in well under a second; the full capture (settle + OCR,
+            # ~2 s) is only the fallback, so the pill never shows the thing you just left.
+            front = self.last_sig and (self.last_sig["app"], self.last_sig["window"])
+            if self.now and self.now["raw"] == front:
+                return notes.card(self.items, self.now["item"]) if self.now["item"] in self.items else None
             return notes.card(self.items, cur["item"]) if cur else None
+
+    # ------------------------------------------------------------ "what am I on?", right now
+
+    def set_now(self, raw, item):
+        self.now = {"raw": raw, "item": item, "mono": time.monotonic_ns()}
+
+    def identify_now(self, f):
+        """The pill must follow a switch at once, not after the next capture is OCR'd.
+        Most places are known from metadata alone (URL, tab title, app: no pixels). When an
+        app only shows where you are on screen (a WhatsApp chat), clicks in it start a quick
+        read of the window's top strip instead (see on_click). Either way the answer is only
+        used until the real capture lands."""
+        url, tab_title, _private = macos.browser_info(f["app"])
+        meta = {"app": f["app"], "bundle_id": f["bundle_id"], "window": f["window"], "url": url,
+                "site": re.sub(r"^https?://", "", url or "").split("/")[0] or None, "tab_title": tab_title,
+                "ts": "quick", "image": "quick", "quick": True}
+        st = identity.quick_state(meta)
+        if st is not None:
+            self.ocr_apps.pop(f["app"], None)
+            with self.lock:
+                self.set_now((f["app"], f["window"]), identity.find_item(self.items, st))
+        else:
+            self.ocr_apps[f["app"]] = meta
+            self.start_read(f)               # read the screen for it right away
+        self.last_widget_refresh = 0.0
+
+    def on_click(self, event):
+        """A click in an app whose place is only on screen (a chat list): drop the old answer
+        now, then read the window's header, twice (the screen may still be redrawing)."""
+        front = self.last_sig
+        if front and front["app"] in self.ocr_apps:
+            self.start_read(front)
+
+    def start_read(self, front, clear=True):
+        self.quick_seq += 1
+        if clear:                                               # never show the chat you just left
+            self.set_now((front["app"], front["window"]), None)
+            self.last_widget_refresh = 0.0
+            self.trigger("window_change")    # and a full capture soon: the quick read is only a head start
+        self.last_read = time.monotonic()
+        for delay in ((0.05, 0.3, 0.9) if clear else (0.0,)):
+            self.quick_q.put((self.quick_seq, front["app"], delay))
+
+    def quick_worker(self):
+        while True:
+            job = self.quick_q.get()
+            if job is None:
+                return
+            seq, app, delay = job
+            try:
+                time.sleep(delay)
+                if seq != self.quick_seq:
+                    continue                           # a newer click superseded this read
+                f = macos.front()
+                meta = dict(self.ocr_apps.get(app) or {})
+                if not f or f["app"] != app or not meta or not f["bounds"]:
+                    continue
+                cg = macos.grab_strip(f["bounds"], 240)
+                if cg is None:
+                    continue
+                import Quartz
+                res = resolver.resolve_image(meta, cg, Quartz.CGImageGetWidth(cg), Quartz.CGImageGetHeight(cg), fast=True)
+                st = identity.quick_state(meta, res)
+                if seq != self.quick_seq:
+                    continue
+                with self.lock:
+                    # the rules for a full capture read the header by its position; on a cropped
+                    # strip that can miss, so also look for a chat name we already know
+                    found = identity.find_item(self.items, st) if st else self.known_chat_in(res, understand.SITES.get(meta.get("site")) or f["app"])
+                    if st is None and found is None:
+                        continue
+                    self.set_now((f["app"], f["window"]), found)
+                self.last_widget_refresh = 0.0
+                line(now_hms(), "", f"quick: {st['target'] if st else '(name matched)'} -> {'known' if found else 'no notes yet'}")
+            except Exception as e:                     # best effort: the full capture is the fallback
+                line(now_hms(), "", f"quick identify failed: {e}")
+
+    def known_chat_in(self, res, app):
+        """Id of the chat (of this app) whose name is among the strip's text, or None."""
+        for o in res["objects"]:
+            found = o.get("text") and identity.find_chat(self.items, app, o["text"], threshold=0.9)
+            if found:
+                return found
+        return None
+
+    def ax_loop(self):
+        """Every ~0.1 s: ask the app in front where you are (a millisecond, no pixels). Its
+        focused input's label names a chat or channel; a browser's page URL names a page.
+        When that names an item you've been on, the pill switches to it at once."""
+        last = None
+        while self.running:
+            time.sleep(0.1)
+            try:
+                app = macos.NSWorkspace.sharedWorkspace().frontmostApplication()
+                if app is None:
+                    continue
+                pid, name = app.processIdentifier(), app.localizedName()
+                sig = ax.read(pid, name)
+                key = ax.key(name, sig)
+                page = (sig["doc"], sig["title"]) if sig and not key and sig["doc"] and name in config.BROWSERS else None
+                if (pid, key, page) == last:
+                    continue
+                last = (pid, key, page)
+                with self.lock:
+                    if key:
+                        item = identity.find_place(self.items, key, sig["label"])
+                        self.ax_now = {"pid": pid, "key": key, "item": item} if item else None
+                    elif page:
+                        st = identity.page_state(name, *page)      # the same identity a capture would give it
+                        self.ax_now = ({"pid": pid, "key": None, "item": identity.find_item(self.items, st)}
+                                       if st else None)
+                    else:
+                        self.ax_now = None
+                self.last_widget_refresh = 0.0
+                if self.nsapp is not None:
+                    macos.wake(self.nsapp)              # tick now, not at the next 0.25 s boundary
+            except Exception as e:
+                line(now_hms(), "", f"accessibility read failed: {e}")
+
+    def widget_heard(self):
+        """None, or the words said so far while the ⌃⌥N note window is open."""
+        return self.panel.shown if self.panel.open else None
 
     def widget_tick(self, ids, done):
         with self.lock:
@@ -639,6 +789,7 @@ class Tracker:
 
         # 3. the memory entry for it
         item, frame_used = self.update_item(item, item_id, ref, st, meta, content, pinned)
+        identity.learn_place(item, meta.get("place"))
         self.record_activity(item, act, dt, res)
 
         # 4. the timeline
@@ -666,6 +817,9 @@ class Tracker:
             cur["mostly"] = max(cur["activity"], key=cur["activity"].get)
         cur["_last_cat"] = act["category"]
         cur["_raw"] = (meta.get("app"), meta.get("window"))
+        if (self.now and self.now["raw"] == cur["_raw"]
+                and meta["capture_start_offset_ns"] + self.origin_ns > self.now["mono"]):
+            self.now = None                  # a capture taken after the quick answer: it is the truth
         if act["new_text"] and act["category"] in ("typing", "receiving"):
             line(t, "", f"  {act['category']}: {act['new_text'][0][:80]}")
 
@@ -833,10 +987,13 @@ class Tracker:
         signal.signal(signal.SIGUSR1, lambda *_: setattr(self, "pin", True))
         signal.signal(signal.SIGUSR2, lambda *_: setattr(self, "note_request", True))
         app = dictation.start_app()
+        self.nsapp = app
         hotkey_ok = dictation.register_hotkey(lambda: setattr(self, "note_request", True))
         dictation.ensure_listener()        # build the speech helper now, not on first ⌃⌥N
         if self.show_widget:
-            self.widget = widget.Widget(self.widget_card, self.widget_tick)
+            self.widget = widget.Widget(self.widget_card, self.widget_tick,
+                                        on_add=lambda: setattr(self, "note_request", True),
+                                        heard=self.widget_heard, hotkey=dictation.HOTKEY_LABEL)
         if self.input_monitor:
             self.input_monitor.start(request_permission=True)
             say(f"Input monitoring: {self.input_monitor.status()['state']} · allowed app: VS Code · no key values recorded")
@@ -847,6 +1004,9 @@ class Tracker:
         self._events = macos.subscribe(self)
         self.thread = threading.Thread(target=self.worker, daemon=True)
         self.thread.start()
+        threading.Thread(target=self.quick_worker, daemon=True).start()
+        threading.Thread(target=self.ax_loop, daemon=True).start()
+        self.click_monitor = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(1 << 1, self.on_click)
 
         macos.quiet_system_logs()
         say(f"LMemM is watching  ·  captures on app/tab switches, else every {self.every}s"
@@ -855,6 +1015,8 @@ class Tracker:
              else f"(couldn't register {dictation.HOTKEY_LABEL}: use  python3 lmemm.py note)")
             + "  ·  Ctrl-C stop\n")
         self.last_sig = macos.front()
+        if self.last_sig:
+            self.identify_now(self.last_sig)     # so the app you start in is followed too
         self.last_capture = time.time()      # the "start" trigger takes the first frame
         self.trigger("start")
         try:

@@ -119,18 +119,18 @@ Q3 plan  (1 open)
 
 ## The pill
 
-A tiny translucent bar sits at the bottom of your screen, like Wispr Flow. It never
-takes focus and shows over every app, Space and full-screen window. An orange dot
-means the thing you're on has edits left.
+A thin pill sits at the bottom of your screen, like Wispr Flow. It never takes focus,
+follows light/dark, and shows over every app, Space and full-screen window.
 
-Click it for a small card about the project of whatever you're on:
+- Nothing waiting: it is nearly invisible.
+- Notes waiting on the thing you're on: it shows a number. Hover to see the first one.
+- While you dictate a note (⌃⌥N): a waveform and the words so far.
 
-- **Left** shows the edits still to do, with this thing's first. Tick one and it's done,
-  so next time you only see what's left.
-- **Plan** shows every note on the project (open, then done, each with when) and its
-  history: notes added and ticked off, newest first.
-
-Click the pill again, or ×, to close it. Start with `--no-widget` to hide it.
+Click it for a small card about what you're on. It lists that thing's open notes: click
+one to tick it off (it fades out). "Add a note…" opens the dictation window. If the
+project has notes on other things, "N more in <project>" shows them grouped by thing,
+with finished notes behind "Done". Click the pill again or anywhere else to close it.
+Start with `--no-widget` to hide it.
 
 ## What it remembers
 

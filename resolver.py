@@ -301,6 +301,8 @@ def resolve_frame(meta, frame, fast=None):
 
 def resolve_image(meta, source, w, h, fast=None):
     fast = FAST_OCR if fast is None else fast
+    if meta.get("quick"):
+        fast = False                # the quick strip is small, so accurate OCR is still cheap, and names need it
     t0 = time.time()
     lines, rects, labels = run_vision(source, w, h, fast)
     objs, panels = classify(lines, rects, meta, w, h)

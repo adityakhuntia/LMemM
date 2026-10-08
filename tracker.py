@@ -77,6 +77,7 @@ class Tracker:
         self.items = store.load_items()      # the memory: one entry per thing, across sessions
         self.events = []                     # this session's timeline, pointing at items
         self.notes = []                      # this session's notes
+        self.raw_item = {}                   # (app, window title) -> the item it last resolved to
         self.frame_item = {}                 # capture ts -> memory item it became
         self.lock = threading.Lock()         # the resolver thread and the note window both write memory
         self.q = queue.Queue()
@@ -372,6 +373,8 @@ class Tracker:
                     self.trigger("window_change")
                 elif f["window"] != self.last_sig["window"]:
                     self.trigger("tab_change" if f["app"] in config.BROWSERS else "title_change")
+            if f and self.last_sig and f != self.last_sig:
+                self.last_widget_refresh = 0.0       # the pill follows a switch at once
             self.last_sig = f or self.last_sig
 
         if self.pending and now >= self.pending[1]:
@@ -524,6 +527,12 @@ class Tracker:
         """What the pill's card shows: the project of the thing you're on right now."""
         with self.lock:
             cur = self.events[-1] if self.events else None
+            # A tab or window you've been on before is known by its title straight away;
+            # waiting for the next capture to be read (~2 s) made the pill show the old one's.
+            front = self.last_sig and (self.last_sig["app"], self.last_sig["window"])
+            known = self.raw_item.get(front)
+            if known in self.items:
+                return notes.card(self.items, known)
             return notes.card(self.items, cur["item"]) if cur else None
 
     def widget_heard(self):
@@ -672,6 +681,7 @@ class Tracker:
             cur["mostly"] = max(cur["activity"], key=cur["activity"].get)
         cur["_last_cat"] = act["category"]
         cur["_raw"] = (meta.get("app"), meta.get("window"))
+        self.raw_item[cur["_raw"]] = item_id
         if act["new_text"] and act["category"] in ("typing", "receiving"):
             line(t, "", f"  {act['category']}: {act['new_text'][0][:80]}")
 

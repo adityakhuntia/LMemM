@@ -81,6 +81,7 @@ class Tracker:
         self.now = None                      # the quick answer to "what am I on?" (see identify_now)
         self.quick_q = queue.Queue()
         self.ocr_apps = {}                   # app -> metadata, for apps whose place can only be told by reading the screen
+        self.last_read = 0.0
         self.quick_seq = 0
         self.frame_item = {}                 # capture ts -> memory item it became
         self.lock = threading.Lock()         # the resolver thread and the note window both write memory
@@ -377,6 +378,8 @@ class Tracker:
                     self.trigger("window_change")
                 elif f["window"] != self.last_sig["window"]:
                     self.trigger("tab_change" if f["app"] in config.BROWSERS else "title_change")
+            if f and f["app"] in self.ocr_apps and time.monotonic() - self.last_read > 0.7:
+                self.start_read(f, clear=False)      # keyboard, notifications and redraws don't click
             if f and self.last_sig and any(f[k] != self.last_sig[k] for k in ("pid", "win_id", "window")):
                 self.identify_now(f)                 # a new app, window or tab
             self.last_sig = f or self.last_sig
@@ -570,12 +573,14 @@ class Tracker:
         if front and front["app"] in self.ocr_apps:
             self.start_read(front)
 
-    def start_read(self, front):
+    def start_read(self, front, clear=True):
         self.quick_seq += 1
-        self.set_now((front["app"], front["window"]), None)     # never show the chat you just left
-        self.last_widget_refresh = 0.0
-        self.trigger("window_change")        # and a full capture soon: the quick read is only a head start
-        for delay in (0.05, 0.3):
+        if clear:                                               # never show the chat you just left
+            self.set_now((front["app"], front["window"]), None)
+            self.last_widget_refresh = 0.0
+            self.trigger("window_change")    # and a full capture soon: the quick read is only a head start
+        self.last_read = time.monotonic()
+        for delay in ((0.05, 0.3, 0.9) if clear else (0.0,)):
             self.quick_q.put((self.quick_seq, front["app"], delay))
 
     def quick_worker(self):
@@ -592,21 +597,33 @@ class Tracker:
                 meta = dict(self.ocr_apps.get(app) or {})
                 if not f or f["app"] != app or not meta or not f["bounds"]:
                     continue
-                cg = macos.grab_strip(f["bounds"], 120)
+                cg = macos.grab_strip(f["bounds"], 240)
                 if cg is None:
                     continue
                 import Quartz
                 res = resolver.resolve_image(meta, cg, Quartz.CGImageGetWidth(cg), Quartz.CGImageGetHeight(cg), fast=True)
                 st = identity.quick_state(meta, res)
-                if st is None or seq != self.quick_seq:
+                if seq != self.quick_seq:
                     continue
                 with self.lock:
-                    item = identity.find_item(self.items, st)
-                    self.set_now((f["app"], f["window"]), item)
+                    # the rules for a full capture read the header by its position; on a cropped
+                    # strip that can miss, so also look for a chat name we already know
+                    found = identity.find_item(self.items, st) if st else self.known_chat_in(res, understand.SITES.get(meta.get("site")) or f["app"])
+                    if st is None and found is None:
+                        continue
+                    self.set_now((f["app"], f["window"]), found)
                 self.last_widget_refresh = 0.0
-                line(now_hms(), "", f"quick: {st['target']} -> {'known' if item else 'no notes yet'}")
+                line(now_hms(), "", f"quick: {st['target'] if st else '(name matched)'} -> {'known' if found else 'no notes yet'}")
             except Exception as e:                     # best effort: the full capture is the fallback
                 line(now_hms(), "", f"quick identify failed: {e}")
+
+    def known_chat_in(self, res, app):
+        """Id of the chat (of this app) whose name is among the strip's text, or None."""
+        for o in res["objects"]:
+            found = o.get("text") and identity.find_chat(self.items, app, o["text"], threshold=0.9)
+            if found:
+                return found
+        return None
 
     def widget_heard(self):
         """None, or the words said so far while the ⌃⌥N note window is open."""

@@ -114,8 +114,47 @@ def quick_state(meta, res=None):
     return st if st.get("target") else None
 
 
+def _squash(name):
+    """A chat name as OCR-proof letters: lowercase, no punctuation, look-alikes merged."""
+    s = re.sub(r"[^a-z0-9]", "", (name or "").lower())
+    return s.translate(str.maketrans("oli", "011"))
+
+
+def open_notes(item):
+    done = item.get("notes_done", {})
+    return sum(1 for n in item.get("notes", []) if not done.get(notes_id(n)))
+
+
+def notes_id(n):
+    import notes
+    return notes.note_id(n)
+
+
+def find_chat(items, app, name, threshold=0.85):
+    """The chat item for a name read quickly off the screen. Quick OCR misspells names
+    ("Sehen Dey 180DC26" / "1800C26"), and each spelling became its own item, so match by
+    similarity and prefer the spelling that holds open notes."""
+    want = _squash(name)
+    if len(want) < 2:
+        return None
+    close = []
+    for i in items.values():
+        if i.get("app") != app or i.get("kind") != "chat":
+            continue
+        have = _squash(i.get("title") or "")
+        if have and (have == want or SequenceMatcher(None, have, want).ratio() >= threshold):
+            close.append(i)
+    if not close:
+        return None
+    return max(close, key=lambda i: (open_notes(i), i["last_seen"]))["id"]
+
+
 def find_item(items, st):
     """Id of the most recent item at the place `st` names, or None if you've never been there."""
+    if st.get("kind") == "chat" and st.get("target"):
+        fuzzy = find_chat(items, st["app"], st["target"])
+        if fuzzy:
+            return fuzzy
     ref = understand.ref(st)
     seen = [i for i in items.values() if ref in i.get("refs", [i.get("ref")])]
     return max(seen, key=lambda i: i["last_seen"])["id"] if seen else None

@@ -105,7 +105,7 @@ class TreeTests(unittest.TestCase):
         reg, items, ids = world()
         projects.archive(reg, ids["q3"])
         state = pm.press(reg, pm.new_state(), "toggle", ids["work"])
-        self.assertEqual([r["name"] for r in pm.view(reg, items, state, NOW)["side"]["tree"]], ["Work", "Home"])
+        self.assertEqual([r["name"] for r in pm.view(reg, items, state, NOW)["side"]["tree"]], ["Work", "Home", "Archived"])
 
     def test_each_level_pages_itself_and_nothing_is_dropped(self):
         reg = projects.empty()
@@ -374,6 +374,47 @@ class NotesInTheWindowTests(unittest.TestCase):
         self.assertIn("('item', item_id)", add)
         self.assertIn("self.widget_tick, self.window_add_note", ast.unparse(fns["open_window"]))
         self.assertIn("main_window.tick()", ast.unparse(fns["tick"]))
+
+
+class ArchivedTests(unittest.TestCase):
+    def test_archived_projects_wait_on_their_own_page_and_come_back_whole(self):
+        reg, items, ids = world()
+        projects.archive(reg, ids["q3"])
+        projects.archive(reg, ids["budget"])                                   # already hidden by Q3 plan
+        v = pm.view(reg, items, pm.press(reg, pm.new_state(), "archived"), NOW)
+        self.assertEqual(v["side"]["archived"], 1)                             # one thing to bring back, not two
+        page = v["main"]
+        self.assertEqual((page["kind"], [(r["name"], r["where"]) for r in page["rows"]]), ("archived", [("Q3 plan", "Work")]))
+        self.assertIsNone(page["empty"])
+        projects.restore(reg, ids["q3"])
+        again = pm.view(reg, items, pm.press(reg, pm.new_state(), "archived"), NOW)
+        self.assertEqual(again["side"]["archived"], 1)                         # Budget was archived on its own
+        self.assertEqual(again["main"]["rows"][0]["name"], "Budget")
+
+    def test_the_tree_keeps_an_archived_folder_that_opens_to_the_projects(self):
+        reg, items, ids = world()
+        self.assertFalse([r for r in pm.view(reg, items, pm.new_state(), NOW)["side"]["tree"] if r.get("folder")])
+        projects.archive(reg, ids["q3"])
+        closed = pm.view(reg, items, pm.new_state(), NOW)["side"]["tree"]
+        self.assertEqual([(r["name"], r["expanded"], r["count"]) for r in closed if r.get("folder")], [("Archived", False, 1)])
+        state = pm.press(reg, pm.new_state(), "archived")                      # opening the folder also expands it
+        tree = pm.view(reg, items, state, NOW)["side"]["tree"]
+        folder = [r for r in tree if r.get("folder")][0]
+        self.assertEqual((folder["expanded"], folder["selected"]), (True, True))
+        self.assertEqual([r["name"] for r in tree if r.get("archived")], ["Q3 plan"])
+
+    def test_an_archived_project_opens_and_says_it_is_archived(self):
+        reg, items, ids = world()
+        projects.archive(reg, ids["q3"])
+        page = pm.view(reg, items, pm.press(reg, pm.new_state(), "go", ids["q3"]), NOW)["main"]
+        self.assertEqual((page["kind"], page["title"], page["archived"]), ("project", "Q3 plan", True))
+        live = pm.view(reg, items, pm.press(reg, pm.new_state(), "go", ids["work"]), NOW)["main"]
+        self.assertFalse(live["archived"])
+
+    def test_nothing_archived_says_so(self):
+        reg, items, ids = world()
+        page = pm.view(reg, items, pm.press(reg, pm.new_state(), "archived"), NOW)["main"]
+        self.assertEqual(page["empty"]["title"], "Nothing archived")
 
 
 class SearchTests(unittest.TestCase):

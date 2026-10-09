@@ -631,6 +631,29 @@ class Tracker:
                 self.save(force=True)
         line(at[11:19], (item or {}).get("app", "?"), "note saved" if item else "note not saved: that thing is gone")
 
+    def window_project(self, action, args):
+        """A change to the project tree made in the window (project_actions.py). Returns what the
+        window shows and needs for Undo; ValueError says why not, in words."""
+        import project_actions
+        import projects
+        with self.lock:
+            reg = projects.load()
+            result = project_actions.do(reg, self.items, action, **args)
+            projects.save(reg)
+            self.save(force=True)
+        line(now_hms(), "", result["message"])
+        return result
+
+    def window_project_undo(self, undo):
+        import project_actions
+        import projects
+        with self.lock:
+            reg = projects.load()
+            project_actions.undo(reg, self.items, undo)
+            projects.save(reg)
+            self.save(force=True)
+        line(now_hms(), "", "undone")
+
     def widget_refresh_soon(self):
         self.last_widget_refresh = 0.0
 
@@ -693,7 +716,8 @@ class Tracker:
 
     def open_window(self):
         if self.main_window is None:
-            self.main_window = main_window.MainWindow(self.menu_pick, self.page_data, self.widget_tick, self.window_add_note)   # its button sends a menu row id
+            self.main_window = main_window.MainWindow(self.menu_pick, self.page_data, self.widget_tick, self.window_add_note,
+                                                   self.window_project, self.window_project_undo)   # its button sends a menu row id
         self.adopt_projects()                       # things filed by name since the last time
         self.main_window.show(self.window_view(self.widget_status()))
 

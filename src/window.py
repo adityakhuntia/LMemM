@@ -18,6 +18,7 @@ from AppKit import (NSApplication, NSBezierPath, NSColor, NSImageView, NSMakePoi
 import apps
 import notes
 import page_model
+import project_actions
 import rules
 import setup_kit as kit
 import window_model
@@ -85,11 +86,15 @@ class MainWindow:
     """on_press(row id) is called when the banner's button is pressed (ids the menu already knows).
     data() returns (project registry, things by id) for the page."""
 
-    def __init__(self, on_press, data, on_tick=None, on_add_note=None):
+    def __init__(self, on_press, data, on_tick=None, on_add_note=None, on_project=None, on_project_undo=None):
         self.on_press = on_press
         self.data = data
         self.on_tick = on_tick or (lambda ids, done: None)               # tick or reopen notes (the pill's own function)
         self.on_add_note = on_add_note or (lambda item_id, text: None)
+        self.on_project = on_project                                   # (action, args) -> {"message", "go", "undo"}; raises ValueError
+        self.on_project_undo = on_project_undo or (lambda undo: None)
+        self.dialog = None                                             # the question or form on screen, if any
+        self.done = None                                               # {"message", "undo", "until"}: the last project change
         self.flow = rules.FinishFlow()                                 # hold, fold, Undo: the pill's rules (R10)
         self.flow_sig = None
         self.item_here = None
@@ -140,6 +145,19 @@ class MainWindow:
         self.toast_host = _Flipped.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 10))
         self.toast_host.setHidden_(True)
         self.root.addSubview_(self.toast_host)
+        self.side_foot = _Flipped.alloc().initWithFrame_(NSMakeRect(0, H - 48, SIDE_W, 48))
+        self.root.addSubview_(self.side_foot)
+        self.overlay = _Flipped.alloc().initWithFrame_(NSMakeRect(0, 0, W, H))
+        self.overlay.setHidden_(True)
+        self.root.addSubview_(self.overlay)
+        self.dlg_typing = _Fields.alloc().initWithChange_submit_cancel_(
+            self._dialog_typed, lambda text: self._dialog_submit(), self.close_dialog)
+        self.dlg_field = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 10))
+        self.dlg_field.setBezeled_(True)
+        self.dlg_field.setBezelStyle_(1)
+        self.dlg_field.setDelegate_(self.dlg_typing)
+        self.dlg_field.setHidden_(True)
+        self.overlay.addSubview_(self.dlg_field)
         self.window.center()
 
     # ------------------------------------------------------------ the loop calls these
@@ -176,9 +194,13 @@ class MainWindow:
         """Called a few times a second by the loop: a ticked note's hold and fold, and the Undo line,
         change with the clock, not with a press."""
         if self.visible():
-            sig = self.flow.signature(time.time())
-            if sig != self.flow_sig:
+            if self.flow_signature() != self.flow_sig:
                 self.render()
+
+    def flow_signature(self):
+        """Everything that changes with the clock: a ticked note's hold, and the line at the bottom."""
+        now = time.time()
+        return (self.flow.signature(now), bool(self.done and now < self.done["until"]))
 
     def tick_note(self, nid, done):
         """One tap flips a note (R10). A note that is folding away ignores taps."""
@@ -233,7 +255,7 @@ class MainWindow:
         reg, items = self.data()
         now = time.time()
         page = page_model.view(reg, items, self.nav, fading=self.flow.holding(now))
-        self.flow_sig = self.flow.signature(now)
+        self.flow_sig = self.flow_signature()
         sig = repr((window_model.signature(self.banner), page, self.flow_sig))
         if sig == self.shown:
             return
@@ -248,7 +270,8 @@ class MainWindow:
         bar = 62 if thing else 0                                   # the note field sits under the page
         self._toast(now, bar)
         self.search.setFrame_(NSMakeRect(16, TOP + 10, SIDE_W - 32, 28))
-        self.side_scroll.setFrame_(NSMakeRect(0, TOP + 52, SIDE_W, H - TOP - 52))
+        self.side_scroll.setFrame_(NSMakeRect(0, TOP + 52, SIDE_W, H - TOP - 52 - 48))
+        self._side_foot(page["side"])
         self.head_host.setFrame_(NSMakeRect(SIDE_W, top, W - SIDE_W, head))
         self.main_scroll.setFrame_(NSMakeRect(SIDE_W, top + head, W - SIDE_W, H - top - head - bar))
         here = (self.nav["view"], self.nav["pid"], self.nav["q"], self.nav["tid"])
@@ -274,17 +297,20 @@ class MainWindow:
         for sub in list(self.toast_host.subviews()):
             sub.removeFromSuperview()
         toast = self.flow.toast(now)
+        undo = self.undo
+        if self.done and now < self.done["until"]:
+            toast, undo = (self.done["message"], bool(self.done.get("undo"))), self.undo_project
         self.toast_host.setHidden_(toast is None)
         if toast is None:
             return
         text, undoable = toast
-        width = kit.text_width(text, 13, 500) + (74 if undoable else 36)
+        width = min(kit.text_width(text, 13, 500) + (74 if undoable else 36), MAIN_W)
         self.toast_host.setFrame_(NSMakeRect(SIDE_W + (W - SIDE_W - width) / 2, H - bar - 54, width, 36))
         pill = self._tap(self.toast_host, 0, 0, width, 36, lambda: None)
         pill.tint = NSColor.colorWithWhite_alpha_(0.12, 0.94)
         kit.put_text(pill, text, 18, 0, width - 36, 13, 500, NSColor.whiteColor(), wrap=False, height=36, middle=True)
         if undoable:
-            link = self._tap(pill, width - 62, 0, 56, 36, self.undo)
+            link = self._tap(pill, width - 62, 0, 56, 36, undo)
             kit.put_text(link, "Undo", 0, 0, 56, 13, 600, NSColor.colorWithRed_green_blue_alpha_(0.55, 0.75, 1.0, 1.0),
                          align=kit.CENTER, wrap=False, height=36, middle=True)
 
@@ -312,6 +338,185 @@ class MainWindow:
                        lambda: self.on_press(row), kind="outline", size=13, weight=600)
         self.banner_host.setFrame_(NSMakeRect(SIDE_W, TOP + 6, W - SIDE_W, height))
         return TOP + 6 + height + 6
+
+    # ------------------------------------------------------------ changing projects
+
+    def project_action(self, action, **args):
+        """Do a project change now. Returns True when it worked; on a ValueError the sentence is shown."""
+        if self.on_project is None:
+            return False
+        try:
+            result = self.on_project(action, args)
+        except ValueError as error:
+            if self.dialog:
+                self.dialog["error"] = str(error)
+                self._dialog()
+            else:
+                self.done = {"message": str(error), "undo": None, "until": time.time() + 5}
+                self.render_now()
+            return False
+        self.close_dialog()
+        self.done = {"message": result["message"], "undo": result["undo"], "until": time.time() + 8}
+        self.press("go", result["go"]) if result["go"] else self.press("home")
+        self.render_now()
+        return True
+
+    def render_now(self):
+        self.shown = None
+        self.render()
+
+    def undo_project(self):
+        if self.done and self.done.get("undo"):
+            self.on_project_undo(self.done["undo"])
+        self.done = None
+        self.render_now()
+
+    def _reg(self):
+        return self.data()[0]
+
+    def open_name(self, action, pid=None, parent=None):
+        reg = self._reg()
+        title = {"new": "New project" if parent is None else f"New sub-project in “{reg['projects'][parent]['name']}”",
+                 "rename": "Rename project"}[action]
+        self.dialog = {"kind": "name", "action": action, "pid": pid, "parent": parent, "title": title, "error": "",
+                       "value": reg["projects"][pid]["name"] if action == "rename" else ""}
+        self._dialog(focus=True)
+
+    def open_menu(self, pid):
+        self.dialog = {"kind": "menu", "pid": pid}
+        self._dialog()
+
+    def open_pick(self, action, pid):
+        self.dialog = {"kind": "pick", "action": action, "pid": pid, "query": "", "error": ""}
+        self._dialog(focus=True)
+
+    def open_ask(self, action, pid, target=None):
+        reg, items = self.data()
+        try:
+            asking = project_actions.plan(reg, items, action, pid, target)
+        except ValueError as error:
+            self.dialog = {"kind": "ask", "action": action, "pid": pid, "target": target, "error": str(error),
+                           "plan": {"title": "That can't be done", "text": str(error), "button": None}}
+        else:
+            self.dialog = {"kind": "ask", "action": action, "pid": pid, "target": target, "error": "", "plan": asking}
+        self._dialog()
+
+    def close_dialog(self):
+        self.dialog = None
+        self._dialog()
+
+    def _dialog_typed(self, text):
+        if self.dialog and self.dialog["kind"] == "pick":
+            self.dialog["query"] = text
+            self._dialog()
+
+    def _dialog_submit(self):
+        d = self.dialog
+        if not d or d["kind"] != "name":
+            return
+        name = self.dlg_field.stringValue()
+        if d["action"] == "new":
+            self.project_action("new", name=name, parent=d["parent"])
+        else:
+            self.project_action("rename", pid=d["pid"], name=name)
+
+    def _dialog(self, focus=False):
+        """Draw the question or form over the page (or take it away). The text field is built once
+        and only moved, so typing is never interrupted."""
+        for sub in list(self.overlay.subviews()):
+            if sub is not self.dlg_field:
+                sub.removeFromSuperview()
+        d = self.dialog
+        self.overlay.setHidden_(d is None)
+        self.dlg_field.setHidden_(True)
+        if d is None:
+            return
+        self._tap(self.overlay, 0, 0, W, H, self.close_dialog).tint = NSColor.colorWithWhite_alpha_(0.0, 0.32)
+        cw, cx, cy = 460, (W - 460) / 2, 120
+        card = self._tap(self.overlay, cx, cy, cw, 100, lambda: None)
+        card.tint = kit.card_background()
+        reg = self._reg()
+        y = 24
+        if d["kind"] == "name":
+            kit.put_text(card, d["title"], 24, y, cw - 48, 18, 700, wrap=False, height=26)
+            y += 42
+            self._field_at(cx + 24, cy + y, cw - 48, d["value"] if focus else None, "Name")
+            y += 44
+            if d["error"]:
+                y += kit.put_text(card, d["error"], 24, y, cw - 48, 13, 500) + 12
+            y = self._dialog_buttons(card, cw, y + 6, "Cancel", "Save" if d["action"] == "rename" else "Make project", self._dialog_submit)
+        elif d["kind"] == "menu":
+            name = reg["projects"][d["pid"]]["name"]
+            kit.put_text(card, name, 24, y, cw - 48, 18, 700, wrap=False, height=26)
+            y += 40
+            for label, symbol, call in (
+                    ("Rename…", "pencil", lambda: self.open_name("rename", d["pid"])),
+                    ("Move to…", "arrow.turn.down.right", lambda: self.open_pick("move", d["pid"])),
+                    ("Merge into…", "arrow.triangle.merge", lambda: self.open_pick("merge", d["pid"])),
+                    ("Archive", "archivebox", lambda: (self.close_dialog(), self.project_action("archive", pid=d["pid"]))),
+                    ("Delete…", "trash", lambda: self.open_ask("delete", d["pid"]))):
+                row = self._tap(card, 12, y, cw - 24, 40, call)
+                kit.tile(row, (symbol, "circle"), kit.ink(), 8, 7, 26)
+                kit.put_text(row, label, 46, 0, cw - 24 - 60, 14, 500, wrap=False, height=40, middle=True)
+                y += 42
+            y += 12
+        elif d["kind"] == "pick":
+            name = reg["projects"][d["pid"]]["name"]
+            kit.put_text(card, (f"Move “{name}” to…" if d["action"] == "move" else f"Merge “{name}” into…"), 24, y, cw - 48, 18, 700, wrap=False, height=26)
+            y += 42
+            self._field_at(cx + 24, cy + y, cw - 48, "" if focus else None, "Search projects")
+            y += 44
+            found = project_actions.targets(reg, d["pid"], d["action"], d["query"])
+            for r in found["rows"][:7]:
+                row = self._tap(card, 12, y, cw - 24, 44, (lambda t=r["id"]: self._picked(t)))
+                if r["id"] is None:
+                    kit.tile(row, ("arrow.up.to.line", "tray.fill"), kit.ink(), 8, 7, 30)
+                else:
+                    self._project_icon(row, page_model.hue(r["id"]), 8, 7, 30)
+                kit.put_text(row, r["name"], 48, 4, cw - 24 - 60, 14, 600, wrap=False, height=20)
+                kit.put_text(row, r["path"], 48, 23, cw - 24 - 60, 12, 400, kit.mute(), wrap=False, height=16)
+                y += 46
+            left = found["more"] + max(0, len(found["rows"]) - 7)
+            if left:
+                kit.put_text(card, f"{left} more. Keep typing to narrow it.", 24, y + 2, cw - 48, 12, 400, kit.mute(), wrap=False, height=18)
+                y += 26
+            if not found["rows"]:
+                kit.put_text(card, "No place to put it there.", 24, y + 2, cw - 48, 13, 400, kit.mute(), wrap=False, height=20)
+                y += 28
+            y = self._dialog_buttons(card, cw, y + 10, "Cancel", None, None)
+        elif d["kind"] == "ask":
+            plan = d["plan"]
+            y += kit.put_text(card, plan["title"], 24, y, cw - 48, 17, 700) + 10
+            y += kit.put_text(card, plan["text"], 24, y, cw - 48, 13, 400, kit.mute()) + 18
+            action = lambda: self.project_action(d["action"], pid=d["pid"], target=d["target"])
+            y = self._dialog_buttons(card, cw, y, "Cancel", plan["button"], action if plan["button"] else None)
+        card.setFrame_(NSMakeRect(cx, cy, cw, y + 22))
+        if not self.dlg_field.isHidden():                          # the field was added first: bring it above the backdrop and card
+            self.dlg_field.removeFromSuperview()
+            self.overlay.addSubview_(self.dlg_field)
+        if focus:
+            self.window.makeFirstResponder_(self.dlg_field)
+
+    def _field_at(self, x, y, w, value, placeholder):
+        """Move the one text field into the dialog. `value` replaces its text; None leaves what was typed."""
+        self.dlg_field.setFrame_(NSMakeRect(x, y, w, 30))
+        self.dlg_field.setPlaceholderString_(placeholder)
+        if value is not None:
+            self.dlg_field.setStringValue_(value)
+        self.dlg_field.setHidden_(False)
+
+    def _dialog_buttons(self, card, cw, y, cancel, go, call):
+        kit.button(card, cancel, cw - 24 - 110 - (8 + 140 if go else 0), y, 110, 36, self.close_dialog, kind="quiet", size=13, weight=600)
+        if go:
+            kit.button(card, go, cw - 24 - 140, y, 140, 36, call, kind="primary", size=13, weight=600)
+        return y + 36
+
+    def _picked(self, target):
+        d = self.dialog
+        if d["action"] == "move":
+            self.project_action("move", pid=d["pid"], parent=target)
+        else:
+            self.open_ask("merge", d["pid"], target)
 
     # ------------------------------------------------------------ icons
 
@@ -399,13 +604,18 @@ class MainWindow:
                 self._link(doc, row["name"], x + 18, y, (lambda m=more: self.press("more_side", m)), size=12)
                 y += 26
                 continue
-            tap = self._tap(doc, 8, y, SIDE_W - 16, 28, (lambda r=row: self.press("go", r["id"])), fill=row["selected"])
+            call = (lambda: self.press("archived")) if row.get("folder") else (lambda r=row: self.press("go", r["id"]))
+            tap = self._tap(doc, 8, y, SIDE_W - 16, 28, call, fill=row["selected"])
             if row["expandable"]:
                 caret = self._tap(tap, x - 8, 0, 22, 28, (lambda r=row: self.press("toggle", r["id"])))
                 kit.put_text(caret, "▾" if row["expanded"] else "▸", 0, 0, 22, 11, 600, kit.mute(), align=kit.CENTER,
                              wrap=False, height=28, middle=True)
-            self._project_icon(tap, row["hue"], x + 16, 4, 20)
-            kit.put_text(tap, row["name"], x + 42, 0, SIDE_W - 16 - x - 42 - 40, 13, 500, wrap=False, height=28, middle=True)
+            if row.get("folder"):
+                kit.tile(tap, ("archivebox.fill", "tray.fill"), kit.mute(), x + 16, 4, 20)
+            else:
+                self._project_icon(tap, row["hue"], x + 16, 4, 20)
+            kit.put_text(tap, row["name"], x + 42, 0, SIDE_W - 16 - x - 42 - 40, 13, 500,
+                         kit.mute() if row.get("archived") else None, wrap=False, height=28, middle=True)
             if row["count"]:
                 kit.put_text(tap, str(row["count"]), SIDE_W - 16 - 38, 0, 30, 12, 400, kit.mute(), align=RIGHT,
                              wrap=False, height=28, middle=True)
@@ -423,7 +633,7 @@ class MainWindow:
             return self._things(doc, page, x, 6, w)
         y = 30
         kind = page["kind"]
-        if kind in ("search", "needs", "thing"):
+        if kind in ("search", "needs", "thing", "archived"):
             self._link(doc, "‹ Back", x - 6, y - 8, lambda: self.back(kind))
             y += 24
         if kind == "project":
@@ -435,17 +645,21 @@ class MainWindow:
         elif kind == "thing":
             self._app_icon(doc, page["app"], x, y - 2, 40)
             tx = x + 54
-        elif kind in ("home", "needs"):
-            kit.tile(doc, ("square.stack.3d.up.fill", "folder.fill") if kind == "home" else ("bell.badge.fill", "bell.fill"),
-                     kit.ink(), x, y - 2, 40)
+        elif kind in ("home", "needs", "archived"):
+            kit.tile(doc, {"home": ("square.stack.3d.up.fill", "folder.fill"), "needs": ("bell.badge.fill", "bell.fill"),
+                           "archived": ("archivebox.fill", "tray.fill")}[kind], kit.ink(), x, y - 2, 40)
             tx = x + 54
         kit.put_text(doc, page["title"], tx, y, w - (tx - x), 26, 700, wrap=False, height=34)
         y += 36
         if page.get("meta"):
             self._label(doc, page["meta"], tx, y, w - (tx - x), size=13, weight=400)
             y += 34
+        if kind == "home":
+            kit.button(doc, "+ New project", x + w - 150, 30, 150, 34, lambda: self.open_name("new"), kind="quiet", size=13, weight=600)
+        if kind == "project":
+            self._project_actions(doc, x + w, 28, page["pid"])
         build = {"home": self._home, "project": self._project, "needs": self._needs, "search": self._search,
-                 "thing": self._thing_page}[kind]
+                 "thing": self._thing_page, "archived": self._archived}[kind]
         return build(doc, page, x, y + 6, w)
 
     def _crumbs(self, doc, chain, x, y):
@@ -542,6 +756,34 @@ class MainWindow:
         """A project with nothing in it yet (one with things is split: _head above, _things below)."""
         return self._empty(doc, page["empty"], x, y, w)
 
+    def _project_actions(self, parent, right, y, pid):
+        """"+ Sub-project" and the "…" menu, at the right of a project's title."""
+        kit.button(parent, "⋯", right - 40, y, 40, 32, lambda: self.open_menu(pid), kind="quiet", size=16, weight=700)
+        kit.button(parent, "+ Sub-project", right - 40 - 8 - 120, y, 120, 32, lambda: self.open_name("new", parent=pid),
+                   kind="quiet", size=13, weight=600)
+
+    def _side_foot(self, side):
+        """Pinned under the tree: make a project."""
+        for sub in list(self.side_foot.subviews()):
+            sub.removeFromSuperview()
+        self.side_foot.setFrame_(NSMakeRect(0, H - 48, SIDE_W, 48))
+        tap = self._tap(self.side_foot, 8, 8, SIDE_W - 16, 34, lambda: self.open_name("new"))
+        kit.tile(tap, ("plus.circle.fill", "plus"), kit.ink(), 6, 5, 24)
+        kit.put_text(tap, "New project", 40, 0, 110, 13, 500, wrap=False, height=34, middle=True)
+
+    def _archived(self, doc, page, x, y, w):
+        if page["empty"]:
+            return self._empty(doc, page["empty"], x, y, w, symbol=("archivebox.fill", "tray.fill"))
+        for r in page["rows"]:
+            tap = self._tap(doc, x, y, w, 56, (lambda i=r["id"]: self.press("go", i)), fill=True)
+            self._project_icon(tap, r["hue"], 12, 12, 32)
+            kit.put_text(tap, r["name"], 56, 9, w - 56 - 110, 14, 600, wrap=False, height=20)
+            kit.put_text(tap, (r["where"] + " · " if r["where"] else "") + r["line"], 56, 30, w - 56 - 110, 12, 400, kit.mute(), wrap=False, height=16)
+            kit.button(tap, "Bring back", w - 100, 11, 88, 34, (lambda i=r["id"]: self.project_action("restore", pid=i)),
+                       kind="outline", size=12, weight=600)
+            y += 64
+        return y
+
     # The top of a project page stays where it is; only the list of things under it scrolls.
 
     def _no_head(self):
@@ -557,7 +799,12 @@ class MainWindow:
         x, w = PAD, MAIN_W
         y = self._crumbs(host, page["crumbs"], x, 26)
         self._project_icon(host, page["hue"], x, y - 2, 40)
-        kit.put_text(host, page["title"], x + 54, y, w - 54, 26, 700, wrap=False, height=32)
+        if page["archived"]:
+            kit.button(host, "Bring back", x + w - 110, y - 4, 110, 32, lambda: self.project_action("restore", pid=page["pid"]),
+                       kind="outline", size=13, weight=600)
+        else:
+            self._project_actions(host, x + w, y - 4, page["pid"])
+        kit.put_text(host, page["title"], x + 54, y, w - 54 - 170, 26, 700, wrap=False, height=32)
         self._label(host, page["meta"], x + 54, y + 33, w - 54, size=13, weight=400)
         y += 62
         self._label(host, "PICK UP WHERE YOU LEFT OFF", x, y, w)

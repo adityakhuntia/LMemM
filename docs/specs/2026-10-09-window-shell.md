@@ -120,3 +120,8 @@ Rules G1–G7 are in `src/settings_model.py` (tests in `tests/test_settings_mode
 - **Dark mode.** All colours already follow the system; the window background is dynamic.
 - **Scale.** `projects.indexed` turns tree and membership lookups into table reads. With 10,000 projects and 50,000 things the first page takes about 0.12 s (was 1.65 s), a project page 0.12 s, search 0.17 s. `tests/test_scale.py` guards it.
 - **Narrow.** Chip rows wrap instead of running off the column.
+
+## Step 11 follow-up: walk the lists with the keyboard
+- Up/Down move a highlight through the rows of one zone (the sidebar's Needs you and Projects, or the page's things and project cards); Left/Right switch zone; Return opens the highlighted row (while selecting, it ticks it). Esc and ⌘[ still go back. The logic is `keynav.py`; the window only forwards key codes and draws the highlight.
+- Keys do nothing while a card is open, and the highlight clears when you move to another page.
+- Limit: when a text field (search, the note box) has the keyboard, the arrows belong to it. Press Esc or click the page first.

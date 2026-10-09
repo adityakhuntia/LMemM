@@ -153,6 +153,17 @@ for label, wd, ht in (("narrow", 880, 560), ("wide", 2200, 1300), ("small than m
     for kind in ("go", "thing"):
         w.nav = page_model.press(reg, w.nav, kind, ids["q3"] if kind == "go" else "a")
         step("page at %s (%s)" % (label, kind), render)
+import keynav
+w.nav = page_model.new_state(); render()
+step("keys: down in page", lambda: w.key(keynav.DOWN))
+if w.cur["id"] is None: FAILED.append("Down did not land on a row")
+step("keys: left to sidebar", lambda: w.key(keynav.LEFT))
+step("keys: down in sidebar", lambda: w.key(keynav.DOWN))
+if w.cur["zone"] != "side" or w.cur["id"] is None: FAILED.append("sidebar walk failed %s" % w.cur)
+step("keys: return opens", lambda: w.key(keynav.RETURN))
+w.dialog = {"kind": "x"}
+if w.key(keynav.DOWN): FAILED.append("keys must not move behind a card")
+w.dialog = None
 w.focus_search(); w.go_back(); w._regular(True); w._regular(False)
 print("FAILED:", FAILED) if FAILED else print("all pages drew")
 sys.exit(1 if FAILED else 0)

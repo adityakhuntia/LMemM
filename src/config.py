@@ -71,6 +71,10 @@ class Paths:
         return os.path.join(self.memory_dir, "memory.json")
 
     @property
+    def projects_file(self):      # the project tree (projects.py); small, so it is read fresh each time
+        return os.path.join(self.memory_dir, "projects.json")
+
+    @property
     def sessions_dir(self):
         return os.path.join(self.memory_dir, "sessions")
 

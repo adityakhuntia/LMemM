@@ -38,6 +38,8 @@ sys.modules["objc"].python_method = lambda f: f
 fake_widget = types.ModuleType("widget")
 for n in ("_Fields", "_Flipped", "_Ring", "_Tap"):
     setattr(fake_widget, n, type(n, (Base,), {"initWithChange_submit_cancel_": lambda self,*a: self, "initWithFrame_callback_": lambda self,*a: self, "initWithFrame_": lambda self,*a: self, "initWithChecked_": lambda self,*a: self}))
+SIZE = types.SimpleNamespace(width=1080, height=720)
+fake_widget._Flipped.frame = lambda self: types.SimpleNamespace(size=SIZE)
 sys.modules["widget"] = fake_widget
 kit = types.ModuleType("setup_kit")
 for n in ("put_text","tile","button","text_width","text_height","ink","mute","accent","card_background","faint","line","icon","first_symbol","note"):
@@ -141,5 +143,16 @@ w.nav = page_model.press(reg, w.nav, "go", ids["q3"])
 kit.put_text.reset_mock(); render()
 if "Suggested for this project · 2" not in [c.args[1] for c in kit.put_text.call_args_list]:
     FAILED.append("project page is missing its suggestions")
+for label, wd, ht in (("narrow", 880, 560), ("wide", 2200, 1300), ("small than minimum", 600, 400), ("back", 1080, 720)):
+    SIZE.width, SIZE.height = wd, ht
+    step("resize " + label, w._resized)
+    if not (880 <= w.W and 560 <= w.H and 560 <= w.main_w <= 980 and w.col_x >= 24):
+        FAILED.append("bad layout at %s: %s" % (label, (w.W, w.H, w.main_w, w.col_x)))
+    if w.col_x + w.main_w > w.W - window.SIDE_W:
+        FAILED.append("column overflows at " + label)
+    for kind in ("go", "thing"):
+        w.nav = page_model.press(reg, w.nav, kind, ids["q3"] if kind == "go" else "a")
+        step("page at %s (%s)" % (label, kind), render)
+w.focus_search(); w.go_back(); w._regular(True); w._regular(False)
 print("FAILED:", FAILED) if FAILED else print("all pages drew")
 sys.exit(1 if FAILED else 0)

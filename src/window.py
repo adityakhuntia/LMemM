@@ -11,9 +11,10 @@ import sys
 import time
 import traceback
 
+import objc
 from Foundation import NSObject
-from AppKit import (NSApplication, NSBezierPath, NSColor, NSImageView, NSMakePoint, NSMakeRect, NSScrollView, NSTextField,
-                    NSStrikethroughStyleAttributeName, NSWindow, NSWorkspace)
+from AppKit import (NSApplication, NSBezierPath, NSColor, NSImageView, NSMakePoint, NSMakeRect, NSMenu, NSMenuItem, NSScrollView,
+                    NSTextField, NSStrikethroughStyleAttributeName, NSWindow, NSWorkspace)
 
 import apps
 import menu_model
@@ -27,10 +28,11 @@ import window_model
 from setup_kit import LEFT, RIGHT
 from widget import _Fields, _Flipped, _Ring, _Tap
 
-W, H = 1080, 720
+W, H = 1080, 720                                       # the size it first opens at; after that the window remembers its own
+MIN_W, MIN_H = 880, 560                                # the smallest it can be dragged to
 SIDE_W = 250
 PAD = 32
-MAIN_W = W - SIDE_W - 2 * PAD
+MIN_MAIN, MAX_MAIN = 560, 980                          # the page's reading column: it grows with the window, up to this
 TOP = 32                                               # below the title bar
 TONES = {"red": "red", "grey": None, "calm": None}      # the banner box's tone (red is only for what is off)
 
@@ -46,13 +48,46 @@ class _MainWindow(NSWindow):
     def canBecomeKeyWindow(self):
         return True
 
+    def cancelOperation_(self, sender):
+        """Esc: close what is open on top (a card), else step back, else clear the search."""
+        if getattr(self, "on_escape", None):
+            self.on_escape()
+
 
 class _MainClosing(NSObject):
-    """A closed window is only hidden; it opens again from the menu."""
+    """A closed window is only hidden; it opens again from the menu. A resized one is laid out again."""
 
     def windowShouldClose_(self, window):
         window.orderOut_(None)
+        if getattr(self, "on_close", None):
+            self.on_close()
         return False
+
+    def windowDidResize_(self, note):
+        if getattr(self, "on_resize", None):
+            self.on_resize()
+
+
+class _WindowMenuTarget(NSObject):
+    """Where the menu bar's own items (Search, Settings…, Back, Quit) land. The standard ones (Close, Minimize,
+    Zoom, Copy, Paste…) go down the responder chain to the window and the text fields."""
+
+    def initWithActions_(self, actions):
+        self = objc.super(_WindowMenuTarget, self).init()
+        self.actions = actions
+        return self
+
+    def focusSearch_(self, sender):
+        self.actions["search"]()
+
+    def openSettings_(self, sender):
+        self.actions["settings"]()
+
+    def goBack_(self, sender):
+        self.actions["back"]()
+
+    def quitLMemM_(self, sender):
+        self.actions["quit"]()
 
 
 class _SideBackdrop(_Flipped):
@@ -110,21 +145,28 @@ class MainWindow:
         self.where = None                                          # (view, project, search) the page was last showing
         self.app_icons = {}
         self.app_paths = None
-        style = 1 | 2 | (1 << 15)                                  # titled, closable, content under the title bar
+        self.W, self.H = W, H                                      # the content's size now; _measure() keeps them true
+        self.main_w, self.col_x = MIN_MAIN, PAD                    # the page's column
+        self.stamp, self.page_cache = None, None                   # what the last draw was for (so a resize does not recompute pages)
+        style = 1 | 2 | 4 | 8 | (1 << 15)                          # titled, closable, minimise, resize, content under the title bar
         self.window = _MainWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             NSMakeRect(0, 0, W, H), style, 2, False)
         self.window.setTitlebarAppearsTransparent_(True)
         self.window.setTitleVisibility_(1)
-        for button in (1, 2):                                      # no minimise, no zoom: only a way out
-            self.window.standardWindowButton_(button).setHidden_(True)
         self.window.setReleasedWhenClosed_(False)
+        self.window.setHidesOnDeactivate_(False)                   # it stays where it is when you go to another app
+        self.window.setCollectionBehavior_(1 << 7)                 # the green button makes it full screen
+        self.window.setContentMinSize_((MIN_W, MIN_H))
         self.window.setBackgroundColor_(kit.card_background())
         self.closing = _MainClosing.alloc().init()
+        self.closing.on_resize = self._resized
+        self.closing.on_close = lambda: self._regular(False)
         self.window.setDelegate_(self.closing)
+        self.window.on_escape = self.escape
         self.root = _Flipped.alloc().initWithFrame_(NSMakeRect(0, 0, W, H))
         self.window.setContentView_(self.root)
-        backdrop = _SideBackdrop.alloc().initWithFrame_(NSMakeRect(0, 0, SIDE_W, H))
-        self.root.addSubview_(backdrop)
+        self.backdrop = _SideBackdrop.alloc().initWithFrame_(NSMakeRect(0, 0, SIDE_W, H))
+        self.root.addSubview_(self.backdrop)
         self.banner_host = _Flipped.alloc().initWithFrame_(NSMakeRect(SIDE_W, TOP, W - SIDE_W, 0))
         self.root.addSubview_(self.banner_host)
         self.head_host = _Flipped.alloc().initWithFrame_(NSMakeRect(SIDE_W, TOP, W - SIDE_W, 0))
@@ -141,7 +183,7 @@ class MainWindow:
         self.main_scroll = _scroll(self.root)
         self.note_typing = _Fields.alloc().initWithChange_submit_cancel_(
             lambda text: None, self._submit_note, lambda: self.note_field.setStringValue_(""))
-        self.note_field = NSTextField.alloc().initWithFrame_(NSMakeRect(SIDE_W + PAD, H - 52, MAIN_W, 30))
+        self.note_field = NSTextField.alloc().initWithFrame_(NSMakeRect(SIDE_W + PAD, H - 52, self.main_w, 30))
         self.note_field.setPlaceholderString_("Add a note to this, then press Return")
         self.note_field.setBezeled_(True)
         self.note_field.setBezelStyle_(1)
@@ -164,7 +206,110 @@ class MainWindow:
         self.dlg_field.setDelegate_(self.dlg_typing)
         self.dlg_field.setHidden_(True)
         self.overlay.addSubview_(self.dlg_field)
-        self.window.center()
+        if not self.window.setFrameUsingName_("LMemMMain"):         # last time's size and place, if there was one
+            self.window.center()
+        self.window.setFrameAutosaveName_("LMemMMain")
+        self.menu_target = _WindowMenuTarget.alloc().initWithActions_(
+            {"search": self.focus_search, "settings": self.open_settings, "back": self.go_back,
+             "quit": lambda: self.on_press("quit")})
+        self._install_menu()
+        self._measure()
+        self._layout()
+
+    # ------------------------------------------------------------ size, menu bar, Dock
+
+    def _measure(self):
+        """Read the window's size and work out the page's column. The column grows with the window up to
+        MAX_MAIN, then stays centred, so a huge screen does not stretch lines across it."""
+        size = self.root.frame().size
+        self.W, self.H = max(MIN_W, size.width), max(MIN_H, size.height)
+        room = self.W - SIDE_W - 2 * PAD
+        self.main_w = max(MIN_MAIN, min(MAX_MAIN, room))
+        self.col_x = PAD + max(0, (room - self.main_w) / 2)
+
+    def _layout(self):
+        """Put the parts that do not scroll where the window's size says."""
+        self.backdrop.setFrame_(NSMakeRect(0, 0, SIDE_W, self.H))
+        self.note_field.setFrame_(NSMakeRect(SIDE_W + self.col_x, self.H - 52, self.main_w, 30))
+        self.side_foot.setFrame_(NSMakeRect(0, self.H - 48, SIDE_W, 48))
+        self.overlay.setFrame_(NSMakeRect(0, 0, self.W, self.H))
+
+    def _resized(self):
+        """The window was dragged, zoomed or made full screen: lay it out again and redraw (the pages stay computed)."""
+        self._measure()
+        self._layout()
+        self.shown = self.stamp = None
+        self.render()
+        if self.dialog:
+            self._dialog()
+
+    def _regular(self, on):
+        """While the window is open LMemM is a normal app (in the Dock and ⌘-Tab, so you can come back to it from
+        any other app); when it is closed it goes back to living in the menu bar."""
+        try:
+            NSApplication.sharedApplication().setActivationPolicy_(0 if on else 1)
+        except Exception:
+            pass
+
+    def _install_menu(self):
+        """The Mac menu bar while the window is up: Close, Minimize, Zoom, the editing keys text fields need
+        (⌘C ⌘V ⌘A), ⌘K for search, ⌘, for Settings, ⌘[ for Back, ⌘Q to quit LMemM."""
+        def item(menu, title, action, key="", target=None, mask=None):
+            it = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(title, action, key)
+            if target is not None:
+                it.setTarget_(target)
+            if mask is not None:
+                it.setKeyEquivalentModifierMask_(mask)
+            menu.addItem_(it)
+            return it
+
+        def submenu(bar, title):
+            holder = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(title, None, "")
+            sub = NSMenu.alloc().initWithTitle_(title)
+            holder.setSubmenu_(sub)
+            bar.addItem_(holder)
+            return sub
+        bar = NSMenu.alloc().initWithTitle_("")
+        app = submenu(bar, "LMemM")
+        item(app, "Settings…", "openSettings:", ",", self.menu_target)
+        app.addItem_(NSMenuItem.separatorItem())
+        item(app, "Quit LMemM", "quitLMemM:", "q", self.menu_target)
+        edit = submenu(bar, "Edit")
+        for title, action, key in (("Undo", "undo:", "z"), ("Redo", "redo:", "Z"), (None, None, None), ("Cut", "cut:", "x"),
+                                   ("Copy", "copy:", "c"), ("Paste", "paste:", "v"), ("Select All", "selectAll:", "a")):
+            if title is None:
+                edit.addItem_(NSMenuItem.separatorItem())
+            else:
+                item(edit, title, action, key)
+        window = submenu(bar, "Window")
+        item(window, "Search", "focusSearch:", "k", self.menu_target)
+        item(window, "Back", "goBack:", "[", self.menu_target)
+        window.addItem_(NSMenuItem.separatorItem())
+        item(window, "Close Window", "performClose:", "w")
+        item(window, "Minimize", "performMiniaturize:", "m")
+        item(window, "Zoom", "performZoom:")
+        self.menu_bar = bar
+        NSApplication.sharedApplication().setMainMenu_(bar)
+
+    def escape(self):
+        if self.dialog:
+            self.close_dialog()
+        elif self.sel is not None:
+            self.stop_select()
+        elif self.nav["q"] and self.nav["view"] == "search":
+            self._cancel_search()
+        else:
+            self.go_back()
+
+    def focus_search(self):
+        self.window.makeFirstResponder_(self.search)
+
+    def go_back(self):
+        kind = self.nav["view"]
+        if kind in ("thing", "settings", "search"):
+            self.back(kind)
+        elif kind in ("needs", "archived", "project"):
+            self.press("home")
 
     # ------------------------------------------------------------ the loop calls these
 
@@ -172,6 +317,9 @@ class MainWindow:
         return bool(self.window.isVisible())
 
     def show(self, banner):
+        self._regular(True)
+        if self.window.isMiniaturized():
+            self.window.deminiaturize_(None)
         self.update(banner)
         self.window.makeKeyAndOrderFront_(None)
         NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
@@ -279,14 +427,14 @@ class MainWindow:
         bar = 62 if thing else 0                                   # the note field sits under the page
         self._toast(now, bar)
         self.search.setFrame_(NSMakeRect(16, TOP + 10, SIDE_W - 32, 28))
-        self.side_scroll.setFrame_(NSMakeRect(0, TOP + 52, SIDE_W, H - TOP - 52 - 48))
+        self.side_scroll.setFrame_(NSMakeRect(0, TOP + 52, SIDE_W, self.H - TOP - 52 - 48))
         self._side_foot(page["side"])
-        self.head_host.setFrame_(NSMakeRect(SIDE_W, top, W - SIDE_W, head))
-        self.main_scroll.setFrame_(NSMakeRect(SIDE_W, top + head, W - SIDE_W, H - top - head - bar))
+        self.head_host.setFrame_(NSMakeRect(SIDE_W, top, self.W - SIDE_W, head))
+        self.main_scroll.setFrame_(NSMakeRect(SIDE_W, top + head, self.W - SIDE_W, self.H - top - head - bar))
         here = (self.nav["view"], self.nav["pid"], self.nav["q"], self.nav["tid"])
         moved, self.where = here != self.where, here
         self._fill(self.side_scroll, SIDE_W, lambda doc: self._side(doc, page["side"]))
-        self._fill(self.main_scroll, W - SIDE_W, lambda doc: self._main(doc, main, split), top=moved)
+        self._fill(self.main_scroll, self.W - SIDE_W, lambda doc: self._main(doc, main, split), top=moved)
 
     def _fill(self, scroll, width, build, top=False):
         """Swap the scrolling area's contents, keeping the place the person had scrolled to (or
@@ -313,8 +461,8 @@ class MainWindow:
         if toast is None:
             return
         text, undoable = toast
-        width = min(kit.text_width(text, 13, 500) + (74 if undoable else 36), MAIN_W)
-        self.toast_host.setFrame_(NSMakeRect(SIDE_W + (W - SIDE_W - width) / 2, H - bar - 54, width, 36))
+        width = min(kit.text_width(text, 13, 500) + (74 if undoable else 36), self.main_w)
+        self.toast_host.setFrame_(NSMakeRect(SIDE_W + (self.W - SIDE_W - width) / 2, self.H - bar - 54, width, 36))
         pill = self._tap(self.toast_host, 0, 0, width, 36, lambda: None)
         pill.tint = NSColor.colorWithWhite_alpha_(0.12, 0.94)
         kit.put_text(pill, text, 18, 0, width - 36, 13, 500, NSColor.whiteColor(), wrap=False, height=36, middle=True)
@@ -334,18 +482,18 @@ class MainWindow:
         for sub in list(self.banner_host.subviews()):
             sub.removeFromSuperview()
         if not banner:
-            self.banner_host.setFrame_(NSMakeRect(SIDE_W, TOP, W - SIDE_W, 0))
+            self.banner_host.setFrame_(NSMakeRect(SIDE_W, TOP, self.W - SIDE_W, 0))
             return TOP
         button = banner["button"]
-        room = MAIN_W - (176 if button else 0)
+        room = self.main_w - (176 if button else 0)
         symbol = self.BANNER_SYMBOLS.get(banner["kind"], "info.circle.fill")
-        height = kit.note(self.banner_host, TONES[banner["tone"]], banner["line"], PAD, 0, room,
+        height = kit.note(self.banner_host, TONES[banner["tone"]], banner["line"], self.col_x, 0, room,
                           lead=banner["title"], symbol=symbol)
         if button:
             row = button["id"]
-            kit.button(self.banner_host, button["title"], PAD + room + 12, (height - 36) / 2, 164, 36,
+            kit.button(self.banner_host, button["title"], self.col_x + room + 12, (height - 36) / 2, 164, 36,
                        lambda: self.on_press(row), kind="outline", size=13, weight=600)
-        self.banner_host.setFrame_(NSMakeRect(SIDE_W, TOP + 6, W - SIDE_W, height))
+        self.banner_host.setFrame_(NSMakeRect(SIDE_W, TOP + 6, self.W - SIDE_W, height))
         return TOP + 6 + height + 6
 
     # ------------------------------------------------------------ changing projects
@@ -504,8 +652,8 @@ class MainWindow:
         self.dlg_field.setHidden_(True)
         if d is None:
             return
-        self._tap(self.overlay, 0, 0, W, H, self.close_dialog).tint = NSColor.colorWithWhite_alpha_(0.0, 0.32)
-        cw, cx, cy = 460, (W - 460) / 2, 120
+        self._tap(self.overlay, 0, 0, self.W, self.H, self.close_dialog).tint = NSColor.colorWithWhite_alpha_(0.0, 0.32)
+        cw, cx, cy = 460, (self.W - 460) / 2, 120
         card = self._tap(self.overlay, cx, cy, cw, 100, lambda: None)
         card.tint = kit.card_background()
         reg = self._reg()
@@ -705,13 +853,17 @@ class MainWindow:
         kit.put_text(tap, text, 6, 0, width - 12, size, 500, color or kit.mute(), wrap=False, height=size + 12, middle=True)
         return width
 
-    def _chips(self, parent, x, y, items):
-        """Small buttons side by side; items are (label, on, callback). Returns the height."""
+    def _chips(self, parent, x, y, items, w=None):
+        """Small buttons side by side, wrapping onto a new row when the column is narrow; items are
+        (label, on, callback). Returns the height."""
+        left, row = x, 0
         for label, on, callback in items:
             width = kit.text_width(label, 13, 500) + 26
-            kit.button(parent, label, x, y, width, 28, callback, kind="primary" if on else "quiet", size=13, weight=500)
+            if w is not None and x > left and x + width > left + w:
+                x, row = left, row + 1
+            kit.button(parent, label, x, y + row * 34, width, 28, callback, kind="primary" if on else "quiet", size=13, weight=500)
             x += width + 6
-        return 28
+        return 28 + row * 34
 
     # ------------------------------------------------------------ the sidebar
 
@@ -766,7 +918,7 @@ class MainWindow:
     # ------------------------------------------------------------ the page
 
     def _main(self, doc, page, split=False):
-        x, w = PAD, MAIN_W
+        x, w = self.col_x, self.main_w
         if split:
             return self._things(doc, page, x, 6, w)
         y = 30
@@ -986,7 +1138,7 @@ class MainWindow:
 
     def _settings(self, doc, page, x, y, w):
         """Settings: six sections as tabs, then the one you are on. Every control changes the setting at once."""
-        y += self._chips(doc, x, y, [(t["title"], t["on"], (lambda i=t["id"]: self.press("settings", i))) for t in page["tabs"]]) + 24
+        y += self._chips(doc, x, y, [(t["title"], t["on"], (lambda i=t["id"]: self.press("settings", i))) for t in page["tabs"]], w) + 24
         return getattr(self, "_set_" + page["section"])(doc, page[page["section"]], x, y, w)
 
     def _row(self, doc, x, y, w, title, line, build=None, height=60):
@@ -1089,7 +1241,7 @@ class MainWindow:
         """Pinned under the tree: make a project."""
         for sub in list(self.side_foot.subviews()):
             sub.removeFromSuperview()
-        self.side_foot.setFrame_(NSMakeRect(0, H - 48, SIDE_W, 48))
+        self.side_foot.setFrame_(NSMakeRect(0, self.H - 48, SIDE_W, 48))
         tap = self._tap(self.side_foot, 8, 8, SIDE_W - 16 - 40, 34, lambda: self.open_name("new"))
         kit.tile(tap, ("plus.circle.fill", "plus"), kit.ink(), 6, 5, 24)
         kit.put_text(tap, "New project", 40, 0, 110, 13, 500, wrap=False, height=34, middle=True)
@@ -1121,7 +1273,7 @@ class MainWindow:
         host = self.head_host
         for sub in list(host.subviews()):
             sub.removeFromSuperview()
-        x, w = PAD, MAIN_W
+        x, w = self.col_x, self.main_w
         y = self._crumbs(host, page["crumbs"], x, 26)
         self._project_icon(host, page["hue"], x, y - 2, 40)
         if page["archived"]:
@@ -1166,7 +1318,7 @@ class MainWindow:
             chips += [("All apps", self.nav["app"] is None, lambda: self.press("app", None))]
             chips += [(f["app"], self.nav["app"] == f["app"], (lambda a=f["app"]: self.press("app", a))) for f in page["filters"]]
         if chips:
-            y += self._chips(host, x, y, chips) + 10
+            y += self._chips(host, x, y, chips, w) + 10
         return y
 
     def _select_bar(self, parent, page, x, y, w):

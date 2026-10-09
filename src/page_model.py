@@ -31,6 +31,7 @@ draws it and forwards presses to `press()`; it decides nothing.
         came from, scrolled to the top of it.
 """
 
+import functools
 import unicodedata
 from datetime import datetime
 
@@ -53,9 +54,13 @@ CRUMBS_MAX = 5
 
 # ---------------------------------------------------------------- words
 
+@functools.lru_cache(maxsize=1 << 17)                  # searching 60,000 titles again on every key would be slow
 def fold(text):
     """For matching: lower case, no accents."""
-    text = unicodedata.normalize("NFKD", text or "")
+    text = text or ""
+    if text.isascii():
+        return text.casefold()
+    text = unicodedata.normalize("NFKD", text)
     return "".join(c for c in text if not unicodedata.combining(c)).casefold()
 
 
@@ -495,8 +500,9 @@ def search(reg, items, q, now):
 def view(reg, items, state, now=None, fading=(), sugg=None, prefs=None):
     """fading: ids of notes ticked a moment ago, still on screen crossed out (P10). sugg: suggestions.view()."""
     now = now or datetime.now()
-    counts = projects.counts(reg, items)
-    return {"side": side(reg, items, state, counts, now), "main": main(reg, items, state, counts, now, fading, sugg, prefs)}
+    with projects.indexed(reg, items):                                     # 10,000 projects must not mean 10,000 scans
+        counts = projects.counts(reg, items)
+        return {"side": side(reg, items, state, counts, now), "main": main(reg, items, state, counts, now, fading, sugg, prefs)}
 
 
 def signature(v):

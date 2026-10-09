@@ -112,3 +112,11 @@ Rules G1–G7 are in `src/settings_model.py` (tests in `tests/test_settings_mode
 - **Data:** where memory lives and how big it is, Show in Finder, and Delete all my data (asks first, as in the menu).
 - Every change saves at once, says what it did, and can be undone from the toast. The change is also true in the running app: `Tracker.apply_user` updates the watched apps (and the trail's gate), the never-remember set and the screenshot keep time.
 - `tests/window_smoke.py` now also draws all six Settings pages and the app picker.
+
+## Step 11: Polish and scale
+- **A real window.** It resizes (minimum 880×560, remembers its size and place), minimises, and the green button makes it full screen. It no longer hides when you go to another app. While it is open LMemM shows in the Dock and ⌘-Tab, so you can come back from any app; closing it returns LMemM to the menu bar only. The page column grows with the window up to 980 wide, then stays centred.
+- **Keys.** ⌘K search, ⌘, Settings, ⌘[ Back, ⌘W close, ⌘M minimise, ⌘Q quit, Esc closes a card, then leaves select, then clears search, then goes back. Not in this step: arrow keys and Return to walk the list.
+- **VoiceOver.** Every tap area is a button named by its words and can be pressed.
+- **Dark mode.** All colours already follow the system; the window background is dynamic.
+- **Scale.** `projects.indexed` turns tree and membership lookups into table reads. With 10,000 projects and 50,000 things the first page takes about 0.12 s (was 1.65 s), a project page 0.12 s, search 0.17 s. `tests/test_scale.py` guards it.
+- **Narrow.** Chip rows wrap instead of running off the column.

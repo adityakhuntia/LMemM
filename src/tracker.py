@@ -43,6 +43,8 @@ import input_monitor as input_hooks
 import macos
 import menu_model
 import menubar
+import window as main_window
+import window_model
 import notes
 import permissions
 import onboarding
@@ -136,6 +138,8 @@ class Tracker:
         self.trail = None
         self.widget = None                   # the on-screen pill (widget.py), made in run()
         self.menubar = None                  # the menu-bar item (menubar.py), made in run()
+        self.main_window = None              # the window (window.py), made the first time it is opened
+        self.page_data_said = False
         self.menu_refreshed = 0.0
         self.menu_reported = False
         self.started_at = time.time()
@@ -371,7 +375,12 @@ class Tracker:
             if not self.menu_reported and time.time() - self.started_at > 4:
                 self.menu_reported = True               # after the run loop has laid the bar out
                 say(f"Menu-bar item, 4s later: {self.menubar.where()}")
-            self.menubar.update(menu_model.view(self.widget_status(), self.watch_apps, hotkey=dictation.HOTKEY_LABEL))
+            status = self.widget_status()
+            self.menubar.update(menu_model.view(status, self.watch_apps, hotkey=dictation.HOTKEY_LABEL))
+            if self.main_window and self.main_window.visible():
+                self.main_window.update(self.window_view(status))
+        if self.main_window:
+            self.main_window.tick()                     # a ticked note's hold and the Undo line follow the clock
         if self.widget:
             self.widget.pulse(self.widget_heard())      # waveform + words while the note window is open
         if self.manual_paused and self.pause_until and time.time() >= self.pause_until:
@@ -613,6 +622,15 @@ class Tracker:
         self.widget_refresh_soon()
         line(at[11:19], (item or {}).get("app", "?"), "note saved" + (" (awaiting context)" if item is None else ""))
 
+    def window_add_note(self, item_id, text):
+        """A note typed in the window, on the thing whose page it is (the same record as ⌃⌥N)."""
+        at = datetime.now().isoformat(timespec="seconds")
+        with self.lock:
+            item = notes.record(self.items, self.frame_item, self.notes, ("item", item_id), text, at)
+            if item is not None:
+                self.save(force=True)
+        line(at[11:19], (item or {}).get("app", "?"), "note saved" if item else "note not saved: that thing is gone")
+
     def widget_refresh_soon(self):
         self.last_widget_refresh = 0.0
 
@@ -638,6 +656,50 @@ class Tracker:
     def check_restart(self):
         self.screen_restart = permissions.screen_allowed_fresh()
 
+    def window_view(self, status):
+        """The window's banner needs the memory's state too: setup not finished shows as such. (A
+        damaged memory file stops LMemM before it gets here, so the window never sees that one.)"""
+        memory = window_model.MEMORY_OK if store.load_user() else window_model.MEMORY_FIRST_RUN
+        return window_model.view(status, memory, self.watch_apps)
+
+    def page_data(self):
+        """What the project page reads: the project tree (a small file) and the remembered things.
+        The page only looks; nothing it does writes to either."""
+        import projects
+        try:
+            reg = projects.load()
+        except ValueError as error:                  # damaged: show no projects, never replace the file
+            if not self.page_data_said:
+                self.page_data_said = True
+                say(str(error))
+            reg = projects.empty()
+        return reg, dict(self.items)               # a copy, so the resolver thread can go on writing
+
+    def adopt_projects(self):
+        """Give every project name older versions filed things under a place in the project tree
+        (projects.adopt; safe to repeat). Writes only when something changed."""
+        import projects
+        try:
+            reg = projects.load()
+            with self.lock:
+                changed = projects.adopt(reg, self.items)
+                if changed:
+                    projects.save(reg)
+                    self.save(force=True)
+            if changed:
+                say(f"Projects: placed {changed} thing(s) in the project tree")
+        except ValueError as error:
+            say(str(error))
+
+    def open_window(self):
+        if self.main_window is None:
+            self.main_window = main_window.MainWindow(self.menu_pick, self.page_data, self.widget_tick, self.window_add_note)   # its button sends a menu row id
+        self.adopt_projects()                       # things filed by name since the last time
+        self.main_window.show(self.window_view(self.widget_status()))
+
+    def show_memory_file(self):
+        subprocess.run(["open", "-R", config.paths().items_file], check=False)
+
     def menu_pick(self, row):
         """A row of the menu-bar item was clicked (menu_model.view lists the ids)."""
         kind = menu_model.pause_kind(row)
@@ -647,6 +709,10 @@ class Tracker:
             self.widget_resume()
         elif row == "add_note":
             self.note_request = True                    # the same as ⌃⌥N, paused card and all (R9)
+        elif row == "open":
+            self.open_window()
+        elif row == "show_file":
+            self.show_memory_file()
         elif row == "access":
             self.check_access()
         elif row in {"restart", "setup", "delete"}:
@@ -1376,6 +1442,8 @@ class Tracker:
             self.input_monitor.stop()
         if self.panel.open:
             self.panel.close(save=False)
+        if self.main_window:
+            self.main_window.window.orderOut_(None)
         if self.menubar:
             self.menubar.remove()
         say("\nstopping…")

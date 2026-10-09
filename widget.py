@@ -36,6 +36,7 @@ from AppKit import (NSApplication, NSBackingStoreBuffered, NSBezierPath, NSColor
                     NSTrackingArea, NSView, NSVisualEffectView, NSAttributedString)
 
 import notes
+import rules
 
 BORDERLESS, NONACTIVATING = 0, 1 << 7
 # all Spaces, stationary, over full-screen apps, not in the window cycle
@@ -352,7 +353,9 @@ class Widget:
     picker(item id, typed text) -> notes.picker_view(...); on_unfile(item id) takes a thing out."""
 
     def __init__(self, provider, on_tick, on_add=None, heard=None, hotkey="⌃⌥N",
-                 suggestion=None, on_project=None, on_decline=None, picker=None, on_unfile=None):
+                 suggestion=None, on_project=None, on_decline=None, picker=None, on_unfile=None,
+                 busy=None):
+        self.busy = busy or (lambda: False)         # True while the note card is up (see rules.py)
         self.provider = provider
         self.on_tick = on_tick
         self.on_add = on_add or (lambda: None)
@@ -393,15 +396,10 @@ class Widget:
         self.layout()
 
     def mode_of_pill(self):
-        if self.saved:
-            return "saved"
         if self.listening is not None:
             return "listening"
-        if self.pill_view.hover and not self.card_open:
-            return "peek"
-        if self.count:
-            return "count"
-        return "suggest" if self.sug else "rest"
+        return rules.pill_state(self.busy(), bool(self.saved), self.pill_view.hover, self.card_open,
+                                self.count, bool(self.sug))
 
     def peek_text(self):
         if not self.count:
@@ -450,6 +448,8 @@ class Widget:
         if self.saved and time.time() >= self.saved_until:
             self.saved = None
             self.layout()
+        if self.busy() and self.card_open:
+            self.toggle_card()              # R1: a card left open must not sit under the note card
         was = self.listening is not None
         self.listening = heard
         if (heard is not None) != was:
@@ -481,9 +481,16 @@ class Widget:
         if self.card_open and self._key() != self.shown:
             self.render()                   # only when something changed: keeps your scroll position
 
+    def close_card(self):
+        if self.card_open:
+            self.toggle_card()
+
     def toggle_card(self):
+        if rules.pill_click_action(self.busy()) == "ignore" and not self.card_open:
+            return                          # R1: the note card owns the screen
         self.card_open = not self.card_open
         if self.card_open:
+            self.saved = None               # R5: the card replaces the confirmation
             self.mode, self.show_done, self.scroll = ("suggest" if self.sug and not self.count else "here"), False, None
             self.query, self.also = "", True
             self.data = self.provider()

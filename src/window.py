@@ -8,18 +8,21 @@ interrupted by a redraw; the two scrolling areas keep their place when the data 
 """
 
 import sys
+import time
 import traceback
 
 from Foundation import NSObject
 from AppKit import (NSApplication, NSBezierPath, NSColor, NSImageView, NSMakePoint, NSMakeRect, NSScrollView, NSTextField,
-                    NSWindow, NSWorkspace)
+                    NSStrikethroughStyleAttributeName, NSWindow, NSWorkspace)
 
 import apps
+import notes
 import page_model
+import rules
 import setup_kit as kit
 import window_model
 from setup_kit import LEFT, RIGHT
-from widget import _Fields, _Flipped, _Tap
+from widget import _Fields, _Flipped, _Ring, _Tap
 
 W, H = 1080, 720
 SIDE_W = 250
@@ -82,9 +85,14 @@ class MainWindow:
     """on_press(row id) is called when the banner's button is pressed (ids the menu already knows).
     data() returns (project registry, things by id) for the page."""
 
-    def __init__(self, on_press, data):
+    def __init__(self, on_press, data, on_tick=None, on_add_note=None):
         self.on_press = on_press
         self.data = data
+        self.on_tick = on_tick or (lambda ids, done: None)               # tick or reopen notes (the pill's own function)
+        self.on_add_note = on_add_note or (lambda item_id, text: None)
+        self.flow = rules.FinishFlow()                                 # hold, fold, Undo: the pill's rules (R10)
+        self.flow_sig = None
+        self.item_here = None
         self.banner = None                                         # the last window_model.view
         self.nav = page_model.new_state()
         self.shown = None
@@ -120,6 +128,18 @@ class MainWindow:
         self.root.addSubview_(self.search)
         self.side_scroll = _scroll(self.root)
         self.main_scroll = _scroll(self.root)
+        self.note_typing = _Fields.alloc().initWithChange_submit_cancel_(
+            lambda text: None, self._submit_note, lambda: self.note_field.setStringValue_(""))
+        self.note_field = NSTextField.alloc().initWithFrame_(NSMakeRect(SIDE_W + PAD, H - 52, MAIN_W, 30))
+        self.note_field.setPlaceholderString_("Add a note to this, then press Return")
+        self.note_field.setBezeled_(True)
+        self.note_field.setBezelStyle_(1)
+        self.note_field.setDelegate_(self.note_typing)
+        self.note_field.setHidden_(True)
+        self.root.addSubview_(self.note_field)
+        self.toast_host = _Flipped.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 10))
+        self.toast_host.setHidden_(True)
+        self.root.addSubview_(self.toast_host)
         self.window.center()
 
     # ------------------------------------------------------------ the loop calls these
@@ -152,6 +172,47 @@ class MainWindow:
         else:
             self.press("home")
 
+    def tick(self):
+        """Called a few times a second by the loop: a ticked note's hold and fold, and the Undo line,
+        change with the clock, not with a press."""
+        if self.visible():
+            sig = self.flow.signature(time.time())
+            if sig != self.flow_sig:
+                self.render()
+
+    def tick_note(self, nid, done):
+        """One tap flips a note (R10). A note that is folding away ignores taps."""
+        now = time.time()
+        phase = self.flow.phase(nid, now)
+        if phase == "fold":
+            return
+        self.on_tick([nid], done)
+        left = self._open_left()
+        if done:
+            self.flow.tick(nid, now, left)
+        elif phase == "hold":
+            self.flow.cancel(nid, left)                            # changed your mind: no toast
+        else:
+            self.flow.reopened(now)
+        self.render()
+
+    def undo(self):
+        ids = self.flow.undo(self._open_left())
+        if ids:
+            self.on_tick(ids, False)
+        self.render()
+
+    def _open_left(self):
+        _reg, items = self.data()
+        return sum(len(notes.open_notes(i)) for i in items.values())
+
+    def _submit_note(self, text):
+        text = " ".join((text or "").split())
+        if text and self.item_here:
+            self.on_add_note(self.item_here, text)
+            self.note_field.setStringValue_("")
+            self.render()
+
     def _cancel_search(self):
         self.search.setStringValue_("")
         self.press("clear")
@@ -170,8 +231,10 @@ class MainWindow:
 
     def _render(self):
         reg, items = self.data()
-        page = page_model.view(reg, items, self.nav)
-        sig = repr((window_model.signature(self.banner), page))
+        now = time.time()
+        page = page_model.view(reg, items, self.nav, fading=self.flow.holding(now))
+        self.flow_sig = self.flow.signature(now)
+        sig = repr((window_model.signature(self.banner), page, self.flow_sig))
         if sig == self.shown:
             return
         self.shown = sig
@@ -179,10 +242,15 @@ class MainWindow:
         main = page["main"]
         split = main["kind"] == "project" and not main.get("empty")      # a project: its top stays put, Things scrolls
         head = self._head(main) if split else self._no_head()
+        thing = main["kind"] == "thing"
+        self.item_here = main.get("item") if thing else None
+        self.note_field.setHidden_(not thing)
+        bar = 62 if thing else 0                                   # the note field sits under the page
+        self._toast(now, bar)
         self.search.setFrame_(NSMakeRect(16, TOP + 10, SIDE_W - 32, 28))
         self.side_scroll.setFrame_(NSMakeRect(0, TOP + 52, SIDE_W, H - TOP - 52))
         self.head_host.setFrame_(NSMakeRect(SIDE_W, top, W - SIDE_W, head))
-        self.main_scroll.setFrame_(NSMakeRect(SIDE_W, top + head, W - SIDE_W, H - top - head))
+        self.main_scroll.setFrame_(NSMakeRect(SIDE_W, top + head, W - SIDE_W, H - top - head - bar))
         here = (self.nav["view"], self.nav["pid"], self.nav["q"], self.nav["tid"])
         moved, self.where = here != self.where, here
         self._fill(self.side_scroll, SIDE_W, lambda doc: self._side(doc, page["side"]))
@@ -200,6 +268,25 @@ class MainWindow:
         scroll.setDocumentView_(doc)
         clip.scrollToPoint_(NSMakePoint(0, max(0, min(keep, height + 24 - view_h))))
         scroll.reflectScrolledClipView_(clip)
+
+    def _toast(self, now, bar):
+        """"Marked done · Undo" while R10 says so: a small dark line at the bottom of the page."""
+        for sub in list(self.toast_host.subviews()):
+            sub.removeFromSuperview()
+        toast = self.flow.toast(now)
+        self.toast_host.setHidden_(toast is None)
+        if toast is None:
+            return
+        text, undoable = toast
+        width = kit.text_width(text, 13, 500) + (74 if undoable else 36)
+        self.toast_host.setFrame_(NSMakeRect(SIDE_W + (W - SIDE_W - width) / 2, H - bar - 54, width, 36))
+        pill = self._tap(self.toast_host, 0, 0, width, 36, lambda: None)
+        pill.tint = NSColor.colorWithWhite_alpha_(0.12, 0.94)
+        kit.put_text(pill, text, 18, 0, width - 36, 13, 500, NSColor.whiteColor(), wrap=False, height=36, middle=True)
+        if undoable:
+            link = self._tap(pill, width - 62, 0, 56, 36, self.undo)
+            kit.put_text(link, "Undo", 0, 0, 56, 13, 600, NSColor.colorWithRed_green_blue_alpha_(0.55, 0.75, 1.0, 1.0),
+                         align=kit.CENTER, wrap=False, height=36, middle=True)
 
     BANNER_SYMBOLS = {"paused:manual": "pause.circle.fill", "paused:away": "moon.zzz.fill", "screen_off": "exclamationmark.circle.fill",
                       "mic_off": "mic.slash.fill", "restart": "arrow.clockwise.circle.fill", "private": "lock.fill",
@@ -585,16 +672,20 @@ class MainWindow:
                 kit.put_text(tile, k.upper(), 14, 11, tw - 28, 10, 600, kit.mute(), wrap=False, height=14)
                 kit.put_text(tile, v, 14, 28, tw - 28, 17, 700, wrap=False, height=26)
             y += 62 + 22
-        y = self._section(doc, f"Notes · {len(page['open'])} open", x, y, w)
+        y = self._section(doc, f"Notes · {page['open_count']} open", x, y, w)
         for n in page["open"]:
             y = self._card_box(doc, x, y, w, lambda box, inner, n=n: self._note_body(box, inner, n)) + 8
         if not page["open"]:
-            self._label(doc, "No open notes.", x, y, w, size=13, weight=400)
+            self._label(doc, "All caught up." if page["done"] else "No notes yet. Add one below.", x, y, w, size=13, weight=400)
             y += 26
         if page["done"]:
             y = self._section(doc, f"Finished · {len(page['done'])}", x, y + 10, w)
             for n in page["done"]:
-                y += kit.put_text(doc, "✓  " + n["text"], x, y, w, 13, 400, kit.mute()) + 8
+                row = self._tap(doc, x, y, w, 30, (lambda i=n["id"]: self.tick_note(i, False)))
+                kit.put_text(row, "✓", 0, 0, 20, 13, 600, kit.mute(), wrap=False, height=30, middle=True)
+                kit.put_text(row, n["text"], 26, 0, w - 26 - 70, 13, 400, kit.mute(), wrap=False, height=30, middle=True)
+                kit.put_text(row, "Reopen", w - 64, 0, 64, 12, 500, kit.accent(), align=RIGHT, wrap=False, height=30, middle=True)
+                y += 30
         if page["latest"]:
             y = self._section(doc, "What LMemM noticed", x, y + 10, w)
 
@@ -612,10 +703,29 @@ class MainWindow:
         return y
 
     def _note_body(self, box, inner, n):
-        kit.put_text(box, "○", 14, 12, 16, 16, 400, kit.mute(), wrap=False, height=20)
-        h = kit.put_text(box, n["text"], 40, 12, inner - 26 - 86, 14, 500)
+        """A note: the tick on the left (a tap flips it), the words, when. A ticked note is crossed out."""
+        tap = self._tap(box, 0, 0, 40, 44, (lambda i=n["id"], d=n["done"]: self.tick_note(i, not d)))
+        ring = _Ring.alloc().initWithChecked_(n["done"])
+        ring.setFrame_(NSMakeRect(14, 13, 17, 17))
+        tap.addSubview_(ring)
+        width = inner - 26 - 86
+        if n["done"]:
+            h = self._struck(box, n["text"], 40, 12, width, 14)
+        else:
+            h = kit.put_text(box, n["text"], 40, 12, width, 14, 500)
         kit.put_text(box, n["when"], 14 + inner - 80, 12, 80, 12, 400, kit.mute(), align=RIGHT, wrap=False, height=20)
         return max(h, 20)
+
+    def _struck(self, parent, text, x, y, w, size):
+        """Muted text with a line through it: a note you just finished."""
+        height = kit.text_height(text, size, 500, w)
+        view = kit._KitText.alloc().initWithText_size_weight_color_align_wrap_middle_(text, size, 500, kit.mute(), LEFT, True, False)
+        view.setFrame_(NSMakeRect(x, y, w, height))
+        marked = kit._attributed(text, size, 500, kit.mute(), LEFT, True).mutableCopy()
+        marked.addAttribute_value_range_(NSStrikethroughStyleAttributeName, 1, (0, len(text)))
+        view.attributed = marked
+        parent.addSubview_(view)
+        return height
 
     def _excerpt(self, doc, e, x, y, w):
         """One passage LMemM read: where and when, any decision it found, then its lines as short paragraphs."""

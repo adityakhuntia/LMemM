@@ -292,6 +292,19 @@ class ThingPageTests(unittest.TestCase):
         self.assertEqual((len(again["lines"]), again["more"], again["open"]), (10, 0, True))
         self.assertFalse(pm.press(reg, state, "expand", "new")["ex_open"])                                 # toggles back
 
+    def test_a_ticked_note_stays_crossed_out_until_its_hold_is_over(self):
+        reg, items, ids = world()
+        import notes
+        nid = notes.note_id(items["d"]["notes"][0])
+        notes.set_done(items, [nid])
+        state = pm.press(reg, pm.new_state(), "thing", "d", items)
+        held = pm.view(reg, items, state, NOW, fading={nid})["main"]
+        self.assertEqual([(n["text"], n["done"]) for n in held["open"]], [("buy soil", True), ("call Lee", False)])
+        self.assertEqual((held["open_count"], held["done"]), (1, []))
+        folded = pm.view(reg, items, state, NOW)["main"]
+        self.assertEqual([n["text"] for n in folded["open"]], ["call Lee"])
+        self.assertEqual([(n["id"], n["text"]) for n in folded["done"]], [(nid, "buy soil")])
+
     def test_the_text_it_read_survives_every_shape_memory_has_had(self):
         now = NOW
         self.assertEqual(pm.excerpts_of("plain words", now)[0]["lines"], ["plain words"])
@@ -325,6 +338,42 @@ class ThingPageTests(unittest.TestCase):
         del items["a"]
         self.assertEqual(pm.view(reg, items, state, NOW)["main"]["kind"], "home")
         self.assertEqual(pm.press(reg, pm.new_state(), "back", None, items)["view"], "home")
+
+
+class NotesInTheWindowTests(unittest.TestCase):
+    """Ticking and adding use the pill's own functions, so the two always agree."""
+
+    def test_a_note_added_to_a_thing_is_on_its_page_and_ticking_it_moves_it(self):
+        import notes
+        reg, items, ids = world()
+        item = notes.record(items, {}, [], ("item", "e"), "ring the printer", when(minutes=1))
+        self.assertEqual(item["id"], "e")
+        page = pm.view(reg, items, pm.press(reg, pm.new_state(), "thing", "e", items), NOW)["main"]
+        self.assertEqual([n["text"] for n in page["open"]], ["ring the printer"])
+        nid = page["open"][0]["id"]
+        self.assertEqual(notes.set_done(items, [nid]), [nid])
+        page = pm.view(reg, items, pm.press(reg, pm.new_state(), "thing", "e", items), NOW)["main"]
+        self.assertEqual(([n["text"] for n in page["open"]], [n["text"] for n in page["done"]]), ([], ["ring the printer"]))
+        notes.set_done(items, [nid], done=False)                      # a tap on a finished note reopens it
+        self.assertEqual(pm.view(reg, items, pm.press(reg, pm.new_state(), "thing", "e", items), NOW)["main"]["open_count"], 1)
+
+    def test_adding_a_note_to_a_thing_that_is_gone_saves_nothing(self):
+        import notes
+        reg, items, ids = world()
+        self.assertIsNone(notes.record(items, {}, [], ("item", "nope"), "x", when(minutes=1)))
+
+    def test_the_tracker_gives_the_window_the_pills_own_functions(self):
+        import ast
+        import os
+        with open(os.path.join(os.path.dirname(__file__), "..", "src", "tracker.py")) as fh:
+            tree = ast.parse(fh.read())
+        fns = {n.name: n for c in tree.body if isinstance(c, ast.ClassDef) for n in c.body if isinstance(n, ast.FunctionDef)}
+        self.assertIn("notes.set_done", ast.unparse(fns["widget_tick"]))
+        add = ast.unparse(fns["window_add_note"])
+        self.assertIn("notes.record", add)
+        self.assertIn("('item', item_id)", add)
+        self.assertIn("self.widget_tick, self.window_add_note", ast.unparse(fns["open_window"]))
+        self.assertIn("main_window.tick()", ast.unparse(fns["tick"]))
 
 
 class SearchTests(unittest.TestCase):

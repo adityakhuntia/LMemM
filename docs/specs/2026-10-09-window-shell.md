@@ -54,3 +54,11 @@ scanning); showing them is fast (50 ms for 10,000). The window is a fixed size.
 - A thing's page: where it lives, four quiet tiles (last seen, first seen, time spent, visits), each open note in
   its own box, what LMemM noticed, then "What was on screen" as short passages (source and when, any decision found as
   a quote, six lines each with "Show more").
+
+# Step 6: notes in the window
+
+On a thing's page (click any thing or note): tap the circle to tick a note, tap a finished one to reopen it, type in
+the bar under the page and press Return to add a note. Ticking follows the pill's rules (R10, `rules.FinishFlow`): the
+note stays crossed out for 1.2 s, then moves to Finished; "Marked done · Undo" shows for 6 s and Undo reverts the batch.
+The window and the pill read and write the same notes (`notes.set_done`, `notes.record`), so a tick in either shows in
+both within a second. Not yet: ticking from the Pick up cards or the Needs you list (open the thing first).

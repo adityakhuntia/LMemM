@@ -22,6 +22,9 @@ draws it and forwards presses to `press()`; it decides nothing.
     P7  Every list is cut at a sensible number with a "Show N more" row; nothing is silently
         dropped, and 10,000 projects stay as quick as 10.
     P8  Press only changes what you are looking at (`press`). Nothing here writes to memory.
+    P10 A note you just ticked stays on its thing, crossed out, until its hold is over (rules.FinishFlow,
+        R10), then moves to Finished. Tapping a finished note opens it again. The window reads and
+        writes the same notes as the pill, so a tick in either is a tick in both.
     P9  Any thing, and any note of it, opens its own page: the whole title, where it lives (and
         the other projects it is in), the open notes in full, the finished ones, when you last
         saw it and how long you spent, and what LMemM read from it. Back returns to the page you
@@ -262,10 +265,10 @@ def crumbs(reg, pid):
     return chain
 
 
-def main(reg, items, state, counts, now):
+def main(reg, items, state, counts, now, fading=()):
     view = state["view"]
     if view == "thing" and state.get("tid") in items:
-        return thing_page(reg, items[state["tid"]], now, state.get("ex_open", ()))
+        return thing_page(reg, items[state["tid"]], now, state.get("ex_open", ()), fading)
     if view == "search":
         return search(reg, items, state["q"], now)
     if view == "needs":
@@ -378,22 +381,27 @@ def excerpts_of(content, now, expanded=()):
     return out
 
 
-def thing_page(reg, item, now, expanded=()):
+def thing_page(reg, item, now, expanded=(), fading=()):
     """Everything LMemM knows about one thing, read only (P9)."""
     main = projects._main(item)
     places = [{"id": p, "name": projects.get(reg, p)["name"], "hue": hue(p), "main": p == main,
                "path": " › ".join(projects.path_names(reg, p))}
               for p in projects._members_of(item) if _live(reg, p)]
-    mine = item.get("notes", [])
-    done = [n for n in mine if notes.is_done(item, n)]
+    mine = [n for n in item.get("notes", []) if isinstance(n, dict) and isinstance(n.get("text"), str)]
+    fading = set(fading)
+    shown = [n for n in mine if not notes.is_done(item, n) or notes.note_id(n) in fading]
+    done = [n for n in mine if notes.is_done(item, n) and notes.note_id(n) not in fading]
     state = {k: v for k, v in (item.get("state") or {}).items() if v and str(v) != title_of(item)}
     stats = [("Last seen", ago(item.get("last_seen"), now)), ("First seen", ago(item.get("first_seen"), now)),
              ("Time spent", store.duration(item.get("seconds"))), ("Visits", f"{int(item.get('visits') or 0):,}")]
     return {"kind": "thing", "title": title_of(item), "app": item.get("app", ""), "back": True,
             "meta": " · ".join(b for b in (item.get("app", ""), "last seen " + ago(item.get("last_seen"), now).lower()) if b),
             "places": places,
-            "open": [{"text": n["text"], "when": ago(n.get("at"), now)} for n in notes.open_notes(item)],
-            "done": [{"text": n["text"], "when": ago(n.get("at"), now)} for n in done],
+            "item": item["id"],
+            "open": [{"id": notes.note_id(n), "text": n["text"], "when": ago(n.get("at"), now),
+                      "done": notes.is_done(item, n)} for n in shown],
+            "open_count": sum(1 for n in shown if not notes.is_done(item, n)),
+            "done": [{"id": notes.note_id(n), "text": n["text"], "when": ago(n.get("at"), now)} for n in done],
             "stats": [(k, v) for k, v in stats if v],
             "latest": [(str(k).replace("_", " ").capitalize(), str(v)[:200]) for k, v in list(state.items())[:LATEST_SHOWN]],
             "excerpts": excerpts_of(item.get("content"), now, expanded)}
@@ -426,10 +434,11 @@ def search(reg, items, q, now):
 
 # ---------------------------------------------------------------- the whole page
 
-def view(reg, items, state, now=None):
+def view(reg, items, state, now=None, fading=()):
+    """fading: ids of notes ticked a moment ago, still on screen crossed out (P10)."""
     now = now or datetime.now()
     counts = projects.counts(reg, items)
-    return {"side": side(reg, items, state, counts, now), "main": main(reg, items, state, counts, now)}
+    return {"side": side(reg, items, state, counts, now), "main": main(reg, items, state, counts, now, fading)}
 
 
 def signature(v):

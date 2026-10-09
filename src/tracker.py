@@ -379,6 +379,8 @@ class Tracker:
             self.menubar.update(menu_model.view(status, self.watch_apps, hotkey=dictation.HOTKEY_LABEL))
             if self.main_window and self.main_window.visible():
                 self.main_window.update(self.window_view(status))
+        if self.main_window:
+            self.main_window.tick()                     # a ticked note's hold and the Undo line follow the clock
         if self.widget:
             self.widget.pulse(self.widget_heard())      # waveform + words while the note window is open
         if self.manual_paused and self.pause_until and time.time() >= self.pause_until:
@@ -620,6 +622,15 @@ class Tracker:
         self.widget_refresh_soon()
         line(at[11:19], (item or {}).get("app", "?"), "note saved" + (" (awaiting context)" if item is None else ""))
 
+    def window_add_note(self, item_id, text):
+        """A note typed in the window, on the thing whose page it is (the same record as ⌃⌥N)."""
+        at = datetime.now().isoformat(timespec="seconds")
+        with self.lock:
+            item = notes.record(self.items, self.frame_item, self.notes, ("item", item_id), text, at)
+            if item is not None:
+                self.save(force=True)
+        line(at[11:19], (item or {}).get("app", "?"), "note saved" if item else "note not saved: that thing is gone")
+
     def widget_refresh_soon(self):
         self.last_widget_refresh = 0.0
 
@@ -682,7 +693,7 @@ class Tracker:
 
     def open_window(self):
         if self.main_window is None:
-            self.main_window = main_window.MainWindow(self.menu_pick, self.page_data)   # its button sends a menu row id
+            self.main_window = main_window.MainWindow(self.menu_pick, self.page_data, self.widget_tick, self.window_add_note)   # its button sends a menu row id
         self.adopt_projects()                       # things filed by name since the last time
         self.main_window.show(self.window_view(self.widget_status()))
 

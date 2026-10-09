@@ -13,6 +13,8 @@ LMemM - the one command.
     lmemm.py context [SESSION] [--days N]
                                       a clean export for handing to an AI: what you did
                                       and why, grouped by project, with no operational detail
+    lmemm.py trail start|show|places|status|pause|resume|forget|probe
+                                      the event trail: what you are doing, from app events (see docs/specs)
     lmemm.py status | pause | resume  the running tracker
     lmemm.py pin                      force-save the current screen
     lmemm.py note                     open the note window (same as ⌃⌥N)
@@ -45,7 +47,7 @@ USAGE = ("usage: lmemm.py [menu] | start [--every N] [--input-events --input-app
          " | memory [N] [--content] [--events]"
          " | notes [--all] [PROJECT] | notes done|reopen ID…"
          " | context [SESSION] [--days N]"
-         " | status | pause | resume | pin | note | delete-session ID (--dry-run | --confirm ID)")
+         " | trail … | status | pause | resume | pin | note | delete-session ID (--dry-run | --confirm ID)")
 
 
 # ---------------------------------------------------------------- memory
@@ -388,6 +390,9 @@ def main():
         cmd_suggest(rest)
     elif cmd in {"status", "pause", "resume"}:
         cmd_control(cmd)
+    elif cmd == "trail":
+        import trail_cli
+        trail_cli.main(sys.argv[2:])
     elif cmd == "pin":
         tracker.pin()
     elif cmd == "note":

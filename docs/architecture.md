@@ -34,11 +34,17 @@ One process, two threads, plain files.
 | `input_monitor.py` | opt-in listen-only event tap + privacy gate | **yes** |
 | `input_events.py` | input summaries, ordering, context boundaries | no |
 | `input_store.py` | input files, capture links, provenance, session deletion | no |
+| `trail_ax.py` | bounded accessibility-tree read into a Snapshot (title, URL, focus label, headings, selected rows, text) | **yes** (`LiveNode` only) |
+| `trail_place.py` | Snapshot + URL -> which place (chat, AI chat, email, doc, page, file), with confidence; settle logic | no |
+| `trail_engine.py` | when to look (Scheduler), what may be looked at (Gate), what to log (Engine) | no |
+| `trail_store.py` | the event trail on disk: JSONL per day, 48 h retention, forget | no |
+| `trail_mac.py` | AX observers, workspace notifications, listen-only event tap, screenshot fallback | **yes** |
+| `trail_cli.py` | `lmemm.py trail ...` | no (`start`, `probe` use `trail_mac`) |
 | `lmemm.py` | CLI: the interactive menu, and one direct command per menu item | no |
 
 Rules that keep this cohesive:
 
-- Only `macos.py`, `dictation.py`, `widget.py`, `input_monitor.py` and `resolver.py` touch macOS APIs,
+- Only `macos.py`, `dictation.py`, `widget.py`, `input_monitor.py`, `resolver.py`, `trail_mac.py` (and `LiveNode` in `trail_ax.py`) touch macOS APIs,
   so everything else is testable with plain data.
 - Nothing imports `tracker` or `lmemm`. Dependencies point inward toward `config`.
 - Paths come from `config.paths()` at call time, never module globals. Tests point

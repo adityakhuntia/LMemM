@@ -10,6 +10,8 @@ LMemM - the one command.
     lmemm.py notes [--all] [PROJECT]  pending edits (your ⌃⌥N notes) by project
     lmemm.py notes done ID… | notes reopen ID…
     lmemm.py suggest [NAME] [ID…]     offer things as one project (stands in for the model)
+    lmemm.py projects [--all] | projects new|rename|move|archive|restore|merge|delete …
+                                      look at and shape the project tree (any depth)
     lmemm.py context [SESSION] [--days N]
                                       a clean export for handing to an AI: what you did
                                       and why, grouped by project, with no operational detail
@@ -49,6 +51,7 @@ import tracker  # noqa: E402
 USAGE = ("usage: lmemm.py [menu] | start [--every N] [--input-events --input-app APP]"
          " | memory [N] [--content] [--events]"
          " | notes [--all] [PROJECT] | notes done|reopen ID…"
+         " | projects [--all] | projects new|rename|move|archive|restore|merge|delete …"
          " | context [SESSION] [--days N]"
          " | trail … | status | pause | resume | pin | note | delete-session ID (--dry-run | --confirm ID)"
          " | delete-all (--dry-run | --confirm) | setup [--again] [--no-start]")
@@ -426,6 +429,18 @@ def interactive_menu(read=input, write=print):
         write(menu_text())
 
 
+def cmd_projects(args):
+    import projects_cli
+
+    def save(items):
+        record_offline_change(items)
+        store.save_memory(items)
+    try:
+        projects_cli.run(args, running=tracker.running_pid() is not None, save_items=save)
+    except ValueError as error:
+        sys.exit(str(error))
+
+
 def main():
     args = sys.argv[1:]
     if not args:
@@ -443,6 +458,8 @@ def main():
         cmd_notes(rest)
     elif cmd == "suggest":
         cmd_suggest(rest)
+    elif cmd == "projects":
+        cmd_projects(rest)
     elif cmd in {"status", "pause", "resume"}:
         cmd_control(cmd)
     elif cmd == "trail":

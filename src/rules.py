@@ -32,6 +32,11 @@ What that means:
         says LMemM is not watching this app, and ⌃⌥N opens that card instead of failing quietly.
         Marks, strongest first: paused, screen access off, private window, app not chosen,
         mic off (see R8).
+    R12-R15 are about projects and live in projects.py (tested in test_project_tree.py):
+        R12 any depth, never a loop, no two with one name in one place; R13 a thing has one main
+        project and may be "also in" others, and counts use the main one; R14 "Not this
+        project" is permanent for suggestions; R15 archive, delete and merge lose nothing by
+        accident (merge keeps the old name as an alias).
     R8  Every state wears a mark on the pill you can read at a glance; the card only confirms it,
         in a title and one line, with at most one thing to do. Red is for a permission that is
         off. A private window and an empty place stay neutral.

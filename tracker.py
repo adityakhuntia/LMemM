@@ -99,7 +99,8 @@ class Tracker:
         self.pin = False
         self.note_request = False
         self.waiting = []                    # saved notes whose screen is still being read
-        self.anchor = None                   # (front place, item id): where your last note landed
+        self.cur_place = None                # (app, window) of the newest timeline event
+        self.pill_place = None               # (app, window) the pill last refreshed for
         self.paused = None                   # automatic pause reason (idle, locked, ...)
         self.manual_paused = False           # `lmemm.py pause`
         self.last_sig = None
@@ -334,6 +335,11 @@ class Tracker:
         self.process_control()
         self.poll_input()
         self.maintain()
+        if self.widget:
+            here = self.front_sig()
+            if here != self.pill_place:             # you switched tab or app: update the pill now, not within a second
+                self.pill_place = here
+                self.last_widget_refresh = 0.0
         if self.widget and time.time() - self.last_widget_refresh >= 1:
             self.last_widget_refresh = time.time()
             self.widget.refresh()
@@ -550,8 +556,6 @@ class Tracker:
             self.save(force=True)
             if item is None:
                 self.waiting.append({"at": at, "text": text, "sig": sig})      # shown on the pill meanwhile
-            elif sig is not None:
-                self.anchor = (sig, item["id"])
         self.widget_refresh_soon()
         line(at[11:19], (item or {}).get("app", "?"), "note saved" + (" (awaiting context)" if item is None else ""))
 
@@ -561,7 +565,8 @@ class Tracker:
     # ------------------------------------------------------------ the on-screen pill
 
     def front_sig(self):
-        sig = self.last_sig
+        """Where you are right now (app, window), read live so the pill never trails a switch."""
+        sig = macos.front() or self.last_sig
         return (sig["app"], sig["window"]) if sig else None
 
     def widget_card(self):
@@ -574,15 +579,9 @@ class Tracker:
                 note = next((n for n in self.notes if n["at"] == w["at"] and n["text"] == w["text"]), None)
                 if note is None or note.get("status") != "pending":
                     self.waiting.remove(w)             # attached (or given up): the real item has it now
-                    if note is not None and note.get("item"):
-                        self.anchor = (w["sig"], note["item"])
-            if self.anchor and self.anchor[0] != here:
-                self.anchor = None                     # you went somewhere else
-            waiting = [w for w in self.waiting if w["sig"] == here]
-            if self.anchor and self.anchor[1] in self.items and not (card and card.get("item") == self.anchor[1]) \
-                    and not (card and card.get("left")):
-                card = notes.card(self.items, self.anchor[1])
-        return rules.with_pending(card, waiting, lambda: notes.blank_card(here[0] if here else "", here[0] if here else ""))
+            waiting = [w for w in self.waiting if w["sig"] == here]   # only where you wrote it
+        card_out = card
+        return rules.with_pending(card_out, waiting, lambda: notes.blank_card(here[0] if here else "", here[0] if here else ""))
 
     def _card_here(self):
         with self.lock:
@@ -599,7 +598,10 @@ class Tracker:
             front = self.last_sig and (self.last_sig["app"], self.last_sig["window"])
             if self.now and self.now["raw"] == front:
                 return notes.card(self.items, self.now["item"]) if self.now["item"] in self.items else None
-            return notes.card(self.items, cur["item"]) if cur else None
+            if cur and self.cur_place == front:
+                return notes.card(self.items, cur["item"])
+            app = (self.last_sig or {}).get("app") or ""
+            return notes.blank_card(app, app)       # not read yet: say "no notes here", never the last thing's
 
     # ------------------------------------------------------------ "what am I on?", right now
 
@@ -928,6 +930,7 @@ class Tracker:
             line(t, st["app"], st["doing"] + ("  (back to it)" if came_back and item["visits"] > 1 else ""))
             if came_back:
                 self.resurface(item, cur, meta)
+        self.cur_place = (meta["app"], meta["window"])      # where the newest event was read
         if dt:
             cur["activity"][act["category"]] = cur["activity"].get(act["category"], 0) + int(dt)
             cur["mostly"] = max(cur["activity"], key=cur["activity"].get)

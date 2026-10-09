@@ -70,11 +70,14 @@ fake app (chat switch, text diff, redaction, gaps logged once, pause, typing cou
 screenshot fallback only when thin and rate-limited), the store (48 h expiry, boundary-day trim, forget,
 size cap, torn line, file modes), and the CLI.
 
-**Not run on a Mac:** `trail_mac.py` and `LiveNode` (they compile only): the AXObserver callbacks, the event
-tap, the real attribute reads, Chromium `AXManualAccessibility`, the screenshot fallback, and every
-**real-app rule** in `PROFILES` (WhatsApp, Messages, Slack, Discord, Telegram, Teams, VS Code...), which are
-written from how those apps are documented to label things and need checking. **No latency number here is
-measured**; the design numbers above are targets.
+**Device-tested (Aditya's MacBook, 2026-10-09, by hand, three rounds):**
+- Runs; change notifications register (6) and the event tap records. Needs Accessibility and Input Monitoring.
+- WhatsApp Web in Brave: 7+ chats switched quickly, every switch is its own `focus` event with the right name; typing is logged against the message box ("Type a message to X"). Confidence stays 0.79 because the page exposes no selected-row/header signal; a stale box label can show the previous chat for a moment.
+- VS Code: file and folder come from the title; the screenshot fallback ran when it exposed too little text, then accessibility text took over.
+- Claude desktop: the app is a web page in a window; its tree fills in a few seconds after we switch it on. Conversations are keyed by the page address (incl. `thread`); the name is the page title, which is the project's title, not the thread's (open).
+- Measured reads: a full read costs ~55-75 ms (median) at ~80-180 nodes; Brave's chrome used to consume the whole budget (fixed by skipping toolbars/tab strips and reading the web area).
+
+**Not yet checked on a Mac:** Messages, Slack, Discord, Telegram, Teams, Gmail/Slack/ChatGPT in the browser (their rules are written from how those apps label things), Safari, CPU use over an hour, and the pause/forget commands on real data.
 
 ## For you to run on the Mac
 

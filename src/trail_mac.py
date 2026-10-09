@@ -112,21 +112,25 @@ class Observers:
         self.reader, self.poke = reader, poke
         self.pid = self.observer = None
         self.active = 0                         # notifications registered for the current app
+        self.failed = set()                     # pids we could not observe: don't retry every loop
 
     def attach(self, pid, bundle_id):
         AS = self.reader.AS
-        if pid == self.pid:
+        if pid == self.pid or pid in self.failed:
             return
         self.detach()
         el = self.reader.app_element(pid, bundle_id)
 
+        import objc
+
+        @objc.callbackFor(AS.AXObserverCreate)
         def callback(observer, element, notification, refcon):
             self.poke(AX_NOTIFICATIONS.get(str(notification), "layout"))
 
+        self.callback = callback                 # keep it alive
         err, observer = AS.AXObserverCreate(pid, callback, None)
         if err != 0 or observer is None:
             return
-        self.callback = callback                 # keep it alive
         for name in AX_NOTIFICATIONS:
             if AS.AXObserverAddNotification(observer, el, name, None) == 0:
                 self.active += 1
@@ -259,6 +263,7 @@ class Trail:
         self.flags = set()
         self.last_status = 0.0
         self.last_sweep = 0.0
+        self.said = set()
 
     # ---- notifications -> the scheduler (called on the main thread; they only record and wake)
 
@@ -288,7 +293,12 @@ class Trail:
                 self.sched.set_idle(macos.idle_seconds() > config.TRAIL_IDLE)
                 info = front()
                 if info and info["pid"] != self.observers.pid and not self.engine.gate.app(info):
-                    self.observers.attach(info["pid"], info["bundle_id"])
+                    try:
+                        self.observers.attach(info["pid"], info["bundle_id"])
+                    except Exception as e:          # notifications are an accelerator; the 1 s check still runs
+                        self.observers.failed.add(info["pid"])
+                        self.observers.detach()
+                        self.say(f"no change notifications for {info['app']} ({type(e).__name__}: {e}); checking every second")
                 self.drain(now)
                 jobs = self.sched.due(now)
                 if jobs:
@@ -300,7 +310,13 @@ class Trail:
                 self.housekeeping(now)
             except Exception as e:
                 self.engine.gap_once("internal_error")
-                print(f"trail: {type(e).__name__}: {e}")
+                self.say(f"{type(e).__name__}: {e}")
+
+    def say(self, msg):
+        """Print a message once, however often the same thing happens."""
+        if msg not in self.said:
+            self.said.add(msg)
+            print("trail: " + msg)
 
     def drain(self, now):
         while self.queue:

@@ -194,7 +194,7 @@ class WiringTests(unittest.TestCase):
         asked = set(re.findall(r'project_action\("([a-z]+)"', source)) | set(re.findall(r'open_name\("([a-z]+)"', source))
         asked |= set(re.findall(r'open_pick\("([a-z]+)"', source)) | set(re.findall(r'open_ask\("([a-z]+)"', source))
         self.assertTrue({"new", "rename", "move", "archive", "restore", "merge", "delete"} <= asked, asked)
-        self.assertTrue(asked <= set(pa.ACTIONS), asked)
+        self.assertTrue(asked <= set(pa.ACTIONS) | {"me"}, asked)                  # "me" is the name dialog for Settings > You
 
 
 if __name__ == "__main__":

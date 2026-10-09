@@ -60,6 +60,17 @@ SKIP_APPS = {
     "com.apple.keychainaccess", "com.apple.Passwords", "com.lastpass.LastPass",
     "com.dashlane.dashlanephonefinal", "org.keepassxc.keepassxc", "com.nordpass.macos.NordPass",
 }
+BUILTIN_SKIP_APPS = frozenset(SKIP_APPS)          # always skipped; the Privacy settings add the user's own on top
+
+
+def set_skip_apps(extra=()):
+    """SKIP_APPS = the built-in apps plus the ones you chose to never remember. Changed in place, so
+    everything holding the set (the event trail's gate) sees it at once."""
+    SKIP_APPS.clear()
+    SKIP_APPS.update(BUILTIN_SKIP_APPS)
+    SKIP_APPS.update(i for i in extra if isinstance(i, str) and i)
+
+
 SKIP_SITES = re.compile(
     r"bank|netbanking|onlinesbi|hdfc|icici|axisbank|kotak|paypal\.|wise\.com|stripe\.com"
     r"|razorpay\.com/(app|dashboard)|paytm|phonepe|zerodha|groww|coinbase|binance"

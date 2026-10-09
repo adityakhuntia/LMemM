@@ -16,6 +16,7 @@ from AppKit import (NSApplication, NSBezierPath, NSColor, NSImageView, NSMakePoi
                     NSStrikethroughStyleAttributeName, NSWindow, NSWorkspace)
 
 import apps
+import menu_model
 import notes
 import page_model
 import project_actions
@@ -87,7 +88,7 @@ class MainWindow:
     """on_press(row id) is called when the banner's button is pressed (ids the menu already knows).
     data() returns (project registry, things by id) for the page."""
 
-    def __init__(self, on_press, data, on_tick=None, on_add_note=None, on_project=None, on_project_undo=None, suggest=None):
+    def __init__(self, on_press, data, on_tick=None, on_add_note=None, on_project=None, on_project_undo=None, suggest=None, prefs=None):
         self.on_press = on_press
         self.data = data
         self.on_tick = on_tick or (lambda ids, done: None)               # tick or reopen notes (the pill's own function)
@@ -95,6 +96,8 @@ class MainWindow:
         self.on_project = on_project                                   # (action, args) -> {"message", "go", "undo"}; raises ValueError
         self.on_project_undo = on_project_undo or (lambda undo: None)
         self.suggest = suggest or (lambda: None)                        # the proposals waiting (suggestions.view)
+        self.prefs = prefs or (lambda section: None)                    # the Settings page (settings_model.view)
+        self.installed = None                                          # the apps on this Mac, found once (the picker and the icons)
         self.dialog = None                                             # the question or form on screen, if any
         self.done = None                                               # {"message", "undo", "until"}: the last project change
         self.sel = None                                                # None, or the ids of the things ticked in Select mode
@@ -188,7 +191,7 @@ class MainWindow:
         self.render()
 
     def back(self, kind):
-        if kind == "thing":
+        if kind in ("thing", "settings"):
             self.press("back")
         elif kind == "search":
             self.press("clear")
@@ -259,7 +262,8 @@ class MainWindow:
     def _render(self):
         reg, items = self.data()
         now = time.time()
-        page = page_model.view(reg, items, self.nav, fading=self.flow.holding(now), sugg=self.suggest())
+        page = page_model.view(reg, items, self.nav, fading=self.flow.holding(now), sugg=self.suggest(),
+                               prefs=self.prefs(self.nav["sec"]) if self.nav["view"] == "settings" else None)
         self.flow_sig = self.flow_signature()
         sig = repr((window_model.signature(self.banner), page, self.flow_sig, self.sel))
         if sig == self.shown:
@@ -360,7 +364,10 @@ class MainWindow:
                 self.done = {"message": str(error), "undo": None, "until": time.time() + 5}
                 self.render_now()
             return False
-        self.close_dialog()
+        if self.dialog and self.dialog.get("stay"):                   # the app picker stays open for the next app
+            self._dialog()
+        else:
+            self.close_dialog()
         self.done = {"message": result["message"], "undo": result["undo"], "until": time.time() + 8}
         if result.get("stay"):                                     # a change to things: the page stays where it is
             self.sel = None
@@ -386,9 +393,25 @@ class MainWindow:
     def open_name(self, action, pid=None, parent=None):
         reg = self._reg()
         title = {"new": "New project" if parent is None else f"New sub-project in “{reg['projects'][parent]['name']}”",
-                 "rename": "Rename project"}[action]
-        self.dialog = {"kind": "name", "action": action, "pid": pid, "parent": parent, "title": title, "error": "",
-                       "value": reg["projects"][pid]["name"] if action == "rename" else ""}
+                 "rename": "Rename project", "me": "Your first name"}[action]
+        value = (reg["projects"][pid]["name"] if action == "rename"
+                 else (self.prefs("you") or {}).get("you", {}).get("name", "") if action == "me" else "")
+        self.dialog = {"kind": "name", "action": action, "pid": pid, "parent": parent, "title": title, "error": "", "value": value}
+        self._dialog(focus=True)
+
+    def setting(self, action, value=None):
+        """Change a setting now (settings_model.py). Returns True when it worked."""
+        return self.project_action(action, value=value)
+
+    def open_settings(self, section=None):
+        self.press("settings", section)
+
+    def open_apps(self, purpose):
+        """The app picker for "watch only these" or "never remember these"."""
+        if self.installed is None:
+            self.installed = apps.installed()
+            self.app_paths = {a["name"]: a["path"] for a in self.installed}
+        self.dialog = {"kind": "appick", "purpose": purpose, "query": "", "error": "", "stay": True}
         self._dialog(focus=True)
 
     def open_menu(self, pid):
@@ -454,7 +477,7 @@ class MainWindow:
         self._dialog()
 
     def _dialog_typed(self, text):
-        if self.dialog and self.dialog["kind"] in ("pick", "tpick"):
+        if self.dialog and self.dialog["kind"] in ("pick", "tpick", "appick"):
             self.dialog["query"] = text
             self._dialog()
 
@@ -463,7 +486,9 @@ class MainWindow:
         if not d or d["kind"] != "name":
             return
         name = self.dlg_field.stringValue()
-        if d["action"] == "new":
+        if d["action"] == "me":
+            self.setting("set_name", name)
+        elif d["action"] == "new":
             self.project_action("new", name=name, parent=d["parent"])
         else:
             self.project_action("rename", pid=d["pid"], name=name)
@@ -492,7 +517,7 @@ class MainWindow:
             y += 44
             if d["error"]:
                 y += kit.put_text(card, d["error"], 24, y, cw - 48, 13, 500) + 12
-            y = self._dialog_buttons(card, cw, y + 6, "Cancel", "Save" if d["action"] == "rename" else "Make project", self._dialog_submit)
+            y = self._dialog_buttons(card, cw, y + 6, "Cancel", "Make project" if d["action"] == "new" else "Save", self._dialog_submit)
         elif d["kind"] == "menu":
             name = reg["projects"][d["pid"]]["name"]
             kit.put_text(card, name, 24, y, cw - 48, 18, 700, wrap=False, height=26)
@@ -549,6 +574,28 @@ class MainWindow:
             found = thing_actions.places(reg, items, d["ids"], d["action"], d["query"])
             y = self._place_rows(card, cw, y, found, (lambda t: self.thing_action(d["action"], d["ids"], t)))
             y = self._dialog_buttons(card, cw, y + 10, "Cancel", None, None)
+        elif d["kind"] == "appick":
+            watch = d["purpose"] == "watch"
+            kit.put_text(card, "Watch only these apps" if watch else "Never remember these apps", 24, y, cw - 48, 18, 700, wrap=False, height=26)
+            y += 42
+            self._field_at(cx + 24, cy + y, cw - 48, "" if focus else None, "Search apps")
+            y += 44
+            user = (self.prefs("apps" if watch else "privacy") or {})
+            listed = {e["id"] for e in (user.get("apps", {}).get("chosen", []) if watch else user.get("privacy", {}).get("never", []))}
+            found = [a for a in apps.search(self.installed or [], d["query"]) if a["id"] not in listed]
+            for a in found[:7]:
+                row = self._tap(card, 12, y, cw - 24, 40,
+                                (lambda a=a: self.setting("watch_add" if watch else "skip_add", {"id": a["id"], "name": a["name"]})))
+                self._app_icon(row, a["name"], 8, 5, 30)
+                kit.put_text(row, a["name"], 48, 0, cw - 24 - 60, 14, 500, wrap=False, height=40, middle=True)
+                y += 42
+            if len(found) > 7:
+                kit.put_text(card, f"{len(found) - 7} more. Keep typing to narrow it.", 24, y + 2, cw - 48, 12, 400, kit.mute(), wrap=False, height=18)
+                y += 26
+            if not found:
+                kit.put_text(card, "No app matches.", 24, y + 2, cw - 48, 13, 400, kit.mute(), wrap=False, height=20)
+                y += 28
+            y = self._dialog_buttons(card, cw, y + 10, "Done", None, None)
         elif d["kind"] == "task":
             plan = d["plan"]
             y += kit.put_text(card, plan["title"], 24, y, cw - 48, 17, 700) + 10
@@ -724,7 +771,7 @@ class MainWindow:
             return self._things(doc, page, x, 6, w)
         y = 30
         kind = page["kind"]
-        if kind in ("search", "needs", "thing", "archived"):
+        if kind in ("search", "needs", "thing", "archived", "settings"):
             self._link(doc, "‹ Back", x - 6, y - 8, lambda: self.back(kind))
             y += 24
         if kind == "project":
@@ -736,9 +783,9 @@ class MainWindow:
         elif kind == "thing":
             self._app_icon(doc, page["app"], x, y - 2, 40)
             tx = x + 54
-        elif kind in ("home", "needs", "archived"):
+        elif kind in ("home", "needs", "archived", "settings"):
             kit.tile(doc, {"home": ("square.stack.3d.up.fill", "folder.fill"), "needs": ("bell.badge.fill", "bell.fill"),
-                           "archived": ("archivebox.fill", "tray.fill")}[kind], kit.ink(), x, y - 2, 40)
+                           "archived": ("archivebox.fill", "tray.fill"), "settings": ("gearshape.fill", "gear")}[kind], kit.ink(), x, y - 2, 40)
             tx = x + 54
         kit.put_text(doc, page["title"], tx, y, w - (tx - x) - (170 if kind in ("project", "thing") else 0), 26, 700, wrap=False, height=34)
         y += 36
@@ -752,7 +799,7 @@ class MainWindow:
         if kind == "thing":
             self._thing_buttons(doc, x + w, 28, page["item"])
         build = {"home": self._home, "project": self._project, "needs": self._needs, "search": self._search,
-                 "thing": self._thing_page, "archived": self._archived}[kind]
+                 "thing": self._thing_page, "archived": self._archived, "settings": self._settings}[kind]
         return build(doc, page, x, y + 6, w)
 
     def _crumbs(self, doc, chain, x, y):
@@ -935,14 +982,119 @@ class MainWindow:
         kit.button(parent, "Move to…", right - 40 - 8 - 100, y, 100, 32, lambda: self.open_thing_pick("assign", [tid]),
                    kind="quiet", size=13, weight=600)
 
+    # ------------------------------------------------------------ settings
+
+    def _settings(self, doc, page, x, y, w):
+        """Settings: six sections as tabs, then the one you are on. Every control changes the setting at once."""
+        y += self._chips(doc, x, y, [(t["title"], t["on"], (lambda i=t["id"]: self.press("settings", i))) for t in page["tabs"]]) + 24
+        return getattr(self, "_set_" + page["section"])(doc, page[page["section"]], x, y, w)
+
+    def _row(self, doc, x, y, w, title, line, build=None, height=60):
+        """A soft row: a title, a quiet line under it, and whatever `build(row, width)` puts at the right."""
+        row = self._tap(doc, x, y, w, height, lambda: None, fill=True)
+        kit.put_text(row, title, 16, 10, w - 200, 14, 600, wrap=False, height=20)
+        if line:
+            kit.put_text(row, line, 16, 32, w - 200, 12, 400, kit.mute(), wrap=False, height=16)
+        if build:
+            build(row, w)
+        return y + height + 8
+
+    def _set_you(self, doc, you, x, y, w):
+        y = self._row(doc, x, y, w, "First name", you["name"] or "Not set yet",
+                      lambda row, rw: kit.button(row, "Change…", rw - 106, 14, 90, 32, lambda: self.open_name("me"), kind="outline", size=13, weight=600))
+        self._label(doc, you["line"], x, y - 2, w, size=12, weight=400)
+        y = self._section(doc, "What you mostly work on", x, y + 30, w)
+        x2 = x
+        for r in you["roles"]:
+            width = kit.text_width(r["role"], 13, 500) + 30
+            kit.button(doc, r["role"], x2, y, width, 32, (lambda v=r["role"]: self.setting("toggle_role", v)),
+                       kind="primary" if r["on"] else "quiet", size=13, weight=500)
+            x2 += width + 8
+        return y + 48
+
+    def _app_list(self, doc, chosen, x, y, w, remove):
+        for e in chosen:
+            row = self._tap(doc, x, y, w, 48, lambda: None, fill=True)
+            self._app_icon(row, e["name"], 14, 9, 30)
+            kit.put_text(row, e["name"], 56, 0, w - 56 - 110, 14, 500, wrap=False, height=48, middle=True)
+            kit.button(row, "Remove", w - 14 - 84, 8, 84, 32, (lambda i=e["id"]: self.setting(remove, i)), kind="quiet", size=13, weight=600)
+            y += 56
+        return y
+
+    def _set_apps(self, doc, apps_, x, y, w):
+        y = self._row(doc, x, y, w, "Every app" if apps_["mode"] == "all" else "Only some apps", apps_["line"])
+        y = self._app_list(doc, apps_["chosen"], x, y, w, "watch_remove")
+        kit.button(doc, "Add apps…", x, y + 4, 120, 34, lambda: self.open_apps("watch"), kind="primary", size=13, weight=600)
+        if apps_["chosen"]:
+            kit.button(doc, "Watch every app", x + 128, y + 4, 150, 34, lambda: self.setting("watch_all"), kind="quiet", size=13, weight=600)
+        return y + 50
+
+    def _set_access(self, doc, access, x, y, w):
+        for r in access["rows"]:
+            off = r["state"] != "granted"
+            red = off and r["key"] != "ax"                        # red is for a permission that is off (accessibility is optional)
+            row = self._tap(doc, x, y, w, 64, lambda: None, fill=True)
+            kit.tile(row, ("exclamationmark.circle.fill", "circle") if off else ("checkmark.circle.fill", "checkmark.circle"),
+                     NSColor.systemRedColor() if red else kit.mute(), 14, 17, 30)
+            kit.put_text(row, r["title"] + (f"  ·  {r['tag']}" if r["tag"] else ""), 58, 11, w - 58 - 230, 14, 600, wrap=False, height=20)
+            kit.put_text(row, r["line"], 58, 33, w - 58 - 230, 12, 400, kit.mute(), wrap=False, height=16)
+            if r["button"]:
+                call = "restart" if r["action"] == "restart" else "access_ax" if r["key"] == "ax" else "access"
+                kit.button(row, r["button"], w - 14 - 180, 16, 180, 32, (lambda c=call: self.on_press(c)), kind="outline", size=13, weight=600)
+            y += 72
+        self._label(doc, "Read from macOS every time. Nothing here is remembered.", x, y + 2, w, size=12, weight=400)
+        return y + 30
+
+    def _set_privacy(self, doc, privacy, x, y, w):
+        y = self._section(doc, "LMemM never reads", x, y, w)
+        for text in privacy["always"]:
+            row = self._tap(doc, x, y, w, 40, lambda: None, fill=True)
+            kit.tile(row, ("lock.fill", "lock"), kit.mute(), 12, 7, 26)
+            kit.put_text(row, text, 52, 0, w - 64, 13, 500, wrap=False, height=40, middle=True)
+            y += 46
+        y = self._section(doc, "Never remember these apps", x, y + 20, w)
+        y = self._app_list(doc, privacy["never"], x, y, w, "skip_remove")
+        if not privacy["never"]:
+            self._label(doc, "None yet.", x, y, w, size=13, weight=400)
+            y += 28
+        self._label(doc, privacy["line"], x, y, w, size=12, weight=400)
+        kit.button(doc, "Add apps…", x, y + 26, 120, 34, lambda: self.open_apps("skip"), kind="primary", size=13, weight=600)
+        return y + 74
+
+    def _set_general(self, doc, general, x, y, w):
+        y = self._section(doc, "Keep screenshots for", x, y, w)
+        x2 = x
+        for k in general["keep"]:
+            width = kit.text_width(k["label"], 13, 500) + 30
+            kit.button(doc, k["label"], x2, y, width, 32, (lambda d=k["days"]: self.setting("keep_days", d)),
+                       kind="primary" if k["on"] else "quiet", size=13, weight=500)
+            x2 += width + 8
+        y += 44
+        y += kit.put_text(doc, general["keep_line"], x, y, w, 12, 400, kit.mute()) + 24
+        y = self._row(doc, x, y, w, "Add a note", "Press this anywhere to write or dictate a note.",
+                      lambda row, rw: kit.put_text(row, general["hotkey"], rw - 116, 0, 100, 15, 600, align=RIGHT, wrap=False, height=60, middle=True))
+        return self._row(doc, x, y, w, "Setup", "Go through the first-run questions again. Your memory and notes stay.",
+                         lambda row, rw: kit.button(row, "Reopen setup…", rw - 14 - 130, 14, 130, 32, lambda: self.on_press("setup"), kind="outline", size=13, weight=600))
+
+    def _set_data(self, doc, data, x, y, w):
+        line = (f"{data['files']:,} file{'s' * (data['files'] != 1)} · {menu_model.size_text(data['bytes'])}" if data["known"]
+                else "LMemM cannot read its data folder.")
+        y = self._row(doc, x, y, w, "Everything stays on this Mac", (data["where"] + "  ·  " if data["known"] else "") + line, height=60)
+        y = self._row(doc, x, y, w, "Memory file", "Everything LMemM remembers, in one readable file.",
+                      lambda row, rw: kit.button(row, "Show in Finder", rw - 14 - 130, 14, 130, 32, lambda: self.on_press("show_file"), kind="outline", size=13, weight=600))
+        return self._row(doc, x, y, w, "Delete all my data", "Asks first, says what goes, then restarts LMemM.",
+                         lambda row, rw: kit.button(row, "Delete…", rw - 14 - 130, 14, 130, 32, lambda: self.on_press("delete"), kind="outline", size=13, weight=600))
+
     def _side_foot(self, side):
         """Pinned under the tree: make a project."""
         for sub in list(self.side_foot.subviews()):
             sub.removeFromSuperview()
         self.side_foot.setFrame_(NSMakeRect(0, H - 48, SIDE_W, 48))
-        tap = self._tap(self.side_foot, 8, 8, SIDE_W - 16, 34, lambda: self.open_name("new"))
+        tap = self._tap(self.side_foot, 8, 8, SIDE_W - 16 - 40, 34, lambda: self.open_name("new"))
         kit.tile(tap, ("plus.circle.fill", "plus"), kit.ink(), 6, 5, 24)
         kit.put_text(tap, "New project", 40, 0, 110, 13, 500, wrap=False, height=34, middle=True)
+        gear = self._tap(self.side_foot, SIDE_W - 8 - 34, 8, 34, 34, lambda: self.open_settings(), fill=self.nav["view"] == "settings")
+        kit.tile(gear, ("gearshape.fill", "gear"), kit.mute(), 5, 5, 24)
 
     def _archived(self, doc, page, x, y, w):
         if page["empty"]:

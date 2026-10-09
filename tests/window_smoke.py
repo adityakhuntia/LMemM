@@ -51,6 +51,9 @@ print("window imported with fakes")
 from datetime import datetime
 from test_project_actions import world
 import projects, suggestions as sg, page_model, notes, time
+import settings_model as sm
+USER = {"name": "Ada", "works_on": ["code"], "watch_apps": [{"id": "com.a", "name": "A"}], "skip_apps": [{"id": "com.x", "name": "X"}]}
+FACTS = {"screen": False, "screen_fresh": True, "ax": False, "mic": "denied", "speech": "granted"}
 
 reg, items, ids = world()
 sug = sg.empty()
@@ -60,10 +63,14 @@ data = lambda: (reg, items)
 calls = []
 def on_project(action, args):
     calls.append((action, args))
+    if action in sm.ACTIONS:
+        r = sm.apply(USER, action, args.get("value"))
+        return {"message": r["message"], "go": None, "stay": True, "undo": {"settings": USER}}
     import project_actions as pa
     return pa.do(reg, items, action, **({**args, "sug": sug} if action in sg.ACTIONS else args))
 w = window.MainWindow(lambda r: None, data, on_project=on_project, on_project_undo=lambda u: None,
-                      suggest=lambda: sg.view(sug, reg, items, datetime.now()))
+                      suggest=lambda: sg.view(sug, reg, items, datetime.now()),
+                      prefs=lambda section: sm.view(USER, section, FACTS, {"data_dir": "/x/data", "files": 3, "bytes": 1200}))
 class FakeScroll:
     def frame(self): return types.SimpleNamespace(size=types.SimpleNamespace(height=600, width=800))
     def contentView(self):
@@ -99,6 +106,22 @@ w.pick_thing("d"); step("select ticked", render)
 w.open_thing_menu(["d"]); w.open_thing_pick("assign", ["d"]); w.open_thing_forget(["d"])
 w.close_dialog(); w.stop_select()
 w.nav = page_model.press(reg, w.nav, "thing", "a"); step("thing page", render)
+for section in sm.SECTIONS:
+    w.nav = page_model.press(reg, w.nav, "settings", section)
+    step("settings " + section, render)
+w.installed = [{"id": "com.b", "name": "B", "path": "/Applications/B.app"}, {"id": "com.a", "name": "A", "path": "/Applications/A.app"}]
+w.app_paths = {}
+w.open_apps("watch"); step("app picker (watch)", lambda: w._dialog())
+w.open_apps("skip"); step("app picker (skip)", lambda: w._dialog())
+w.dialog["query"] = "b"; step("app picker narrowed", lambda: w._dialog())
+w.setting("watch_add", {"id": "com.b", "name": "B"})
+if not w.dialog:
+    FAILED.append("the app picker closed after adding an app")
+w.close_dialog()
+w.open_name("me"); step("name dialog", lambda: w._dialog(focus=True)); w.close_dialog()
+w.setting("keep_days", 30)
+w.nav = page_model.press(reg, w.nav, "back")
+step("back from settings", render)
 w.nav = page_model.press(reg, w.nav, "go", ids["q3"])
 for action, sid, kw in (("accept_items", "s2", {"ids": ["c"]}), ("reject_items", "s2", {"ids": ["d"]}), ("accept_project", "s1", {})):
     step("answer " + action, lambda: w.answer(action, sid, **kw))

@@ -71,7 +71,7 @@ WEB_CHATS_WITHOUT_ID = {"web.whatsapp.com": "WhatsApp", "web.telegram.org": "Tel
 AI_WITHOUT_ID = {"chatgpt.com": "ChatGPT", "chat.openai.com": "ChatGPT", "claude.ai": "Claude",
                  "gemini.google.com": "Gemini", "perplexity.ai": "Perplexity"}
 FRAGMENT_HOSTS = {"mail.google.com", "web.telegram.org"}   # where the fragment is the address
-KEEP_QUERY = {"v", "q", "id", "p", "t", "list"}      # the few query keys that change which page it is
+KEEP_QUERY = {"v", "q", "id", "p", "t", "list", "thread"}      # the few query keys that change which page it is
 
 
 def parse_url(url):
@@ -244,6 +244,13 @@ def place(app, bundle_id, snap, url=None):
         if r["kind"] == "chat" and r["service"] in {"Slack", "Discord"}:
             n, _c, _sig, _conflict = _chat_name(profile or PROFILES.get("com.tinyspeck.slackmacgap"), snap, title, label)
             out["name"] = n or out["name"]
+        return out
+    if profile and profile.get("kind") == "ai_chat" and url.startswith("http") and not in_browser:
+        # an AI desktop app wrapping its website: the page's address and title say which conversation
+        name = display(snap.page_title if snap and snap.page_title else title)
+        out.update(kind="ai_chat", service=profile["service"], name=name or profile["service"], confidence=0.9,
+                   signals=["url"], url=_clean_url(url))
+        out["key"] = f'{profile["service"]}:ai_chat:{page_id(url)}'
         return out
     if web_chat or (profile and profile.get("kind") in {"chat", "ai_chat"}) or (not profile and _box_says_chat(label)):
         service = web_chat or (profile or {}).get("service") or app

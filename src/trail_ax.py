@@ -42,6 +42,7 @@ LIST_ROLES = {"AXList", "AXTable", "AXOutline", "AXScrollArea"}
 class Snapshot:
     title: str = ""                  # window title
     url: str = ""                    # page URL / document, when the app has one
+    page_title: str = ""             # title of the web page inside the window (an app wrapping a web page)
     focus_role: str = ""
     focus_label: str = ""            # name of the focused text control ("Type a message to Mum")
     focus_secure: bool = False
@@ -129,9 +130,15 @@ def collect(window, focus=None, app=None, clock=time.monotonic, max_nodes=MAX_NO
             if role in SKIP_ROLES or role == SECURE or sub == SECURE:
                 continue
             if role == "AXWebArea":
+                u = _s(a.get("AXURL"), 500)
+                real = not u.startswith("file:")         # an app's own shell page is not "the page"
+                if u and real and (not snap.url or snap.url.startswith("file:")):
+                    snap.url = u
+                if real and not snap.page_title:
+                    snap.page_title = _s(a.get("AXTitle"), 200)
                 if not snap.url:
-                    snap.url = _s(a.get("AXURL"), 500)
-                if not web:                       # the page itself: stop spending the budget on the browser around it
+                    snap.url = u
+                if real and not web:              # the page itself: stop spending the budget on the browser around it
                     web, queue = True, []
             y, x = (_pos(a.get("AXPosition")) or (0.0, 0.0))[::-1]
             if role == "AXStaticText":

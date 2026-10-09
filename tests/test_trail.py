@@ -80,6 +80,12 @@ class CollectTests(unittest.TestCase):
         self.assertEqual(s.url, "https://web.whatsapp.com/")
         self.assertEqual(s.texts, ["Mum", "hello"])
 
+    def test_an_apps_own_shell_page_is_skipped_for_the_real_page(self):
+        shell = Node("AXWebArea", URL="file:///Applications/X.app/index.html")
+        page = Node("AXWebArea", [text("hi")], Title="Trip plan", URL="https://claude.ai/chat/abc")
+        s = collect(Node("AXWindow", [Node("AXGroup", [shell, page])], Title="Claude"))
+        self.assertEqual((s.url, s.page_title, s.texts), ("https://claude.ai/chat/abc", "Trip plan", ["hi"]))
+
     def test_a_selected_cell_with_only_a_description_is_read(self):
         cell = Node("AXCell", Selected=True, Description="Mum 10:02 pm see you")
         s = collect(Node("AXWindow", [cell]))
@@ -209,6 +215,15 @@ class ChatTests(unittest.TestCase):
         a = place("Claude", "com.anthropic.claudefordesktop", snap(title="Trip plan"))
         b = place("Claude", "com.anthropic.claudefordesktop", snap(title="Tax questions"))
         self.assertNotEqual(a["key"], b["key"])
+
+    def test_claude_desktop_conversations_by_the_page_it_wraps(self):
+        app = ("Claude", "com.anthropic.claudefordesktop")
+        a = place(*app, snap(title="Claude", page_title="memModel - Claude Code",
+                             url="https://claude.ai/epitaxy/project/chan_1?thread=cmsg_a"))
+        b = place(*app, snap(title="Claude", page_title="Other thread - Claude Code",
+                             url="https://claude.ai/epitaxy/project/chan_1?thread=cmsg_b"))
+        self.assertNotEqual(a["key"], b["key"])
+        self.assertEqual((a["kind"], a["name"], a["confidence"]), ("ai_chat", "memModel - Claude Code", 0.9))
 
     def test_vscode_file_and_folder(self):
         p = place("Code", "com.microsoft.VSCode", snap(title="tracker.py — LMemM — Visual Studio Code"))

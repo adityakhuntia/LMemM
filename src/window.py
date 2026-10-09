@@ -189,6 +189,7 @@ class MainWindow:
         self.search.setBezeled_(True)
         self.search.setBezelStyle_(1)
         self.search.setDelegate_(self.typing)
+        self.typing.arrow = self._arrow_from_field
         self.root.addSubview_(self.search)
         self.side_scroll = _scroll(self.root)
         self.main_scroll = _scroll(self.root)
@@ -302,6 +303,10 @@ class MainWindow:
         self.menu_bar = bar
         NSApplication.sharedApplication().setMainMenu_(bar)
 
+    def _arrow_from_field(self, code):
+        self.window.makeFirstResponder_(None)
+        self.key(code)
+
     def key(self, code):
         """An arrow or Return. True when it was used."""
         if self.dialog:
@@ -356,6 +361,7 @@ class MainWindow:
             self.window.deminiaturize_(None)
         self.update(banner)
         self.window.makeKeyAndOrderFront_(None)
+        self.window.makeFirstResponder_(None)                      # not in the search box: the arrow keys work at once
         NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
 
     def update(self, banner):

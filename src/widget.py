@@ -172,6 +172,8 @@ class _Tap(_Flipped):
             NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(self.bounds(), 10, 10).fill()
 
     def mouseDown_(self, event):
+        if self.window() is not None:
+            self.window().makeFirstResponder_(None)             # a text box lets go, so the arrow keys work on the page
         self.callback()
 
     def acceptsFirstMouse_(self, event):
@@ -215,6 +217,10 @@ class _Fields(NSObject):
             return True
         if selector == "cancelOperation:":
             self.cancel()
+            return True
+        arrow = getattr(self, "arrow", None)                  # Up/Down in a field hand the keyboard to the list
+        if arrow and selector in ("moveDown:", "moveUp:"):
+            arrow(125 if selector == "moveDown:" else 126)
             return True
         return False
 

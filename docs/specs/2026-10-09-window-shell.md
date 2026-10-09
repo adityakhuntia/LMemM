@@ -124,4 +124,4 @@ Rules G1–G7 are in `src/settings_model.py` (tests in `tests/test_settings_mode
 ## Step 11 follow-up: walk the lists with the keyboard
 - Up/Down move a highlight through the rows of one zone (the sidebar's Needs you and Projects, or the page's things and project cards); Left/Right switch zone; Return opens the highlighted row (while selecting, it ticks it). Esc and ⌘[ still go back. The logic is `keynav.py`; the window only forwards key codes and draws the highlight.
 - Keys do nothing while a card is open, and the highlight clears when you move to another page.
-- Limit: when a text field (search, the note box) has the keyboard, the arrows belong to it. Press Esc or click the page first.
+- The keyboard starts on the page, not in the search box, and clicking a row hands it back. Down or Up inside the search box also hand it to the list. (Typing in search or the note box still belongs to that box; Esc leaves it.)

@@ -6,6 +6,8 @@ The icon is drawn, not a bitmap: macOS re-runs the drawing handler when the menu
 dark or light, so the capsule always reads against the bar.
 """
 
+import sys
+
 import objc
 from Foundation import NSObject
 from AppKit import (NSAttributedString, NSBezierPath, NSColor, NSFont, NSFontAttributeName,
@@ -37,6 +39,13 @@ def _badge_colour(kind):
 def _draw_icon(spec):
     """An NSImage whose drawing is re-run for the current menu-bar appearance."""
     def draw(rect):
+        try:
+            return paint(rect)
+        except Exception as e:                     # a drawing handler that fails leaves a blank icon, silently
+            print(f"menu-bar icon: drawing failed: {e!r}", file=sys.stderr)
+            return False
+
+    def paint(rect):
         NSColor.labelColor().setFill()
         w, h = 16, 8
         NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
@@ -99,9 +108,19 @@ class MenuBar:
     def __init__(self, on_pick):
         self.target = _MenuTarget.alloc().initWithCallback_(on_pick)
         self.item = NSStatusBar.systemStatusBar().statusItemWithLength_(VARIABLE_LENGTH)
-        self.item.button().setToolTip_("LMemM")
         self.shown = None
         self.update(menu_model.view({}))
+        self.item.setVisible_(True)
+
+    def where(self):
+        """Where macOS put the icon, in words, for the start-up line. An icon with no window or an
+        off-screen x is hidden by the system (a crowded bar or the camera notch)."""
+        button = self.item.button()
+        window = button.window() if button else None
+        if window is None:
+            return "no window (macOS did not place it)"
+        frame = window.frame()
+        return f"x={frame.origin.x:.0f} y={frame.origin.y:.0f} w={frame.size.width:.0f}"
 
     def update(self, view):
         """Redraw only when something a person would see has changed."""

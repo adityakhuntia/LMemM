@@ -15,7 +15,7 @@ from AppKit import (NSAttributedString, NSBezierPath, NSColor, NSFont, NSFontAtt
 
 from widget import _Flipped
 
-LEFT, RIGHT, CENTER = 0, 1, 2
+LEFT, CENTER, RIGHT = 0, 1, 2                         # NSTextAlignment on current macOS (the old 1 = right, 2 = centre is gone)
 _FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "fonts")
 _FONT_FILE = "Figtree[wght].ttf"
 _NAMES = {400: "Figtree-Regular", 500: "Figtree-Medium", 600: "Figtree-SemiBold", 700: "Figtree-Bold"}

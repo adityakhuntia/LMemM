@@ -265,7 +265,7 @@ class SetupWindow:
         self.name_field = _field(view["name"]["value"], view["name"]["placeholder"], 20, False,
                                  (16, y + 12, CW - 32, 28), self.fields)
         self.name_field.setFont_(kit.font(20, 500))
-        self.name_field.setAlignment_(2)
+        self.name_field.setAlignment_(CENTER)
         body.addSubview_(self.name_field)
         y += 52 + 8
         y += kit.put_text(body, view["name"]["hint"], 0, y, CW, 13, 400, kit.mute(), CENTER) + 22

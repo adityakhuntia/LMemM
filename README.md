@@ -138,10 +138,13 @@ follows light/dark, and shows over every app, Space and full-screen window.
   away (idle) the same mark shows, with no Resume because it ends by itself. ⌃⌥N while paused opens
   that card. `lmemm.py pause` / `resume` show the same.
 - Nothing to show, on hover or with the card open: a pencil, **No notes yet**; a check,
-  **All caught up** (with "Show done"); a folder, **Start a project**, when you have none yet.
+  **All caught up**; a folder, **Start a project**, when you have none yet.
 
 Click it for a small card about what you're on. It lists that thing's open notes: click
-one to tick it off (it fades out). "Add a note…" opens the dictation window. If the
+one to tick it off: it stays crossed out for a moment (click again to take it back), then folds
+away, and the pill's count drops at once. Finishing the last one shows **All caught up** once;
+that card still has "Add a note…". A **Done** row lists this thing's finished notes by day (click a
+ring to reopen one), and **Undo** appears for 6 s after ticking. "Add a note…" opens the dictation window. If the
 project has notes on other things, "N more in <project>" shows them grouped by thing,
 with finished notes behind "Done". Click the pill again or anywhere else to close it.
 Start with `--no-widget` to hide it.

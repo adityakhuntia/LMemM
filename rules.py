@@ -23,6 +23,10 @@ What that means:
         shows the same single pause mark on the pill and nothing else: no count, no words. The card
         says which it is and when it ends; only a pause you chose has a Resume button.
         ⌃⌥N while paused opens that card instead of failing quietly.
+    R10 Finishing a note follows FinishFlow (below) and the table in the Finished Notes mock-up:
+        one tap flips a note; a finished note holds 1.2 s then folds; the pill counts open notes
+        at once; "All caught up" shows once per clear, only after the last fold, and still lets
+        you add a note; Undo reverts a batch of ticks made within 2 s.
     R8  Every state wears a mark on the pill you can read at a glance; the card only confirms it,
         in a title and one line, with at most one thing to do. Red is for a permission that is
         off. A private window and an empty place stay neutral.
@@ -51,10 +55,10 @@ def empty_kind(view):
     notes.card_view() in the "here" mode."""
     if not view or view.get("empty") or view.get("mode") != "here" or view["rows"] or view["more"]:
         return None
-    return "caught" if view.get("done_count") else "fresh"
+    return "caught" if view.get("done_here") else "fresh"
 
 
-def pill_state(note_open, saved, hover, card_open, count, has_suggestion, mark=None, empty=None):
+def pill_state(note_open, saved, hover, card_open, count, has_suggestion, mark=None, empty=None, cleared=False):
     """Which look the pill has. The first rule that applies wins."""
     if note_open:
         return "rest"
@@ -62,6 +66,8 @@ def pill_state(note_open, saved, hover, card_open, count, has_suggestion, mark=N
         return "saved"
     if mark:
         return mark
+    if cleared:
+        return "cleared"
     if empty and (hover or card_open):
         return empty
     if hover and not card_open:
@@ -136,3 +142,100 @@ def paused_view(kind, end, now):
     line = ("Nothing is being remembered. Back on " + clock(end, now) + "." if end
             else "Nothing is being remembered until you resume.")
     return {"title": "Paused", "line": line, "resume": True}
+
+
+# ---------------------------------------------------------------- finishing notes (R10)
+
+class FinishFlow:
+    """What the card does around ticking, as plain state with a clock passed in. Persisting the
+    tick is the caller's job; this only decides how long a finished note stays on screen, what
+    Undo reverts, and when "All caught up" shows. `open_left` is the number of open notes
+    across the project after the change."""
+
+    HOLD = 1.2           # a finished note stays on screen, crossed out
+    FOLD = 0.38          # then fades away
+    BATCH = 2.0          # ticks this close together are one batch (one Undo)
+    TOAST = 6.0          # how long "Marked done · Undo" stays
+    REOPENED = 1.8
+
+    def __init__(self):
+        self.at = {}                 # note id -> when it was finished (while still on screen)
+        self.batch = []              # note ids finished within BATCH of each other
+        self.last = 0.0
+        self.toast_until = 0.0
+        self.undoable = True
+        self.armed = False           # the last open note was just finished: celebrate when folds end
+
+    def tick(self, nid, now, open_left):
+        """Finish a note. Returns nothing; the caller has already saved it."""
+        if now - self.last > self.BATCH:
+            self.batch = []
+        self.last = now
+        self.batch.append(nid)
+        self.at[nid] = now
+        self.toast_until, self.undoable = now + self.TOAST, True
+        self.armed = open_left == 0
+
+    def phase(self, nid, now):
+        """None (not on screen), "hold" (crossed out, tappable) or "fold" (fading, not tappable)."""
+        at = self.at.get(nid)
+        if at is None:
+            return None
+        age = now - at
+        if age < self.HOLD:
+            return "hold"
+        if age < self.HOLD + self.FOLD:
+            return "fold"
+        del self.at[nid]
+        return None
+
+    def holding(self, now):
+        return [nid for nid in list(self.at) if self.phase(nid, now)]
+
+    def cancel(self, nid, open_left):
+        """Tapping a finished note during its hold reopens it; the clear is cancelled."""
+        self.at.pop(nid, None)
+        self.batch = [i for i in self.batch if i != nid]
+        if open_left > 0:
+            self.armed = False
+        if not self.batch:
+            self.toast_until = 0.0
+
+    def undo(self, open_left):
+        """Revert the whole batch. Returns the ids to reopen."""
+        ids, self.batch = self.batch, []
+        for nid in ids:
+            self.at.pop(nid, None)
+        self.toast_until = 0.0
+        if open_left + len(ids) > 0:
+            self.armed = False
+        return ids
+
+    def reopened(self, now):
+        self.toast_until, self.undoable, self.batch = now + self.REOPENED, False, []
+
+    def toast(self, now):
+        """(text, undoable) while the line at the bottom shows, else None."""
+        if now >= self.toast_until:
+            return None
+        if not self.undoable:
+            return "Reopened", False
+        n = len(self.batch)
+        return ("Marked done" if n <= 1 else f"{n} marked done"), True
+
+    def close_card(self):
+        """Closing the card ends the Undo window. Holds carry on; Done keeps everything."""
+        self.batch, self.toast_until = [], 0.0
+
+    def update(self, open_left, now):
+        """Call often. Returns "clear" exactly once per clear, when the last fold has ended."""
+        if open_left > 0:
+            self.armed = False
+        if self.armed and not self.holding(now) and open_left == 0:
+            self.armed = False
+            return "clear"
+        return None
+
+    def signature(self, now):
+        """Changes whenever what the card shows around ticking would change."""
+        return (tuple(sorted((n, self.phase(n, now)) for n in list(self.at))), self.toast(now))

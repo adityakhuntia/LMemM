@@ -126,5 +126,94 @@ class PendingTests(unittest.TestCase):
         self.assertIsNone(rules.with_pending(None, [], self.blank))
 
 
+class FinishFlowTests(unittest.TestCase):                           # R10
+    def setUp(self):
+        self.f = rules.FinishFlow()
+
+    def test_a_finished_note_holds_then_folds_then_goes(self):
+        self.f.tick("a", 100.0, open_left=2)
+        self.assertEqual(self.f.phase("a", 100.5), "hold")
+        self.assertEqual(self.f.phase("a", 101.3), "fold")
+        self.assertIsNone(self.f.phase("a", 101.6))
+
+    def test_no_clear_while_notes_are_open(self):
+        self.f.tick("a", 100.0, open_left=1)
+        self.assertIsNone(self.f.update(1, 110.0))
+
+    def test_clear_waits_for_the_last_fold_then_fires_once(self):
+        self.f.tick("a", 100.0, open_left=0)
+        self.assertIsNone(self.f.update(0, 100.5))
+        self.assertIsNone(self.f.update(0, 101.4))                 # still folding
+        self.assertEqual(self.f.update(0, 101.6), "clear")
+        self.assertIsNone(self.f.update(0, 101.7))
+        self.assertIsNone(self.f.update(0, 120.0))
+
+    def test_ticking_everything_in_a_split_second_clears_once(self):
+        for i, nid in enumerate("abc"):
+            self.f.tick(nid, 100.0 + i * 0.05, open_left=2 - i)
+        self.assertIsNone(self.f.update(0, 101.2))
+        self.assertEqual(self.f.update(0, 101.7), "clear")
+        self.assertIsNone(self.f.update(0, 101.8))
+
+    def test_reopening_during_the_hold_cancels_the_clear(self):
+        self.f.tick("a", 100.0, open_left=0)
+        self.f.cancel("a", open_left=1)
+        self.assertIsNone(self.f.update(1, 105.0))
+        self.assertIsNone(self.f.phase("a", 100.5))
+
+    def test_reopening_the_only_ticked_note_drops_the_toast(self):
+        self.f.tick("a", 100.0, open_left=1)
+        self.f.cancel("a", open_left=2)
+        self.assertIsNone(self.f.toast(100.5))
+
+    def test_clearing_again_after_a_reopen_clears_again(self):
+        self.f.tick("a", 100.0, open_left=0)
+        self.assertEqual(self.f.update(0, 102.0), "clear")
+        self.f.update(1, 103.0)                                    # reopened later
+        self.f.tick("a", 110.0, open_left=0)
+        self.assertEqual(self.f.update(0, 112.0), "clear")
+
+    def test_undo_reverts_one_batch(self):
+        self.f.tick("a", 100.0, open_left=2)
+        self.f.tick("b", 101.0, open_left=1)                       # within 2 s: same batch
+        self.assertEqual(self.f.toast(101.5), ("2 marked done", True))
+        self.assertEqual(sorted(self.f.undo(open_left=1)), ["a", "b"])
+        self.assertIsNone(self.f.toast(101.6))
+        self.assertEqual(self.f.holding(101.6), [])
+
+    def test_ticks_further_apart_are_separate_batches(self):
+        self.f.tick("a", 100.0, open_left=2)
+        self.f.tick("b", 103.0, open_left=1)
+        self.assertEqual(self.f.toast(103.5), ("Marked done", True))
+        self.assertEqual(self.f.undo(open_left=1), ["b"])
+
+    def test_undoing_the_last_note_cancels_the_celebration(self):
+        self.f.tick("a", 100.0, open_left=0)
+        self.f.undo(open_left=1)
+        self.assertIsNone(self.f.update(1, 105.0))
+
+    def test_the_toast_lasts_six_seconds_and_ends_with_the_card(self):
+        self.f.tick("a", 100.0, open_left=2)
+        self.assertIsNotNone(self.f.toast(105.9))
+        self.assertIsNone(self.f.toast(106.1))
+        self.f.tick("b", 200.0, open_left=1)
+        self.f.close_card()
+        self.assertIsNone(self.f.toast(200.5))
+
+    def test_reopened_toast_has_no_undo(self):
+        self.f.reopened(100.0)
+        self.assertEqual(self.f.toast(100.5), ("Reopened", False))
+        self.assertIsNone(self.f.toast(102.0))
+
+    def test_signature_changes_with_the_phase(self):
+        self.f.tick("a", 100.0, open_left=2)
+        self.assertNotEqual(self.f.signature(100.5), self.f.signature(101.3))
+
+    def test_cleared_pill_comes_after_marks_and_before_empty(self):
+        kw = dict(note_open=False, saved=False, hover=True, card_open=False, count=0, has_suggestion=False)
+        self.assertEqual(rules.pill_state(**kw, cleared=True, empty="caught"), "cleared")
+        self.assertEqual(rules.pill_state(**kw, cleared=True, mark="paused"), "paused")
+
+
 if __name__ == "__main__":
     unittest.main()

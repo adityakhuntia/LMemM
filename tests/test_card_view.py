@@ -50,6 +50,29 @@ class CardViewTests(unittest.TestCase):
         self.assertEqual((view["done"], view["done_count"]), ([], 1))
         self.assertEqual(len(notes.card_view(data, "project", show_done=True)["done"]), 1)
 
+    def test_done_here_counts_only_this_things_finished_notes(self):
+        self.a["notes_done"] = {notes.note_id(self.a["notes"][0]): "2026-10-06T11:00:00"}
+        self.b["notes_done"] = {notes.note_id(self.b["notes"][0]): "2026-10-06T11:05:00"}
+        view = notes.card_view(card([self.a, self.b]))
+        self.assertEqual((view["done_here"], view["done_count"]), (1, 2))
+
+    def test_done_view_groups_by_day_newest_first(self):
+        n = self.a["notes"]
+        self.a["notes_done"] = {notes.note_id(n[0]): "2026-10-06T11:20:00", notes.note_id(n[1]): "2026-10-05T16:05:00"}
+        self.b["notes_done"] = {notes.note_id(self.b["notes"][0]): "2026-10-01T09:10:00"}
+        view = notes.done_view(card([self.a, self.b]), "2026-10-06T12:00:00")
+        self.assertEqual(view["count"], 2)                         # only this thing
+        self.assertEqual([g for g, _ in view["groups"]], ["Today", "Yesterday"])
+        self.assertEqual(view["groups"][0][1][0]["when"], "Today, 11:20 AM")
+        self.assertEqual(view["groups"][1][1][0]["when"], "Yesterday, 4:05 PM")
+
+    def test_done_view_earlier_and_empty(self):
+        nid = notes.note_id(self.a["notes"][0])
+        self.a["notes_done"] = {nid: "2026-09-20T09:10:00"}
+        view = notes.done_view(card([self.a]), "2026-10-06T12:00:00")
+        self.assertEqual(view["groups"][0], ("Earlier", [{"id": nid, "text": "add a pricing table", "when": "Sep 20, 9:10 AM"}]))
+        self.assertEqual(notes.done_view(card([self.b]), "2026-10-06T12:00:00")["count"], 0)
+
     def test_nothing_in_front(self):
         self.assertEqual(notes.card_view(None), {"empty": True})
 

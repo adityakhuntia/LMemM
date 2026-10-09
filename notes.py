@@ -192,6 +192,28 @@ def note_target(data, label):
     return {"crumb": f"{filed} › {title}" if filed else title, "where": title}
 
 
+def done_view(data, now_iso):
+    """The Done list for the thing in front: its finished notes, newest first, grouped by day.
+    Returns {"title", "groups": [(label, rows)], "count"}; a row is {"id", "text", "when"}."""
+    from datetime import timedelta
+    today = datetime.fromisoformat(now_iso).date()
+    rows = sorted((n for n in (data or {}).get("plan", []) if n["done"] and n["here"]),
+                  key=lambda n: n["done"], reverse=True)
+    groups = {}
+    for n in rows:
+        at = datetime.fromisoformat(n["done"])
+        clock = at.strftime("%I:%M %p").lstrip("0")
+        if at.date() == today:
+            label, when = "Today", f"Today, {clock}"
+        elif at.date() == today - timedelta(days=1):
+            label, when = "Yesterday", f"Yesterday, {clock}"
+        else:
+            label, when = "Earlier", f"{at.strftime('%b')} {at.day}, {clock}"
+        groups.setdefault(label, []).append({"id": n["id"], "text": n["text"], "when": when})
+    order = [k for k in ("Today", "Yesterday", "Earlier") if k in groups]
+    return {"title": (data or {}).get("title", ""), "groups": [(k, groups[k]) for k in order], "count": len(rows)}
+
+
 def pill_summary(data):
     """(open notes on the thing in front, text of the first one) for the pill itself.
     Notes on other things in the project don't light the pill: it is about *here*."""
@@ -231,6 +253,7 @@ def card_view(data, mode="here", show_done=False, fading=()):
             "rows": [row(n) for n in shown if n["here"]],
             "more": sum(1 for n in data["left"] if not n["here"]), "project": data["project"],
             "done_count": sum(1 for n in data["plan"] if n["done"]),
+            "done_here": sum(1 for n in data["plan"] if n["done"] and n["here"]),
             "item": data.get("item"), "filed": data.get("filed")}
 
 

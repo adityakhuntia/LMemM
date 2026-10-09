@@ -23,6 +23,12 @@
               the mic off) or, on hover, when there is nothing to show (no notes yet, all done,
               no projects yet). The rules are in rules.py (R8).
 
+    finishing one tap flips a note. A finished note stays 1.2 s crossed out (tap it to take it back),
+              then folds away. The pill counts open notes at once. When the last one folds the card
+              says "All caught up" once (it still has "Add a note…"); a "Done" row lists this thing's
+              finished notes by day, tap a ring to reopen. "Marked done · Undo" reverts the last
+              batch for 6 s (rules.py R10).
+
     pause     a plain "Pause LMemM" row ends the card; it asks for how long (1 hour, until tomorrow,
               until you resume). Any pause, yours or "you stepped away", is one pause mark on the
               pill; its card says which, when it ends, and has Resume if you paused it (rules.py R9).
@@ -41,7 +47,7 @@ from datetime import datetime
 import objc
 from Foundation import NSObject, NSPointInRect
 from AppKit import (NSApplication, NSBackingStoreBuffered, NSBezierPath, NSColor, NSEvent, NSImage,
-                    NSImageView, NSFont, NSFontAttributeName, NSForegroundColorAttributeName, NSMakeRect,
+                    NSAnimationContext, NSImageView, NSFont, NSFontAttributeName, NSForegroundColorAttributeName, NSMakeRect,
                     NSPanel, NSScreen, NSScrollView, NSStrikethroughStyleAttributeName, NSTextField,
                     NSTrackingArea, NSView, NSVisualEffectView, NSAttributedString)
 
@@ -59,7 +65,8 @@ PILL_BOTTOM = 6
 TRACK = 1 | 128 | 512               # mouseEnteredAndExited | activeAlways | inVisibleRect
 POPOVER_MATERIAL, BEHIND_WINDOW, ACTIVE = 6, 0, 1
 CLICK_MASK = (1 << 1) | (1 << 3)    # left and right mouse down, in any app
-FADE_SECONDS = 0.8                  # a ticked note stays struck through this long
+CLEARED_SECONDS = 1.5               # the check mark stays on the pill this long after a clear
+FOLD_ALPHA = 0.45                   # a note that is folding away, and cannot be tapped
 ADD_LABEL = "Add a note…"
 SEARCH_PLACEHOLDER = "Find or name a project"
 ICONS = {"code_file": ("chevron.left.forwardslash.chevron.right", (0.48, 0.35, 0.94)),
@@ -80,6 +87,7 @@ MARKS = {"paused": ("pause.fill", False, "Paused"),
          "mic_off": ("mic.slash", True, "Mic is off"),
          "fresh": ("square.and.pencil", False, "No notes yet"),
          "caught": ("checkmark", False, "All caught up"),
+         "cleared": ("checkmark", False, "All caught up"),
          "noproj": ("folder.badge.plus", False, "Start a project")}
 SCREEN_SETTINGS = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
 EMPTY_HINT = "Nothing left here. Hold {key} and say what to remember for this page."
@@ -442,7 +450,9 @@ class Widget:
         self.card_open = False
         self.mode = "here"                  # "here" | "project" | "suggest" | "pick" | "done"
         self.show_done = False
-        self.fading = {}                    # note id -> when it was ticked
+        self.flow = rules.FinishFlow()      # finished notes: hold, fold, clear, undo (rules.py R10)
+        self.celebrate_now = False          # play the big check once, on the render after a clear
+        self.cleared_until = 0.0            # the pill shows its check mark until then
         self.data = None
         self.count, self.first = 0, ""
         self.listening = None               # None, or the words so far
@@ -468,7 +478,8 @@ class Widget:
         if self.listening is not None:
             return "listening"
         return rules.pill_state(self.busy(), bool(self.saved), self.pill_view.hover, self.card_open,
-                                self.count, bool(self.sug), self._mark(), self._empty_kind())
+                                self.count, bool(self.sug), self._mark(), self._empty_kind(),
+                                time.time() < self.cleared_until)
 
     def _mark(self):
         return rules.pill_mark(self.status, self.count, bool(self.sug))
@@ -478,7 +489,14 @@ class Widget:
             return "noproj" if self.pick_empty else None
         if self.count or self.sug or self.data is None:
             return None
-        return rules.empty_kind(notes.card_view(self.data, "here", self.show_done, self.fading))
+        return rules.empty_kind(notes.card_view(self.data, "here", self.show_done, self._holding()))
+
+    def _holding(self):
+        """Finished notes still on screen (held or folding)."""
+        return self.flow.holding(time.time())
+
+    def _open_left(self):
+        return len(self.data["left"]) if self.data else 0
 
     def peek_text(self):
         if not self.count:
@@ -555,6 +573,9 @@ class Widget:
             self.layout()
         if self.busy() and self.card_open:
             self.toggle_card()              # R1: a card left open must not sit under the note card
+        self._flow_step()
+        if self.card_open and self._key() != self.shown:
+            self.render()                   # a hold became a fold, a fold ended, a toast ran out
         was = self.listening is not None
         self.listening = heard
         if (heard is not None) != was:
@@ -564,6 +585,17 @@ class Widget:
             if abs(_text_width(self.heard_text(), NSFont.systemFontOfSize_(13)) + 48 + 2 * PILL_MARGIN[0]
                    - self.pill.frame().size.width) > 2:
                 self.layout()
+
+    def _flow_step(self):
+        """Advance the finished-notes flow (R10): the one "clear" and the pill's check mark."""
+        now = time.time()
+        if self.flow.update(self._open_left(), now) == "clear":
+            self.celebrate_now = self.card_open
+            self.cleared_until = now + CLEARED_SECONDS
+            self.layout()
+        elif self.cleared_until and now >= self.cleared_until:
+            self.cleared_until = 0.0
+            self.layout()
 
     # -- state from the tracker
 
@@ -581,9 +613,6 @@ class Widget:
             self.layout()
         if self.mode == "done" and self.card_open and time.time() >= self.close_at:
             self.toggle_card()
-        now = time.time()
-        for nid in [n for n, at in self.fading.items() if now - at > FADE_SECONDS]:
-            del self.fading[nid]
         if self.card_open and self._key() != self.shown:
             self.render()                   # only when something changed: keeps your scroll position
 
@@ -600,12 +629,14 @@ class Widget:
             self.mode, self.show_done, self.scroll = (
                 "suggest" if self.sug and not self.count and not self.status.get("paused") else "here"), False, None
             self.query, self.also = "", True
+            self.celebrate_now = False      # opening it later shows the calm state, never the celebration
             self.data = self.provider()
             self.render()
             self.card.orderFrontRegardless()
             self.card.setAlphaValue_(0.0)
             self.card.animator().setAlphaValue_(1.0)
         else:
+            self.flow.close_card()          # the Undo window ends with the card
             self.card.orderOut_(None)
         self.layout()
 
@@ -619,12 +650,27 @@ class Widget:
         self.toggle_card()
 
     def ticked(self, nid, done):
-        if done:
-            self.fading[nid] = time.time()
-        else:
-            self.fading.pop(nid, None)
+        """One tap flips a note (R10). A note that is folding away ignores taps."""
+        now = time.time()
+        phase = self.flow.phase(nid, now)
+        if phase == "fold":
+            return
         self.on_tick([nid], done)
         self.data = self.provider()
+        left = self._open_left()
+        if done:
+            self.flow.tick(nid, now, left)
+        elif phase == "hold":
+            self.flow.cancel(nid, left)     # changed your mind: no clear, no toast
+        else:
+            self.flow.reopened(now)
+        self.render()
+
+    def _undo(self):
+        ids = self.flow.undo(self._open_left())
+        if ids:
+            self.on_tick(ids, False)
+            self.data = self.provider()
         self.render()
 
     def _go(self, mode, show_done=None):
@@ -644,13 +690,15 @@ class Widget:
     def _key(self):
         if self.mode in ("pick", "suggest"):          # fields in use: don't rebuild under the typing
             return repr((self.mode, self.sug))
-        return repr((self.data, self.mode, self.show_done, sorted(self.fading), self.sug, self.done_text, self.status))
+        return repr((self.data, self.mode, self.show_done, self.flow.signature(time.time()), self.sug, self.done_text, self.status))
 
     def render(self):
+        self._flow_step()                   # a clear that is due shows in this very render
         self.shown = self._key()
         if self.mode == "suggest" and not self.sug:
             self.mode = "here"
-        view = notes.card_view(self.data, self.mode if self.mode == "project" else "here", self.show_done, self.fading)
+        view = notes.card_view(self.data, self.mode if self.mode == "project" else "here", self.show_done,
+                              self._holding())
         kept = self.scroll.contentView().bounds().origin.y if self.scroll is not None else 0
         body = _Flipped.alloc().initWithFrame_(NSMakeRect(0, 0, CARD_W, 10))
         y = 14
@@ -664,6 +712,8 @@ class Widget:
             y = self._pick(body, y)
         elif self.mode == "done":
             y = self._done(body, y)
+        elif self.mode == "finished":
+            y = self._finished(body, y)
         elif self.mode == "here" and self._mark() in ("screen_off", "private"):
             y = self._problem(body, y)
         elif view.get("empty"):
@@ -694,6 +744,7 @@ class Widget:
             scroll.contentView().scrollToPoint_((0, min(kept, y - height)))
             scroll.reflectScrolledClipView_(scroll.contentView())
         self.scroll = scroll
+        self.celebrate_now = False          # played once, never on a re-render
         self.card_height = height
         self._place_card()
         if self.mode == "pick":
@@ -725,9 +776,12 @@ class Widget:
         color = NSColor.secondaryLabelColor() if row["done"] else NSColor.labelColor()
         field, h = _label(row["text"], 14, color=color, frame=(28 + 8, 0, text_w, 17), wrap=True, strike=row["done"])
         height = h + 14
+        folding = self.flow.phase(row["id"], time.time()) == "fold"
         tap = _Tap.alloc().initWithFrame_callback_(
             NSMakeRect(6, y, CARD_W - 12, height),
-            lambda nid=row["id"], done=row["done"]: self.ticked(nid, not done))
+            (lambda: None) if folding else (lambda nid=row["id"], done=row["done"]: self.ticked(nid, not done)))
+        if folding:
+            tap.setAlphaValue_(FOLD_ALPHA)
         ring = _Ring.alloc().initWithChecked_(row["done"])
         ring.setFrame_(NSMakeRect(PAD - 6 + 2, 8, 17, 17))
         field.setFrame_(NSMakeRect(PAD - 6 + 2 + 17 + 11, 7, text_w - 4, h))
@@ -761,12 +815,19 @@ class Widget:
         body.addSubview_(field)
         return y + h + 6
 
-    def _state(self, body, y, symbol, tone, title, line):
-        """An empty or error card: a big icon, a title, one line. Returns the next y."""
+    def _state(self, body, y, symbol, tone, title, line, celebrate=False):
+        """An empty or error card: a big icon, a title, one line. Returns the next y.
+        `celebrate` fades the icon in (only for the render right after a clear)."""
         y += 6
         badge = _Badge.alloc().initWithSymbol_tone_(symbol, tone)
         badge.setFrame_(NSMakeRect((CARD_W - 46) / 2, y, 46, 46))
         body.addSubview_(badge)
+        if celebrate:
+            badge.setAlphaValue_(0.0)
+            NSAnimationContext.beginGrouping()
+            NSAnimationContext.currentContext().setDuration_(0.6)
+            badge.animator().setAlphaValue_(1.0)
+            NSAnimationContext.endGrouping()
         y += 56
         head, _ = _label(title, 16, bold=True, frame=(PAD, y, CARD_W - 2 * PAD, 20))
         head.setAlignment_(1)
@@ -781,6 +842,69 @@ class Widget:
         """⌃⌥N while paused: open the card that says so (rules.py R9)."""
         if not self.card_open:
             self.toggle_card()
+
+    def _done_row(self, body, y, count):
+        """"Done  3  ›": this thing's finished notes."""
+        tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(6, y + 2, CARD_W - 12, 28), lambda: self._go("finished"))
+        mute = NSColor.secondaryLabelColor()
+        image = _symbol("checkmark.circle")
+        if image is not None:
+            holder = NSImageView.alloc().initWithFrame_(NSMakeRect(PAD - 6, 6, 14, 14))
+            holder.setImage_(image)
+            holder.setContentTintColor_(mute)
+            tap.addSubview_(holder)
+        tap.addSubview_(_label("Done", 12, color=mute, frame=(PAD - 6 + 22, 6, 100, 16))[0])
+        number = _label(str(count), 12, color=NSColor.tertiaryLabelColor(), frame=(CARD_W - 12 - PAD - 40, 6, 32, 16))[0]
+        number.setAlignment_(2)
+        tap.addSubview_(number)
+        tap.addSubview_(_label("›", 13, color=mute, frame=(CARD_W - 12 - PAD - 4, 5, 14, 16))[0])
+        body.addSubview_(tap)
+        return y + 32
+
+    def _toast(self, body, y):
+        """"Marked done · Undo" for a few seconds after ticking; "Reopened" has no Undo."""
+        shown = self.flow.toast(time.time())
+        if not shown:
+            return y
+        text, undoable = shown
+        body.addSubview_(_label(text, 12, color=NSColor.secondaryLabelColor(), frame=(PAD, y + 4, 140, 16))[0])
+        if undoable:
+            undo = _Tap.alloc().initWithFrame_callback_(NSMakeRect(CARD_W - PAD - 60, y, 60, 24), self._undo)
+            word = _label("Undo", 12, bold=True, color=NSColor.controlAccentColor(), frame=(0, 4, 60, 16))[0]
+            word.setAlignment_(2)
+            undo.addSubview_(word)
+            body.addSubview_(undo)
+        return y + 28
+
+    def _finished(self, body, y):
+        """Done for this thing, newest first, grouped by day. Tapping a ring reopens the note."""
+        view = notes.done_view(self.data, datetime.now().isoformat(timespec="seconds"))
+        y = self._header(body, y, "Done", "", back=(view["title"], lambda: self._go("here")))
+        if not view["groups"]:
+            body.addSubview_(_label("Nothing finished yet.", 13, color=NSColor.secondaryLabelColor(),
+                                    frame=(PAD, y, CARD_W - 2 * PAD, 18))[0])
+            y += 26
+        for label, rows in view["groups"]:
+            body.addSubview_(_label(label.upper(), 10, bold=True, color=NSColor.tertiaryLabelColor(),
+                                    frame=(PAD, y + 4, CARD_W - 2 * PAD, 14))[0])
+            y += 22
+            for row in rows:
+                text_w = CARD_W - 2 * PAD - 28
+                field, h = _label(row["text"], 14, color=NSColor.secondaryLabelColor(),
+                                  frame=(0, 0, text_w - 4, 17), wrap=True, strike=True)
+                height = h + 14 + 16
+                tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(6, y, CARD_W - 12, height),
+                                                           lambda nid=row["id"]: self.ticked(nid, False))
+                ring = _Ring.alloc().initWithChecked_(True)
+                ring.setFrame_(NSMakeRect(PAD - 6 + 2, 8, 17, 17))
+                field.setFrame_(NSMakeRect(PAD - 6 + 2 + 17 + 11, 7, text_w - 4, h))
+                when = _label(row["when"], 11, color=NSColor.tertiaryLabelColor(),
+                              frame=(PAD - 6 + 2 + 17 + 11, 7 + h + 1, text_w, 14))[0]
+                for v in (ring, field, when):
+                    tap.addSubview_(v)
+                body.addSubview_(tap)
+                y += height
+        return self._toast(body, y + 4)
 
     def _pause_row(self, body, y):
         """The plain "Pause LMemM" row at the bottom of the card."""
@@ -856,10 +980,13 @@ class Widget:
                             f"Press {self.hotkey} and say what to remember.")
             return self._pause_row(body, y)
         if kind == "caught":
-            n = view["done_count"]
-            y = self._state(body, y, "checkmark", "accent", "All caught up", f"{n} note{'s' * (n != 1)} done.")
-            y = self._link(body, y, "Show done", "›", lambda: self._go("project", show_done=True))
-            return self._pause_row(body, y)
+            n = view["done_here"]
+            y = self._state(body, y, "checkmark", "accent", "All caught up", f"{n} note{'s' * (n != 1)} done.",
+                            celebrate=self.celebrate_now)
+            y = self._add_row(body, y - 4)       # caught up with the past, not with the future (F6)
+            y = self._done_row(body, y, n)
+            y = self._pause_row(body, y)
+            return self._toast(body, y)
         y = self._header(body, y, view["title"], view["caption"])
         if view["rows"]:
             for row in view["rows"]:
@@ -874,7 +1001,10 @@ class Widget:
         elif view.get("item"):
             left = f"In {view['filed']}" if view.get("filed") else "Not in a project. Add…"
             y = self._link(body, y, left, "›", lambda: self._go("pick"))
-        return self._pause_row(body, y)
+        if view["done_here"]:
+            y = self._done_row(body, y, view["done_here"])
+        y = self._pause_row(body, y)
+        return self._toast(body, y)
 
     # -- projects: the suggestion, the picker, and the confirmation
 

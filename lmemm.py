@@ -17,6 +17,9 @@ LMemM - the one command.
     lmemm.py pin                      force-save the current screen
     lmemm.py note                     open the note window (same as ⌃⌥N)
     lmemm.py delete-session ID (--dry-run | --confirm ID)
+    lmemm.py delete-all (--dry-run | --confirm)
+                                      remove everything LMemM has kept, on this Mac
+    lmemm.py setup [--again]          first-run setup (it also runs once before `start`)
 
 Any of these also works by number from the menu (`lmemm.py`), which prompts for the
 same arguments shown above when an action takes them.
@@ -45,7 +48,8 @@ USAGE = ("usage: lmemm.py [menu] | start [--every N] [--input-events --input-app
          " | memory [N] [--content] [--events]"
          " | notes [--all] [PROJECT] | notes done|reopen ID…"
          " | context [SESSION] [--days N]"
-         " | status | pause | resume | pin | note | delete-session ID (--dry-run | --confirm ID)")
+         " | status | pause | resume | pin | note | delete-session ID (--dry-run | --confirm ID)"
+         " | delete-all (--dry-run | --confirm) | setup [--again]")
 
 
 # ---------------------------------------------------------------- memory
@@ -138,13 +142,59 @@ def cmd_start(args):
     parser.add_argument("--input-app", action="append", default=[])
     parser.add_argument("--input-retention-hours", type=float, default=24)
     parser.add_argument("--no-widget", action="store_true", help="don't show the on-screen pill")
+    parser.add_argument("--no-setup", action="store_true", help="skip first-run setup (it asks for permissions itself)")
     opts = parser.parse_args(args)
     if opts.every <= 0 or not 0 < opts.input_retention_hours <= 24:
         parser.error("positive capture interval and input retention of at most 24 hours required")
     if opts.input_events != bool(opts.input_app) or not set(opts.input_app) <= SUPPORTED_INPUT_APPS:
         parser.error("input monitoring requires --input-events --input-app com.microsoft.VSCode")
+    if not opts.no_setup and not first_run_setup():
+        sys.exit("Setup isn't finished. Run LMemM again to pick up where you left off.")
     tracker.Tracker(every=opts.every, input_apps=set(opts.input_app) or None,
                     input_retention_hours=opts.input_retention_hours, show_widget=not opts.no_widget).run()
+
+
+def first_run_setup(again=False):
+    """Show first-run setup if it has not been finished (or when asked again). True when
+    LMemM can go on; False when the window was closed part-way (it resumes next time)."""
+    import onboarding
+    path = config.paths().onboarding_file
+    state = onboarding.load_state(path)
+    if again:
+        state.update(completed=False, step="welcome")
+        onboarding.save_state(path, state)
+    elif not onboarding.needs_setup(state):
+        return True
+    import onboarding_ui
+    return onboarding_ui.run()
+
+
+def cmd_setup(args):
+    if not set(args) <= {"--again"}:
+        sys.exit("usage: lmemm.py setup [--again]")
+    if not first_run_setup(again="--again" in args):
+        sys.exit("Setup isn't finished. Run  python3 lmemm.py setup  to pick up where you left off.")
+    print("Setup is done.")
+
+
+def cmd_delete_all(args):
+    import forget
+    parser = argparse.ArgumentParser(prog="lmemm.py delete-all")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--dry-run", action="store_true")
+    group.add_argument("--confirm", action="store_true")
+    opts = parser.parse_args(args)
+    data_dir = config.paths().data_dir
+    try:
+        if opts.dry_run:
+            result = forget.plan(data_dir)
+            print(json.dumps(result, indent=2))
+            print("\nNothing was deleted. Run with --confirm to delete all of this.")
+        else:
+            result = forget.delete_all(data_dir, tracker.running_pid())
+            print(f"deleted {result['files']} file(s) from {data_dir}. Next start runs setup again.")
+    except ValueError as error:
+        sys.exit(str(error))
 
 
 def cmd_memory(args):
@@ -394,6 +444,10 @@ def main():
         tracker.note()
     elif cmd == "delete-session":
         cmd_delete_session(rest)
+    elif cmd == "delete-all":
+        cmd_delete_all(rest)
+    elif cmd == "setup":
+        cmd_setup(rest)
     elif cmd == "context":
         cmd_context(rest)
     else:

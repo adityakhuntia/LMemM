@@ -62,13 +62,26 @@ def _fourcc(s):
 
 
 _keep = []      # ctypes callbacks must outlive the registration
+_hot = {"callback": None, "installed": False}     # one registration for the whole process
+
+
+def release_hotkey():
+    """Stop calling the current callback (the key stays registered; the next register_hotkey()
+    just points it somewhere else). First-run setup uses ⌃⌥N, then hands it to the tracker."""
+    _hot["callback"] = None
 
 
 def register_hotkey(callback):
-    """Call callback() whenever ⌃⌥N is pressed anywhere. Returns True on success."""
+    """Call callback() whenever ⌃⌥N is pressed anywhere. Returns True on success. Safe to call
+    again later in the same process (setup, then the tracker): the key is registered once."""
+    _hot["callback"] = callback
+    if _hot["installed"]:
+        return True
+
     def handler(_call, _event, _data):
         try:
-            callback()
+            if _hot["callback"]:
+                _hot["callback"]()
         except Exception as e:                      # never let it kill the event loop
             print(f"  ! hotkey: {e}", flush=True)
         return 0
@@ -82,14 +95,21 @@ def register_hotkey(callback):
     ok = _carbon.RegisterEventHotKey(HOTKEY_CODE, HOTKEY_MODS, _EventHotKeyID(_fourcc("LMem"), 1),
                                      target, 0, ctypes.byref(ref)) == 0
     _keep.append(ref)
+    _hot["installed"] = ok
     return ok
 
 
+_started = []
+
+
 def start_app():
-    """An invisible app (no Dock icon) so we can receive the hotkey and show the note window."""
+    """An invisible app (no Dock icon) so we can receive the hotkey and show the note window.
+    Started once per process: first-run setup and the tracker share it."""
     app = NSApplication.sharedApplication()
-    app.setActivationPolicy_(1)                        # accessory
-    app.finishLaunching()
+    if not _started:
+        app.setActivationPolicy_(1)                    # accessory
+        app.finishLaunching()
+        _started.append(True)
     return app
 
 

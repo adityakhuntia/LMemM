@@ -146,6 +146,53 @@ def session_doc(session, events, notes):
     }
 
 
+# ---------------------------------------------------------------- the user
+
+_USER = {"path": None, "value": None}
+
+
+def load_user():
+    """The "user" block of memory.json (who this is, from first-run setup), or None. Read once
+    per data directory, then kept: save_memory() writes it back every time, so the tracker
+    never has to re-read the whole file for it."""
+    path = config.paths().items_file
+    if _USER["path"] != path:
+        value = None
+        try:
+            with open(path) as fh:
+                doc = json.load(fh)
+            if isinstance(doc, dict) and isinstance(doc.get("user"), dict):
+                value = doc["user"]
+        except (OSError, ValueError):
+            pass
+        _USER["path"], _USER["value"] = path, value
+    return _USER["value"]
+
+
+def save_user(user):
+    """Write the "user" block into memory.json, leaving everything else in the file as it is
+    (or creating the file when there is none yet). An unreadable file is never overwritten:
+    ValueError, so a damaged memory is not replaced by a nearly empty one."""
+    if not isinstance(user, dict):
+        raise ValueError("user must be an object")
+    path = config.paths().items_file
+    doc = None
+    if os.path.exists(path):
+        try:
+            with open(path) as fh:
+                doc = json.load(fh)
+        except (OSError, ValueError) as error:
+            raise ValueError(f"Cannot update {path}: {error}") from error
+        if not isinstance(doc, dict):
+            raise ValueError(f"Cannot update {path}: not a JSON object")
+    if doc is None:
+        doc = {"schema_version": SCHEMA, "updated": nice_time(datetime.now().isoformat(timespec="seconds")),
+               "things": [], "items": []}
+    doc["user"] = user
+    write_json(path, doc)
+    _USER["path"], _USER["value"] = path, user
+
+
 # ---------------------------------------------------------------- save
 
 def save_memory(items):
@@ -156,6 +203,7 @@ def save_memory(items):
     write_json(config.paths().items_file, {
         "schema_version": SCHEMA,
         "updated": nice_time(datetime.now().isoformat(timespec="seconds")),
+        **({"user": load_user()} if load_user() else {}),
         "things": [readable(i) for i in ordered],
         "items": ordered,
     })

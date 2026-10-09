@@ -35,12 +35,14 @@ import ax
 from AppKit import NSEvent
 
 import activity
+import apps
 import config
 import dictation
 import identity
 import input_monitor as input_hooks
 import macos
 import notes
+import onboarding
 import resolver
 import retention
 import rules
@@ -100,6 +102,9 @@ class Tracker:
         self.note_request = False
         self.waiting = []                    # saved notes whose screen is still being read
         self.skipped_place = None            # (app, window) of the last window we chose not to read
+        self.skip_kind = None                # why: "private" (a private window, a password manager...) or "unwatched" (R11)
+        user = store.load_user() or {}
+        self.watch_apps = apps.clean(user.get("watch_apps"))     # empty: every app (apps.py)
         self.screen_ok, self.screen_checked = True, 0.0
         self.cur_place = None                # (app, window) of the newest timeline event
         self.pill_place = None               # (app, window) the pill last refreshed for
@@ -372,7 +377,13 @@ class Tracker:
         if self.note_request:
             self.note_request = False
             card_open = bool(self.widget and self.widget.card_open)
-            action = rules.hotkey_action(False, card_open, self.manual_paused)
+            front = macos.front()
+            unwatched = bool(front) and not apps.watched(self.watch_apps, front["bundle_id"])
+            action = rules.hotkey_action(False, card_open, self.manual_paused, unwatched)
+            if action == "show_unwatched":              # R11: say why, with a way out, instead of nothing
+                if self.widget:
+                    self.widget.show_unwatched()
+                return
             if action == "close_card_then_open_note":
                 self.widget.close_card()                # R2
             if action != "ignore":
@@ -463,6 +474,10 @@ class Tracker:
         f = macos.front()
         if f is None:
             return None
+        if not apps.watched(self.watch_apps, f["bundle_id"]):          # R11: before anything is read or grabbed
+            self.skipped_place, self.skip_kind = (f["app"], f["window"]), "unwatched"
+            self.close_interval()
+            return None
         url, tab_title, private = macos.browser_info(f["app"])
         site = re.sub(r"^https?://", "", url or "").split("/")[0] or None
         title = tab_title or f["window"]
@@ -472,6 +487,7 @@ class Tracker:
                 else "sensitive site" if url and config.SKIP_SITES.search(url)
                 else None)
         self.skipped_place = (f["app"], f["window"]) if skip else None     # the pill wears a lock here
+        self.skip_kind = "private" if skip else None
         if skip:
             self.close_interval()
             self.stats["skipped"] += 1
@@ -587,7 +603,8 @@ class Tracker:
         now = datetime.now()
         end = datetime.fromtimestamp(self.pause_until) if self.pause_until else None
         return {"screen": self.screen_ok, "mic_off": dictation.mic_off(),
-                "private": self.skipped_place is not None and self.skipped_place == self.front_sig(),
+                "private": self.skip_kind == "private" and self.skipped_place == self.front_sig(),
+                "unwatched": self.skip_kind == "unwatched" and self.skipped_place == self.front_sig(),
                 "paused": kind, "pause_view": rules.paused_view(kind, end, now) if kind else None}
 
     def widget_pause(self, kind):
@@ -654,6 +671,12 @@ class Tracker:
         app only shows where you are on screen (a WhatsApp chat), clicks in it start a quick
         read of the window's top strip instead (see on_click). Either way the answer is only
         used until the real capture lands."""
+        if not apps.watched(self.watch_apps, f["bundle_id"]):          # R11: nothing is read from an app you did not choose
+            self.ocr_apps.pop(f["app"], None)
+            with self.lock:
+                self.set_now((f["app"], f["window"]), None)
+            self.last_widget_refresh = 0.0
+            return
         url, tab_title, _private = macos.browser_info(f["app"])
         meta = {"app": f["app"], "bundle_id": f["bundle_id"], "window": f["window"], "url": url,
                 "site": re.sub(r"^https?://", "", url or "").split("/")[0] or None, "tab_title": tab_title,
@@ -1125,10 +1148,16 @@ class Tracker:
 
     def run(self):
         p = config.paths()
-        if not macos.screen_recording_allowed():
+        set_up = onboarding.load_state(p.onboarding_file)["completed"]
+        allowed = macos.screen_recording_allowed(request=not set_up)      # setup has already asked, calmly
+        if not allowed and not set_up:
             sys.exit("Screen Recording permission is not granted to this terminal.\n"
                      "System Settings -> Privacy & Security -> Screen Recording, enable it,\n"
                      "quit and reopen the terminal, then run again.")
+        if not allowed:                          # you finished setup without it: keep running, the pill says so
+            self.screen_ok, self.screen_checked = False, time.time()
+            say("Screen Recording is off, so LMemM can't see your screen yet. The pill shows a red mark;\n"
+                "turn it on in System Settings -> Privacy & Security -> Screen Recording, then restart LMemM.")
         os.makedirs(p.memory_dir, exist_ok=True)
         with open(p.pidfile, "w") as fh:
             fh.write(str(os.getpid()))

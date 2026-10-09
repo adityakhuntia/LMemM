@@ -27,9 +27,26 @@ Then give the app you launch it from (Terminal, iTerm, VS Code…) these permiss
 | **Screen Recording** | screenshots and window titles (required) |
 | **Automation** | reading the browser tab's URL (macOS asks the first time) |
 | **Microphone**, **Speech Recognition** | voice notes; asked for "LMemM Listen" the first time you press ⌃⌥N |
-| **Input Monitoring**, **Accessibility** | only for the opt-in input timeline |
+| **Accessibility** | knowing exactly which page or chat you are on, instantly (the pill is slower without it); also the opt-in input timeline |
+| **Input Monitoring** | only for the opt-in input timeline |
 
 The speech helper is built with clang (Xcode Command Line Tools) on first run.
+
+### First run
+
+The first time you start LMemM a small window walks you through it: welcome, your first name
+(and, if you like, what you mostly work on), the three macOS switches with their live status,
+a try-it for **⌃⌥N**, and done. Every permission can be skipped and fixed later; only the name is
+required. Screen Recording can be limited to **only some apps**; LMemM is then off in every other
+app. Your answers are saved as the `user` block of `data/memory/memory.json`, on this Mac only.
+
+- Closing the window part-way is fine: the next start resumes on the same screen.
+- Turning Screen Recording on needs LMemM to restart; the window offers a Restart button and
+  resumes where it was.
+- `python3 lmemm.py setup --again` shows it again; `--no-setup` skips it.
+- `python3 lmemm.py delete-all --dry-run` / `--confirm` removes everything LMemM has kept.
+
+Rules, states and what is tested: `docs/specs/2026-10-09-first-run-onboarding.md`.
 
 ## Use
 
@@ -69,6 +86,8 @@ Every item is also a direct command, for scripts and muscle memory:
 | `lmemm.py notes done ID…` / `notes reopen ID…` | mark notes done / open again |
 | `lmemm.py suggest [NAME] [ID…]` | offer things as one project on the pill (stands in for the model until it exists) |
 | `lmemm.py context [SESSION] [--days N]` | a clean, de-noised export for an AI (below) |
+| `lmemm.py setup [--again]` | first-run setup (also runs once before `start`) |
+| `lmemm.py delete-all --dry-run` / `--confirm` | remove everything LMemM has kept on this Mac |
 | `lmemm.py status` / `pause` / `resume` | the running tracker; pause stops all capture |
 | `lmemm.py pin` | force-save the current screen |
 | `lmemm.py note` | open the note window from a terminal (same as ⌃⌥N) |

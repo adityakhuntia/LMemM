@@ -234,9 +234,14 @@ def cmd_suggest_for(args):
     """Offer things for a project on the pill's window. With no ids, the three latest things not in it."""
     if not args:
         sys.exit("usage: lmemm.py suggest-for PROJECT [ID…]")
+    import projects
+    try:
+        pid = projects.resolve(projects.load(), args[0])          # say now if there is no such project
+    except ValueError as error:
+        sys.exit(str(error))
     if not tracker.send_control("suggest_for", project=args[0], ids=args[1:], reason="Looks like it belongs here"):
         sys.exit("LMemM isn't running.")
-    print(f"offered things for '{args[0]}' in the window.")
+    print(f"offered things for '{projects.get(projects.load(), pid)['name']}'. Open LMemM and look on that project's page.")
 
 
 def cmd_notes(args):

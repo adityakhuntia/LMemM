@@ -146,6 +146,18 @@ class ViewTests(unittest.TestCase):
         self.assertNotEqual(a, menu_model.signature(menu_model.view(FINE, [{"id": "a", "name": "Chrome"}], now=NOW)))
 
 
+class SuggestionsRowTests(unittest.TestCase):
+    def open_row(self, **status):
+        v = menu_model.view({**FINE, **status}, now=NOW)
+        return next(r for r in v["rows"] if r["id"] == "open")
+
+    def test_open_says_how_many_suggestions_wait(self):
+        self.assertNotIn("detail", self.open_row())
+        self.assertNotIn("detail", self.open_row(suggestions=0))
+        self.assertEqual(self.open_row(suggestions=1)["detail"], "1 suggestion")
+        self.assertEqual(self.open_row(suggestions=3)["detail"], "3 suggestions")
+
+
 class TrackerWiringTests(unittest.TestCase):
     """The tracker needs a Mac to import, so its handler is checked from the source."""
 

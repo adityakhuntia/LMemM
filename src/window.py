@@ -878,7 +878,8 @@ class MainWindow:
         if n > 3:
             kit.put_text(box, f"+{n - 3} more", 58, top, w - 58 - 14, 12, 400, kit.mute(), wrap=False, height=18)
             top += 20
-        return top - 12
+        kit.put_text(box, "Dismiss it and LMemM will not suggest this again.", 58, top + 2, w - 58 - 14, 12, 400, kit.mute(), wrap=False, height=18)
+        return top + 20 - 12
 
     def _suggested(self, doc, e, x, y, w):
         """On a project: things that may belong here, each with Add and Not here. Returns the new y."""
@@ -903,7 +904,9 @@ class MainWindow:
             if n > 5:
                 kit.put_text(box, f"+{n - 5} more after these", 14, top + 2, inner, 12, 400, kit.mute(), wrap=False, height=18)
                 top += 22
-            return top - 12
+            kit.put_text(box, "“Not here” keeps a thing out of this project for good. LMemM will not suggest it again.",
+                         14, top + 2, inner, 12, 400, kit.mute(), wrap=False, height=18)
+            return top + 22 - 12
         return self._card_box(doc, x, y, w, rows) + 20
 
     def _needs(self, doc, page, x, y, w):

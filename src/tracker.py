@@ -687,7 +687,8 @@ class Tracker:
         return {"screen": self.screen_ok, "restart": self.screen_restart, "mic_off": dictation.mic_off(),
                 "private": self.skip_kind == "private" and self.skipped_place == self.front_sig(),
                 "unwatched": self.skip_kind == "unwatched" and self.skipped_place == self.front_sig(),
-                "paused": kind, "pause_view": rules.paused_view(kind, end, now) if kind else None}
+                "paused": kind, "pause_view": rules.paused_view(kind, end, now) if kind else None,
+                "suggestions": len(self.sug["projects"]) + len(self.sug["items"])}
 
     def check_restart(self):
         self.screen_restart = permissions.screen_allowed_fresh()

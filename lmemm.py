@@ -9,6 +9,7 @@ LMemM - the one command.
                                       what's remembered + the latest session's timeline
     lmemm.py notes [--all] [PROJECT]  pending edits (your ⌃⌥N notes) by project
     lmemm.py notes done ID… | notes reopen ID…
+    lmemm.py suggest [NAME] [ID…]     offer things as one project (stands in for the model)
     lmemm.py context [SESSION] [--days N]
                                       a clean export for handing to an AI: what you did
                                       and why, grouped by project, with no operational detail
@@ -20,22 +21,25 @@ LMemM - the one command.
 Any of these also works by number from the menu (`lmemm.py`), which prompts for the
 same arguments shown above when an action takes them.
 
-How it fits together: see ARCHITECTURE.md.
+How it fits together: see docs/architecture.md.
 """
 
 import argparse
 import json
+import os
 import shlex
 import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import config
-import context as context_mod
-import notes
-import store
-import tracker
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src"))
+
+import config  # noqa: E402
+import context as context_mod  # noqa: E402
+import notes  # noqa: E402
+import store  # noqa: E402
+import tracker  # noqa: E402
 
 USAGE = ("usage: lmemm.py [menu] | start [--every N] [--input-events --input-app APP]"
          " | memory [N] [--content] [--events]"
@@ -154,6 +158,14 @@ def cmd_memory(args):
     except ValueError:
         sys.exit("usage: lmemm.py memory [N] [--content] [--events]")
     show_memory(count, show_content="--content" in args, show_events="--events" in args)
+
+
+def cmd_suggest(args):
+    """Offer a project on the pill. With no ids, the four most recent things."""
+    name = args[0] if args else "Project"
+    if not tracker.send_control("suggest", name=name, ids=args[1:], reason="Opened together"):
+        sys.exit("LMemM isn't running.")
+    print(f"offered '{name}' on the pill.")
 
 
 def cmd_notes(args):
@@ -372,6 +384,8 @@ def main():
         cmd_memory(rest)
     elif cmd == "notes":
         cmd_notes(rest)
+    elif cmd == "suggest":
+        cmd_suggest(rest)
     elif cmd in {"status", "pause", "resume"}:
         cmd_control(cmd)
     elif cmd == "pin":

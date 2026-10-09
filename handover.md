@@ -1,7 +1,7 @@
 # Claude handover — LMemM semantic project memory
 
 Updated 2026-10-08. Read this first, then [the detailed handover](docs/handover-2026-10-08.md),
-[context.md](context.md) and [the live runbook](docs/live-semantic-pilot.md).
+[current context](docs/current-context.md) and [the live runbook](docs/live-semantic-pilot.md).
 
 ## Branch and integration
 
@@ -82,7 +82,7 @@ models. The normal tracker does not enable semantic inference automatically.
 In a normal feature checkout with dependencies installed:
 
 ```bash
-python -m unittest discover -s tests
+PYTHON=python ./scripts/test.sh
 node --test extensions/lmemm-source/bridge.test.js
 python lmemm.py           # interactive menu
 python lmemm.py start     # normal tracker and widget

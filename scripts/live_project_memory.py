@@ -6,6 +6,7 @@ import os
 import sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0,str(Path(__file__).resolve().parents[1] / "src"))
 from semantic_memory.live_pilot import Pilot,inspect_project
 from semantic_memory.live_bridge import read_private_json,write_private_json
 

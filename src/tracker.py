@@ -31,6 +31,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import objc
+import ax
+from AppKit import NSEvent
 
 import activity
 import config
@@ -41,6 +43,7 @@ import macos
 import notes
 import resolver
 import retention
+import rules
 import store
 import understand
 import widget
@@ -77,6 +80,13 @@ class Tracker:
         self.items = store.load_items()      # the memory: one entry per thing, across sessions
         self.events = []                     # this session's timeline, pointing at items
         self.notes = []                      # this session's notes
+        self.now = None                      # the quick answer to "what am I on?" (see identify_now)
+        self.quick_q = queue.Queue()
+        self.ocr_apps = {}                   # app -> metadata, for apps whose place can only be told by reading the screen
+        self.last_read = 0.0
+        self.nsapp = None
+        self.ax_now = None                   # the app-reported place (ax.py), when it names a known item
+        self.quick_seq = 0
         self.frame_item = {}                 # capture ts -> memory item it became
         self.lock = threading.Lock()         # the resolver thread and the note window both write memory
         self.q = queue.Queue()
@@ -88,8 +98,14 @@ class Tracker:
         self.pending = None                  # (trigger, due, first_seen)
         self.pin = False
         self.note_request = False
+        self.waiting = []                    # saved notes whose screen is still being read
+        self.skipped_place = None            # (app, window) of the last window we chose not to read
+        self.screen_ok, self.screen_checked = True, 0.0
+        self.cur_place = None                # (app, window) of the newest timeline event
+        self.pill_place = None               # (app, window) the pill last refreshed for
         self.paused = None                   # automatic pause reason (idle, locked, ...)
-        self.manual_paused = False           # `lmemm.py pause`
+        self.manual_paused = False           # `lmemm.py pause`, or the pill's Pause
+        self.pause_until = None              # epoch seconds when a timed pause ends (None: until you resume)
         self.last_sig = None
         self.last_capture = 0.0
         self.last_poll = 0.0
@@ -109,6 +125,8 @@ class Tracker:
         self.panel = dictation.NotePanel()
         self.show_widget = show_widget
         self.widget = None                   # the on-screen pill (widget.py), made in run()
+        self.suggestion = None               # a group offered as one project: {name, ids, reason}
+        self.suggest_answers = self.load_answers()
         self.last_widget_refresh = 0.0
         self.control_file = Path(p.control_file)
         self.status_file = Path(p.status_file)
@@ -137,8 +155,9 @@ class Tracker:
             self.events[-1]["_closed"] = True
         self.last_frame = None
 
-    def set_manual_pause(self, paused):
+    def set_manual_pause(self, paused, until=None):
         self.manual_paused = paused
+        self.pause_until = until if paused else None
         self.pending = None
         self.pin = False
         self.note_request = False
@@ -180,6 +199,9 @@ class Tracker:
                     self.save(force=True)
             line(now_hms(), "", f"{len(found)} note{'s' * (len(found) != 1)} marked "
                  + ("done" if doc.get("done", True) else "open"))
+
+        elif doc.get("action") == "suggest":
+            self.offer_project(doc.get("name"), doc.get("ids") or [], doc.get("reason", ""))
 
     def publish_status(self):
         private_write(self.status_file, {
@@ -317,26 +339,48 @@ class Tracker:
         self.process_control()
         self.poll_input()
         self.maintain()
+        if self.widget:
+            here = self.front_sig()
+            if here != self.pill_place:             # you switched tab or app: update the pill now, not within a second
+                self.pill_place = here
+                self.last_widget_refresh = 0.0
         if self.widget and time.time() - self.last_widget_refresh >= 1:
             self.last_widget_refresh = time.time()
             self.widget.refresh()
+        if self.widget:
+            self.widget.pulse(self.widget_heard())      # waveform + words while the note window is open
+        if self.manual_paused and self.pause_until and time.time() >= self.pause_until:
+            self.set_manual_pause(False)                # a timed pause ends by itself
+            line(now_hms(), "", "resumed (pause ended)")
+            if self.widget:
+                self.widget.flash("Remembering again")
+        if self.note_request and self.manual_paused:
+            self.note_request = False                   # R9: say why, with a way out, instead of nothing
+            if self.widget:
+                self.widget.show_paused()
         if self.manual_paused:
             return
-        if self.widget and self.widget.card_open:
-            self.close_interval()
-            return                      # the card is open: don't capture it into memory
         if any(self.flags.values()):
             self.note_request = False
             if self.panel.open:
                 self.panel.close(save=False)
         if self.panel.open:
+            self.note_request = False                  # R3: already open, a second press does nothing
             self.close_interval()
             self.panel.poll()           # show what you've said so far
             return                      # don't capture the note window itself
         if self.note_request:
             self.note_request = False
-            self.open_note()
+            card_open = bool(self.widget and self.widget.card_open)
+            action = rules.hotkey_action(False, card_open, self.manual_paused)
+            if action == "close_card_then_open_note":
+                self.widget.close_card()                # R2
+            if action != "ignore":
+                self.open_note()
             return
+        if self.widget and self.widget.card_open:
+            self.close_interval()
+            return                      # the card is open: don't capture it into memory
         now = time.time()
         f = macos.front()
 
@@ -370,6 +414,10 @@ class Tracker:
                     self.trigger("window_change")
                 elif f["window"] != self.last_sig["window"]:
                     self.trigger("tab_change" if f["app"] in config.BROWSERS else "title_change")
+            if f and f["app"] in self.ocr_apps and time.monotonic() - self.last_read > 0.7:
+                self.start_read(f, clear=False)      # keyboard, notifications and redraws don't click
+            if f and self.last_sig and any(f[k] != self.last_sig[k] for k in ("pid", "win_id", "window")):
+                self.identify_now(f)                 # a new app, window or tab
             self.last_sig = f or self.last_sig
 
         if self.pending and now >= self.pending[1]:
@@ -423,6 +471,7 @@ class Tracker:
                 else "private window" if private or config.SKIP_TITLES.search(title or "")
                 else "sensitive site" if url and config.SKIP_SITES.search(url)
                 else None)
+        self.skipped_place = (f["app"], f["window"]) if skip else None     # the pill wears a lock here
         if skip:
             self.close_interval()
             self.stats["skipped"] += 1
@@ -443,6 +492,7 @@ class Tracker:
         capture_end_ns = time.monotonic_ns()
         if shot is None:
             say("  ! screenshot failed (Screen Recording permission?)")
+            self.screen_ok, self.screen_checked = False, time.time()
             return None
         after = macos.front()
         if after and (after["pid"], after["win_id"]) != (f["pid"], f["win_id"]):
@@ -467,6 +517,7 @@ class Tracker:
             "screen": {"w": int(size.width), "h": int(size.height)}, "display": display,
             "image": ts + ".jpg",       # the thumbnail's name, if this frame ends up kept
             "trigger": trigger, "pinned": pinned, "session": self.session,
+            "place": ax.key(f["app"], ax.read(f["pid"], f["app"])),
             "inputs": inputs, "pointer": pointer,
             "window_region": visible_window_region(f["bounds"], macos.display_bounds(display)),
             "capture_start_offset_ns": capture_start_ns - self.origin_ns,
@@ -502,27 +553,217 @@ class Tracker:
         label = meta["app"] + (f": {meta['tab_title'] or meta['window']}"
                                if meta.get("tab_title") or meta.get("window") else "")
         target = ("frame", meta["ts"])
-        self.panel.show(label, lambda text: self.save_note(target, text))
+        here = notes.note_target(self._card_here() if self.widget else None, label)
+        sig = self.front_sig()
+        self.panel.show(here["crumb"], lambda text: self.save_note(target, text, here["where"], sig))
         self.poll_input()
         return True
 
-    def save_note(self, target, text):
+    def save_note(self, target, text, where=None, sig=None):
         if not text:
             line(now_hms(), "", "note cancelled")
             return
+        if self.widget and where:
+            self.widget.flash(f"Saved to {where}"[:44])
         at = datetime.now().isoformat(timespec="seconds")
         with self.lock:
             item = notes.record(self.items, self.frame_item, self.notes, target, text, at)
             self.save(force=True)
+            if item is None:
+                self.waiting.append({"at": at, "text": text, "sig": sig})      # shown on the pill meanwhile
+        self.widget_refresh_soon()
         line(at[11:19], (item or {}).get("app", "?"), "note saved" + (" (awaiting context)" if item is None else ""))
+
+    def widget_refresh_soon(self):
+        self.last_widget_refresh = 0.0
 
     # ------------------------------------------------------------ the on-screen pill
 
+    def widget_status(self):
+        """What is wrong right now, for the pill's marks: screen access, a private window, the mic."""
+        if time.time() - self.screen_checked > 5:
+            self.screen_ok, self.screen_checked = macos.screen_recording_allowed(request=False), time.time()
+        kind = "manual" if self.manual_paused else "away" if self.paused == "idle" else None
+        now = datetime.now()
+        end = datetime.fromtimestamp(self.pause_until) if self.pause_until else None
+        return {"screen": self.screen_ok, "mic_off": dictation.mic_off(),
+                "private": self.skipped_place is not None and self.skipped_place == self.front_sig(),
+                "paused": kind, "pause_view": rules.paused_view(kind, end, now) if kind else None}
+
+    def widget_pause(self, kind):
+        """The pill's Pause row: kind is one of rules.PAUSE_CHOICES."""
+        end = rules.pause_end(kind, datetime.now())
+        self.set_manual_pause(True, end.timestamp() if end else None)
+        line(now_hms(), "", "paused" + (f" until {end:%H:%M}" if end else " until resumed"))
+        self.widget_refresh_soon()
+
+    def widget_resume(self):
+        self.set_manual_pause(False)
+        line(now_hms(), "", "resumed")
+        if self.widget:
+            self.widget.flash("Remembering again")
+        self.widget_refresh_soon()
+
+    def front_sig(self):
+        """Where you are right now (app, window), read live so the pill never trails a switch."""
+        sig = macos.front() or self.last_sig
+        return (sig["app"], sig["window"]) if sig else None
+
     def widget_card(self):
-        """What the pill's card shows: the project of the thing you're on right now."""
+        """What the pill's card shows: the project of the thing you're on right now. A note you
+        just wrote there counts at once (rules.py R4), even before its screen has been read."""
+        card = self._card_here()
+        here = self.front_sig()
+        with self.lock:
+            for w in list(self.waiting):
+                note = next((n for n in self.notes if n["at"] == w["at"] and n["text"] == w["text"]), None)
+                if note is None or note.get("status") != "pending":
+                    self.waiting.remove(w)             # attached (or given up): the real item has it now
+            waiting = [w for w in self.waiting if w["sig"] == here]   # only where you wrote it
+        card_out = card
+        return rules.with_pending(card_out, waiting, lambda: notes.blank_card(here[0] if here else "", here[0] if here else ""))
+
+    def _card_here(self):
         with self.lock:
             cur = self.events[-1] if self.events else None
-            return notes.card(self.items, cur["item"]) if cur else None
+            if self.ax_now and self.ax_now["pid"] == (self.last_sig or {}).get("pid"):
+                # named by the app itself (a labelled input, or the page's URL); an item of None
+                # means a page you have no notes on, which must not show the one you just left
+                if self.ax_now["item"] in self.items:
+                    return notes.card(self.items, self.ax_now["item"])
+                app = (self.last_sig or {}).get("app") or ""
+                return notes.blank_card(app, app)          # a place with no notes: say so
+            # identify_now() answers in well under a second; the full capture (settle + OCR,
+            # ~2 s) is only the fallback, so the pill never shows the thing you just left.
+            front = self.last_sig and (self.last_sig["app"], self.last_sig["window"])
+            if self.now and self.now["raw"] == front:
+                return notes.card(self.items, self.now["item"]) if self.now["item"] in self.items else None
+            if cur and self.cur_place == front:
+                return notes.card(self.items, cur["item"])
+            app = (self.last_sig or {}).get("app") or ""
+            return notes.blank_card(app, app)       # not read yet: say "no notes here", never the last thing's
+
+    # ------------------------------------------------------------ "what am I on?", right now
+
+    def set_now(self, raw, item):
+        self.now = {"raw": raw, "item": item, "mono": time.monotonic_ns()}
+
+    def identify_now(self, f):
+        """The pill must follow a switch at once, not after the next capture is OCR'd.
+        Most places are known from metadata alone (URL, tab title, app: no pixels). When an
+        app only shows where you are on screen (a WhatsApp chat), clicks in it start a quick
+        read of the window's top strip instead (see on_click). Either way the answer is only
+        used until the real capture lands."""
+        url, tab_title, _private = macos.browser_info(f["app"])
+        meta = {"app": f["app"], "bundle_id": f["bundle_id"], "window": f["window"], "url": url,
+                "site": re.sub(r"^https?://", "", url or "").split("/")[0] or None, "tab_title": tab_title,
+                "ts": "quick", "image": "quick", "quick": True}
+        st = identity.quick_state(meta)
+        if st is not None:
+            self.ocr_apps.pop(f["app"], None)
+            with self.lock:
+                self.set_now((f["app"], f["window"]), identity.find_item(self.items, st))
+        else:
+            self.ocr_apps[f["app"]] = meta
+            self.start_read(f)               # read the screen for it right away
+        self.last_widget_refresh = 0.0
+
+    def on_click(self, event):
+        """A click in an app whose place is only on screen (a chat list): drop the old answer
+        now, then read the window's header, twice (the screen may still be redrawing)."""
+        front = self.last_sig
+        if front and front["app"] in self.ocr_apps:
+            self.start_read(front)
+
+    def start_read(self, front, clear=True):
+        self.quick_seq += 1
+        if clear:                                               # never show the chat you just left
+            self.set_now((front["app"], front["window"]), None)
+            self.last_widget_refresh = 0.0
+            self.trigger("window_change")    # and a full capture soon: the quick read is only a head start
+        self.last_read = time.monotonic()
+        for delay in ((0.05, 0.3, 0.9) if clear else (0.0,)):
+            self.quick_q.put((self.quick_seq, front["app"], delay))
+
+    def quick_worker(self):
+        while True:
+            job = self.quick_q.get()
+            if job is None:
+                return
+            seq, app, delay = job
+            try:
+                time.sleep(delay)
+                if seq != self.quick_seq:
+                    continue                           # a newer click superseded this read
+                f = macos.front()
+                meta = dict(self.ocr_apps.get(app) or {})
+                if not f or f["app"] != app or not meta or not f["bounds"]:
+                    continue
+                cg = macos.grab_strip(f["bounds"], 240)
+                if cg is None:
+                    continue
+                import Quartz
+                res = resolver.resolve_image(meta, cg, Quartz.CGImageGetWidth(cg), Quartz.CGImageGetHeight(cg), fast=True)
+                st = identity.quick_state(meta, res)
+                if seq != self.quick_seq:
+                    continue
+                with self.lock:
+                    # the rules for a full capture read the header by its position; on a cropped
+                    # strip that can miss, so also look for a chat name we already know
+                    found = identity.find_item(self.items, st) if st else self.known_chat_in(res, understand.SITES.get(meta.get("site")) or f["app"])
+                    if st is None and found is None:
+                        continue
+                    self.set_now((f["app"], f["window"]), found)
+                self.last_widget_refresh = 0.0
+                line(now_hms(), "", f"quick: {st['target'] if st else '(name matched)'} -> {'known' if found else 'no notes yet'}")
+            except Exception as e:                     # best effort: the full capture is the fallback
+                line(now_hms(), "", f"quick identify failed: {e}")
+
+    def known_chat_in(self, res, app):
+        """Id of the chat (of this app) whose name is among the strip's text, or None."""
+        for o in res["objects"]:
+            found = o.get("text") and identity.find_chat(self.items, app, o["text"], threshold=0.9)
+            if found:
+                return found
+        return None
+
+    def ax_loop(self):
+        """Every ~0.1 s: ask the app in front where you are (a millisecond, no pixels). Its
+        focused input's label names a chat or channel; a browser's page URL names a page.
+        When that names an item you've been on, the pill switches to it at once."""
+        last = None
+        while self.running:
+            time.sleep(0.1)
+            try:
+                app = macos.NSWorkspace.sharedWorkspace().frontmostApplication()
+                if app is None:
+                    continue
+                pid, name = app.processIdentifier(), app.localizedName()
+                sig = ax.read(pid, name)
+                key = ax.key(name, sig)
+                page = (sig["doc"], sig["title"]) if sig and not key and sig["doc"] and name in config.BROWSERS else None
+                if (pid, key, page) == last:
+                    continue
+                last = (pid, key, page)
+                with self.lock:
+                    if key:
+                        item = identity.find_place(self.items, key, sig["label"])
+                        self.ax_now = {"pid": pid, "key": key, "item": item} if item else None
+                    elif page:
+                        st = identity.page_state(name, *page)      # the same identity a capture would give it
+                        self.ax_now = ({"pid": pid, "key": None, "item": identity.find_item(self.items, st)}
+                                       if st else None)
+                    else:
+                        self.ax_now = None
+                self.last_widget_refresh = 0.0
+                if self.nsapp is not None:
+                    macos.wake(self.nsapp)              # tick now, not at the next 0.25 s boundary
+            except Exception as e:
+                line(now_hms(), "", f"accessibility read failed: {e}")
+
+    def widget_heard(self):
+        """The pill no longer shows the words (the note card does), so this is always None."""
+        return None                     # the note card shows the waveform and words itself
 
     def widget_tick(self, ids, done):
         with self.lock:
@@ -530,6 +771,73 @@ class Tracker:
             if found:
                 self.save(force=True)
         line(now_hms(), "", f"{len(found)} note{'s' * (len(found) != 1)} marked {'done' if done else 'open'}")
+
+    # ------------------------------------------------------------ projects (suggestions, picker)
+
+    @property
+    def answers_file(self):
+        return os.path.join(config.paths().memory_dir, "project_suggestions.json")
+
+    def load_answers(self):
+        """How many suggestions you have answered: after a few, the pill stops spelling it out."""
+        try:
+            return int(json.loads(Path(self.answers_file).read_text()).get("answered", 0))
+        except (OSError, ValueError, TypeError, AttributeError):
+            return 0
+
+    def count_answer(self):
+        self.suggest_answers += 1
+        try:
+            os.makedirs(os.path.dirname(self.answers_file), exist_ok=True)
+            private_write(self.answers_file, {"answered": self.suggest_answers})
+        except OSError:
+            pass
+
+    def offer_project(self, name, ids, reason=""):
+        """Offer a group of things as one project. The model will call this; until it
+        exists, `lmemm.py suggest [NAME] [ID…]` does. With no ids, the four latest things."""
+        with self.lock:
+            if not ids:
+                ids = [i["id"] for i in sorted(self.items.values(), key=lambda i: i["last_seen"], reverse=True)[:4]]
+            ids = [i for i in ids if i in self.items]
+            if len(ids) < 2 or notes.was_declined(self.items, ids, name or "Project"):
+                line(now_hms(), "", "no project suggestion: needs two known things you have not refused")
+                return
+            self.suggestion = {"name": name or "Project", "ids": ids, "reason": reason or "Opened together"}
+        line(now_hms(), "", f"suggesting project {self.suggestion['name']} ({len(ids)} things)")
+
+    def widget_suggestion(self):
+        with self.lock:
+            return notes.suggestion_view(self.suggestion, self.items, self.suggest_answers)
+
+    def widget_project(self, ids, name):
+        """Put things in a project: by accepting a suggestion, or from the picker."""
+        with self.lock:
+            found = notes.set_project(self.items, ids, name)
+            if found:
+                self.save(force=True)
+            if self.suggestion and set(self.suggestion["ids"]) & set(found):
+                self.suggestion = None
+                self.count_answer()
+        line(now_hms(), "", f"{len(found)} thing{'s' * (len(found) != 1)} filed in {name}")
+
+    def widget_decline(self, forever=True):
+        with self.lock:
+            if self.suggestion and forever:
+                notes.decline_project(self.items, self.suggestion["ids"], self.suggestion["name"])
+                self.save(force=True)
+            self.suggestion = None
+            self.count_answer()
+
+    def widget_picker(self, item_id, query):
+        with self.lock:
+            return notes.picker_view(self.items, item_id, query)
+
+    def widget_unfile(self, item_id):
+        with self.lock:
+            found = notes.clear_project(self.items, [item_id])
+            if found:
+                self.save(force=True)
 
     # ------------------------------------------------------------ resolver thread
 
@@ -639,6 +947,7 @@ class Tracker:
 
         # 3. the memory entry for it
         item, frame_used = self.update_item(item, item_id, ref, st, meta, content, pinned)
+        identity.learn_place(item, meta.get("place"))
         self.record_activity(item, act, dt, res)
 
         # 4. the timeline
@@ -661,11 +970,15 @@ class Tracker:
             line(t, st["app"], st["doing"] + ("  (back to it)" if came_back and item["visits"] > 1 else ""))
             if came_back:
                 self.resurface(item, cur, meta)
+        self.cur_place = (meta["app"], meta["window"])      # where the newest event was read
         if dt:
             cur["activity"][act["category"]] = cur["activity"].get(act["category"], 0) + int(dt)
             cur["mostly"] = max(cur["activity"], key=cur["activity"].get)
         cur["_last_cat"] = act["category"]
         cur["_raw"] = (meta.get("app"), meta.get("window"))
+        if (self.now and self.now["raw"] == cur["_raw"]
+                and meta["capture_start_offset_ns"] + self.origin_ns > self.now["mono"]):
+            self.now = None                  # a capture taken after the quick answer: it is the truth
         if act["new_text"] and act["category"] in ("typing", "receiving"):
             line(t, "", f"  {act['category']}: {act['new_text'][0][:80]}")
 
@@ -833,10 +1146,17 @@ class Tracker:
         signal.signal(signal.SIGUSR1, lambda *_: setattr(self, "pin", True))
         signal.signal(signal.SIGUSR2, lambda *_: setattr(self, "note_request", True))
         app = dictation.start_app()
+        self.nsapp = app
         hotkey_ok = dictation.register_hotkey(lambda: setattr(self, "note_request", True))
         dictation.ensure_listener()        # build the speech helper now, not on first ⌃⌥N
         if self.show_widget:
-            self.widget = widget.Widget(self.widget_card, self.widget_tick)
+            self.widget = widget.Widget(self.widget_card, self.widget_tick,
+                                        on_add=lambda: setattr(self, "note_request", True),
+                                        heard=self.widget_heard, hotkey=dictation.HOTKEY_LABEL,
+                                        suggestion=self.widget_suggestion, on_project=self.widget_project,
+                                        on_decline=self.widget_decline, picker=self.widget_picker,
+                                        on_unfile=self.widget_unfile, busy=lambda: self.panel.open, status=self.widget_status,
+                                        on_pause=self.widget_pause, on_resume=self.widget_resume)
         if self.input_monitor:
             self.input_monitor.start(request_permission=True)
             say(f"Input monitoring: {self.input_monitor.status()['state']} · allowed app: VS Code · no key values recorded")
@@ -847,6 +1167,9 @@ class Tracker:
         self._events = macos.subscribe(self)
         self.thread = threading.Thread(target=self.worker, daemon=True)
         self.thread.start()
+        threading.Thread(target=self.quick_worker, daemon=True).start()
+        threading.Thread(target=self.ax_loop, daemon=True).start()
+        self.click_monitor = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(1 << 1, self.on_click)
 
         macos.quiet_system_logs()
         say(f"LMemM is watching  ·  captures on app/tab switches, else every {self.every}s"
@@ -855,6 +1178,8 @@ class Tracker:
              else f"(couldn't register {dictation.HOTKEY_LABEL}: use  python3 lmemm.py note)")
             + "  ·  Ctrl-C stop\n")
         self.last_sig = macos.front()
+        if self.last_sig:
+            self.identify_now(self.last_sig)     # so the app you start in is followed too
         self.last_capture = time.time()      # the "start" trigger takes the first frame
         self.trigger("start")
         try:

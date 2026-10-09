@@ -1,7 +1,17 @@
 # LMemM — current context
 
-Updated 2026-10-08, America/New_York. Historical context and handover are in
+Updated 2026-10-09, America/New_York. Historical context and handover are in
 `docs/history/`. This file records current decisions and verification limits.
+
+## Main integration — 2026-10-09
+
+Integrated origin/main through `c2b6894`, preserving the semantic pilot and source-backed recall.
+Main adds the quiet pill/note card, project filing, pause and finished-note controls,
+and moves normal Python modules to `src/`, speech helper to `native/listen/`, and
+context/architecture to `docs/`. Use `scripts/test.sh` for the integrated Python suite.
+The semantic pilot remains separate; general model acceptance and MCP remain open.
+Merge validation: 310 Python tests and 6 Node bridge tests pass. The existing widget
+test now supplies confirmed foreground metadata required by the new pill contract.
 
 ## Current handoff snapshot — 2026-10-08
 
@@ -19,13 +29,13 @@ Updated 2026-10-08, America/New_York. Historical context and handover are in
   broader lifecycle and multiple-project native acceptance, scoped MCP/agent handoff.
 - Main checkout was not changed by this feature merge. This feature publication includes
   all semantic work and current main integration; records below are historical checkpoints.
-- [Current handover](docs/handover-2026-10-08.md) is the primary continuation guide.
+- [Current handover](handover-2026-10-08.md) is the primary continuation guide.
 
 ## Next session — start here
 
 1. Work in `.worktrees/semantic-project-memory` on `feat/semantic-project-memory`,
-   not the root main checkout. Read [handover.md](handover.md), then the
-   [detailed handover](docs/handover-2026-10-08.md). Fetch origin, inspect Aditya's
+   not the root main checkout. Read [handover.md](../handover.md), then the
+   [detailed handover](handover-2026-10-08.md). Fetch origin, inspect Aditya's
    changes/review, and compare ancestry before building or merging. Latest published
    code/docs checkpoint before this closing update: `804d40f`; main included through
    `e5cd6ed`. This closing documentation commit is also published on the same branch.
@@ -58,7 +68,7 @@ are ignored and remain local; the saved supported decision/task is not deleted. 
 Ollama terminal is user-managed; do not assume it survives overnight. The `.env` canary is
 an untracked local test file, deliberately not included in publication. Do not git-add it.
 
-For another live run follow [the runbook](docs/live-semantic-pilot.md): start the existing
+For another live run follow [the runbook](live-semantic-pilot.md): start the existing
 cloud-disabled Ollama service if needed, start the experimental collector, launch/reconnect
 the VS Code development extension with the newly issued grant, and focus an approved file.
 A stopped collector needs `start`, not `resume`; a running collector paused by sleep needs
@@ -77,22 +87,22 @@ not done. No new feature should be marked complete solely from the synthetic tes
 
 ## Document map
 
-- [Claude entry-point handover](handover.md): branch, verified state and continuation instructions.
+- [Claude entry-point handover](../handover.md): branch, verified state and continuation instructions.
 - [README](README.md): normal tracker setup and user commands.
-- [Architecture](ARCHITECTURE.md): capture modules and experimental semantic boundary.
-- [Semantic handover](docs/semantic-project-memory-status.md): implemented interfaces,
+- [Architecture](architecture.md): capture modules and experimental semantic boundary.
+- [Semantic handover](semantic-project-memory-status.md): implemented interfaces,
   test instructions and remaining source/MCP prerequisites.
-- [Benchmark index and reviewed results](docs/benchmarks/project-memory/README.md):
+- [Benchmark index and reviewed results](benchmarks/project-memory/README.md):
   measured claims, privacy probes, model failures and reproduction.
-- [Live semantic pilot design](docs/specs/2026-10-07-live-semantic-pilot-design.md):
+- [Live semantic pilot design](specs/2026-10-07-live-semantic-pilot-design.md):
   VS Code source bridge, foreground checks and opt-in experimental testing across
   approved projects; implemented, one-project native acceptance demonstrated.
-- [Live pilot runbook](docs/live-semantic-pilot.md): exact start/connect/control/test commands.
-- [Live pilot implementation plan](docs/plans/2026-10-07-live-semantic-pilot.md): task/review status.
-- [Approved semantic design](docs/specs/2026-10-07-automatic-project-memory-design.md)
-  and [implementation plan/status](docs/plans/2026-10-07-automatic-project-memory.md).
-- [Product/knowledge-graph discussion](docs/knowledge-graph-discussion.md): MVP intent.
-- [Historical handovers](docs/history/): earlier capture/input/dictation work.
+- [Live pilot runbook](live-semantic-pilot.md): exact start/connect/control/test commands.
+- [Live pilot implementation plan](plans/2026-10-07-live-semantic-pilot.md): task/review status.
+- [Approved semantic design](specs/2026-10-07-automatic-project-memory-design.md)
+  and [implementation plan/status](plans/2026-10-07-automatic-project-memory.md).
+- [Product/knowledge-graph discussion](knowledge-graph-discussion.md): MVP intent.
+- [Historical handovers](history/): earlier capture/input/dictation work.
 
 Current worktree: `.worktrees/semantic-project-memory`, branch
 `feat/semantic-project-memory`. The root main checkout has not been merged or changed
@@ -162,13 +172,13 @@ measured enabled-worker resource acceptance remains open.
 The agreed MVP is accurate project knowledge exposed to AI agents through MCP,
 with acceptable measured performance and low resource use. Broader companion
 features come after this. Initial source scope is VS Code plus permitted browser
-sites. A [proposed written spec](docs/specs/2026-10-07-automatic-project-memory-design.md)
-is approved; the [discussion brief](docs/knowledge-graph-discussion.md)
-records the selected direction. The [semantic-core implementation plan](docs/plans/2026-10-07-automatic-project-memory.md)
+sites. A [proposed written spec](specs/2026-10-07-automatic-project-memory-design.md)
+is approved; the [discussion brief](knowledge-graph-discussion.md)
+records the selected direction. The [semantic-core implementation plan](plans/2026-10-07-automatic-project-memory.md)
 was approved and executed in `.worktrees/semantic-project-memory` on
 `feat/semantic-project-memory`. The fixture-driven core and local evaluation
 exist there; no model has passed acceptance. The separate VS Code pilot is implemented below; browser adapters and MCP remain
-future increments. See [implementation status](docs/semantic-project-memory-status.md).
+future increments. See [implementation status](semantic-project-memory-status.md).
 
 Recommended order: define one agent workflow and evidence quality criteria;
 enforce app/site access and foreground source boundaries; establish performance
@@ -185,11 +195,11 @@ not proof of a shared project.
 .venv/bin/python lmemm.py notes done NOTE_ID
 .venv/bin/python lmemm.py notes reopen NOTE_ID
 .venv/bin/python lmemm.py memory 100 --events --content
-.venv/bin/python -m unittest discover -s tests -v
+PYTHON=.venv/bin/python ./scripts/test.sh -v
 ```
 
 One tracker at a time; restart after code/permission changes. README is the user
-guide and ARCHITECTURE.md describes the integrated modules.
+guide and architecture.md describes the integrated modules.
 
 ## Semantic increment — 2026-10-07
 
@@ -214,7 +224,7 @@ No model passes the precision gate; resource/selection acceptance remain false.
 No local model is enabled in normal capture; no feature merge or push was performed.
 
 Next order:
-1. Run the [live pilot checklist](docs/live-semantic-pilot.md) across two approved projects. Confirm native handshake, real visible text, exclusions, switching, pause/restart/deletion and recall usefulness. No user content has been captured for this validation.
+1. Run the [live pilot checklist](live-semantic-pilot.md) across two approved projects. Confirm native handshake, real visible text, exclusions, switching, pause/restart/deletion and recall usefulness. No user content has been captured for this validation.
 2. Record live results, handover and push the feature branch after confirmation. Do not merge main.
 3. Improve automatic semantic understanding using observed pilot errors and broader development/fresh heldout examples. Complete FTS candidate selection and independent-episode relationship corroboration.
 4. Measure representative enabled-worker RAM/CPU/power, improve precision and build browser source adapters with explicit website permissions.
@@ -232,7 +242,7 @@ Metadata-only native smoke: Accessibility trusted; foreground was not verified a
 
 Rulings: one-second publisher poll stays inside the two-second freshness window; resume may require retry while a cancelled request finishes; the 250MiB total reserves journal/reclaim space, leaving roughly one-third for the database; noncanonical/symlink document aliases are rejected; the native title challenge requires a temporary registration tab. These favor inspectable behavior and privacy and may require explicit reconnect/canonical paths.
 
-Pointers: [design](docs/specs/2026-10-07-live-semantic-pilot-design.md), [implementation plan](docs/plans/2026-10-07-live-semantic-pilot.md), [runbook](docs/live-semantic-pilot.md), [semantic handover](docs/semantic-project-memory-status.md). No push or main merge has been performed.
+Pointers: [design](specs/2026-10-07-live-semantic-pilot-design.md), [implementation plan](plans/2026-10-07-live-semantic-pilot.md), [runbook](live-semantic-pilot.md), [semantic handover](semantic-project-memory-status.md). No push or main merge has been performed.
 
 Live QA follow-up: extension loaded and challenge tab appeared, but registration stayed blocked. Native diagnosis showed system AXFocusedUIElement error -25204 while app-scoped focus succeeded. Added app-scoped fallback for unavailable/unsupported system queries, preserving owner/role/secure-field checks. Regression reproduced RED then passed; collector restart and live acceptance remain pending.
 

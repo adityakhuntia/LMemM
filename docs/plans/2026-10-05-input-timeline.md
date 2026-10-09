@@ -87,7 +87,7 @@
 
 ### Task 5: CLI, documentation and end-to-end verification
 
-**Files:** `lmemm.py`, `README.md`, `context.md`, relevant CLI tests. Normal `run.sh start` remains capture-only; document foreground startup for opt-in monitoring.
+**Files:** `lmemm.py`, `README.md`, `docs/current-context.md`, relevant CLI tests. Normal `run.sh start` remains capture-only; document foreground startup for opt-in monitoring.
 
 - [x] Write failing CLI tests for required allowlist, unsupported bundle rejection, `--input-retention-hours` validation, `memory --events` with old/new stores, visible unavailable/paused status, and `delete-session <id> --dry-run` / `--confirm <id>` (confirmation must exactly match the planned inactive session).
 - [x] Implement startup arguments `--input-events --input-app com.microsoft.VSCode`, optional shortened retention, and event rendering independent of OCR activity. Preserve `memory --content` and notes. Display keyboard activity without claiming typed content or shortcuts; mark uncertain navigation and coverage gaps explicitly.

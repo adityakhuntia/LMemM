@@ -98,3 +98,102 @@ def resolve_item(items, st, cur, res, trigger, scrolled):
         cur_item["ref"] = ref
         return cur_item["id"], ref
     return make_id(st, ref), ref
+
+
+EMPTY_SCREEN = {"objects": [], "image_size": {"w": 1, "h": 1}}
+
+
+def quick_state(meta, res=None):
+    """What a screen with this metadata is, or None when that can't be told without
+    reading the pixels. Without `res` only the URL, tab/window title and app are used,
+    which is enough for pages, docs, AI chats, editors, terminals and most chat apps."""
+    try:
+        st = understand.describe(res or EMPTY_SCREEN, meta)
+    except Exception:
+        return None
+    return st if st.get("target") else None
+
+
+def _squash(name):
+    """A chat name as OCR-proof letters: lowercase, no punctuation, look-alikes merged."""
+    s = re.sub(r"[^a-z0-9]", "", (name or "").lower())
+    return s.translate(str.maketrans("oli", "011"))
+
+
+def open_notes(item):
+    done = item.get("notes_done", {})
+    return sum(1 for n in item.get("notes", []) if not done.get(notes_id(n)))
+
+
+def notes_id(n):
+    import notes
+    return notes.note_id(n)
+
+
+def find_chat(items, app, name, threshold=0.85):
+    """The chat item for a name read quickly off the screen. Quick OCR misspells names
+    ("Sehen Dey 180DC26" / "1800C26"), and each spelling became its own item, so match by
+    similarity and prefer the spelling that holds open notes."""
+    want = _squash(name)
+    if len(want) < 2:
+        return None
+    close = []
+    for i in items.values():
+        if i.get("app") != app or i.get("kind") != "chat":
+            continue
+        have = _squash(i.get("title") or "")
+        if have and (have == want or SequenceMatcher(None, have, want).ratio() >= threshold):
+            close.append(i)
+    if not close:
+        return None
+    return max(close, key=lambda i: (open_notes(i), i["last_seen"]))["id"]
+
+
+def find_item(items, st):
+    """Id of the most recent item at the place `st` names, or None if you've never been there."""
+    if st.get("kind") == "chat" and st.get("target"):
+        fuzzy = find_chat(items, st["app"], st["target"])
+        if fuzzy:
+            return fuzzy
+    ref = understand.ref(st)
+    seen = [i for i in items.values() if ref in i.get("refs", [i.get("ref")])]
+    return max(seen, key=lambda i: i["last_seen"])["id"] if seen else None
+
+
+def places(item):
+    return item.setdefault("places", [])
+
+
+def learn_place(item, key):
+    """Remember that this signature (see ax.key) was seen while this item was in front."""
+    if key and key not in places(item):
+        places(item).append(key)
+        del item["places"][:-8]
+
+
+def find_place(items, key, label=""):
+    """The item a signature names, or None. Exact for every place seen before. A spelling
+    twin (OCR once read the same chat two ways) resolves to the one with open notes; two
+    genuinely different items on one signature means it can't tell, so None."""
+    if not key:
+        return None
+    found = [i for i in items.values() if key in i.get("places", [])]
+    if not found and label:                               # never seen: does an item's title end the label?
+        tail = _squash(label)
+        found = [i for i in items.values() if len(_squash(i.get("title"))) >= 4
+                 and tail.endswith(_squash(i["title"]))]
+    if not found:
+        return None
+    names = [_squash(i.get("title")) for i in found]
+    if any(SequenceMatcher(None, names[0], n).ratio() < 0.85 for n in names[1:]):
+        return None
+    return max(found, key=lambda i: (open_notes(i), i["last_seen"]))["id"]
+
+
+def page_state(app, url, title):
+    """What a browser page is, from its URL and window title alone (what the Accessibility API
+    gives in a millisecond); the same state a capture would build, so it finds the same item."""
+    site = re.sub(r"^https?://", "", url).split("/")[0] or None
+    names = {app, "Brave", "Google Chrome", "Microsoft Edge", "Arc", "Safari"}
+    tab = re.sub(r"\s[-–—]\s(?:%s)(?:\s.*)?$" % "|".join(map(re.escape, names)), "", title or "")
+    return quick_state({"app": app, "bundle_id": "", "window": title, "url": url, "site": site, "tab_title": tab})

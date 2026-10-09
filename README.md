@@ -68,6 +68,7 @@ Every item is also a direct command, for scripts and muscle memory:
 | `lmemm.py memory [N] [--content] [--events]` | latest N things; `--content` adds kept excerpts, `--events` the input timeline |
 | `lmemm.py notes [--all] [PROJECT]` | open notes grouped project → thing; `--all` includes done ones |
 | `lmemm.py notes done ID…` / `notes reopen ID…` | mark notes done / open again |
+| `lmemm.py suggest [NAME] [ID…]` | offer things as one project on the pill (stands in for the model until it exists) |
 | `lmemm.py context [SESSION] [--days N]` | a clean, de-noised export for an AI (below) |
 | `lmemm.py status` / `pause` / `resume` | the running tracker; pause stops all capture |
 | `lmemm.py pin` | force-save the current screen |
@@ -90,9 +91,10 @@ LMemM is watching  ·  captures on app/tab switches, else every 5s  ·  pauses a
 
 ## Notes and pending edits (⌃⌥N)
 
-Press **⌃⌥N** in any app. A small window opens for what's in front ("Note for: Google
-Docs: Q3 plan") and it is **already listening**: talk, and your words appear as you
-speak. You can type or fix words too. **Return** saves, **Esc** cancels.
+Press **⌃⌥N** in any app. A small card opens above the pill for what's in front ("Note
+for Pricing › Q3 plan") and it is **already listening**: talk, and your words appear as
+you speak. Click in to type or fix a word. **Return** saves, **Esc** cancels; on save the
+pill says "Saved to Q3 plan" and the count rises. The app you were in stays in front.
 
 - The note goes on the memory entry for that thing, kept apart from what LMemM
   observed. If OCR hasn't caught up yet, it waits for that screen; it never lands on
@@ -120,18 +122,33 @@ Q3 plan  (1 open)
 
 ## The pill
 
-A tiny translucent bar sits at the bottom of your screen, like Wispr Flow. It never
-takes focus and shows over every app, Space and full-screen window. An orange dot
-means the thing you're on has edits left.
+A thin pill sits at the bottom of your screen, like Wispr Flow. It never takes focus,
+follows light/dark, and shows over every app, Space and full-screen window.
 
-Click it for a small card about the project of whatever you're on:
+- Nothing waiting: it is nearly invisible.
+- Notes waiting on the thing you're on: it shows a number. Hover to see the first one.
+- While you dictate a note (⌃⌥N): the note card shows the waveform and the words; the pill stays quiet.
+- Right after a note is saved: a check and "Saved to <thing>".
+- Something wrong, as a mark on the pill (hover for its name; click for the card): a slashed eye,
+  **Screen access is off** (red; the card opens System Settings); a lock, **Private window**
+  (nothing is remembered from there); a slashed microphone, **Mic is off** (red; shown when
+  there are no notes to count).
+- **Pause** is on the card: a plain "Pause LMemM" row at the bottom, then 1 hour, Until tomorrow
+  (8:00 AM) or Until I resume, each showing when it ends. While paused the pill shows one pause
+  mark and nothing else; its card says "Paused", when it ends, and has **Resume**. When you step
+  away (idle) the same mark shows, with no Resume because it ends by itself. ⌃⌥N while paused opens
+  that card. `lmemm.py pause` / `resume` show the same.
+- Nothing to show, on hover or with the card open: a pencil, **No notes yet**; a check,
+  **All caught up**; a folder, **Start a project**, when you have none yet.
 
-- **Left** shows the edits still to do, with this thing's first. Tick one and it's done,
-  so next time you only see what's left.
-- **Plan** shows every note on the project (open, then done, each with when) and its
-  history: notes added and ticked off, newest first.
-
-Click the pill again, or ×, to close it. Start with `--no-widget` to hide it.
+Click it for a small card about what you're on. It lists that thing's open notes: click
+one to tick it off: it stays crossed out for a moment (click again to take it back), then folds
+away, and the pill's count drops at once. Finishing the last one shows **All caught up** once;
+that card still has "Add a note…". A **Done** row lists this thing's finished notes by day (click a
+ring to reopen one), and **Undo** appears for 6 s after ticking. "Add a note…" opens the dictation window. If the
+project has notes on other things, "N more in <project>" shows them grouped by thing,
+with finished notes behind "Done". Click the pill again or anywhere else to close it.
+Start with `--no-widget` to hide it.
 
 ## What it remembers
 
@@ -251,13 +268,25 @@ deletion works are in [docs/input-timeline.md](docs/input-timeline.md).
 - Voice: on-device recognition only; the helper runs only while the note window is
   open and keeps no audio.
 
+## Layout
+
+```
+lmemm.py        entry point (the menu and every command)
+run.sh          run it detached in the background
+src/            the Python modules (see docs/architecture.md)
+native/listen/  Objective-C speech helper, built on first use
+tests/          unit tests
+scripts/        dev helpers (test.sh)
+docs/           architecture, specs, plans, history
+```
+
 ## Develop
 
 ```bash
-python3 -m unittest discover -s tests      # 251 tests, incl. real on-device OCR
+./scripts/test.sh      # includes native OCR and semantic-memory tests
 ```
 
-[ARCHITECTURE.md](ARCHITECTURE.md) covers how the modules fit and where to extend it.
+[docs/architecture.md](docs/architecture.md) covers how the modules fit and where to extend it.
 [docs/](docs/) has specs, plans and the development history.
 
 ## Experimental semantic project memory (feature branch)
@@ -278,6 +307,6 @@ Verification: **251 Python tests and 6 Node tests passed** after integration wit
 Live VS Code capture, saved-note recovery, decision/task extraction and cited recall
 passed a small one-project test. Broader acceptance and representative performance remain open.
 See the [current handover](docs/handover-2026-10-08.md) for scope and test steps.
-See [context.md](context.md), the [semantic handover](docs/semantic-project-memory-status.md)
+See [current context](docs/current-context.md), the [semantic handover](docs/semantic-project-memory-status.md)
 and [benchmark index](docs/benchmarks/project-memory/README.md) for current limits.
 Normal capture commands do not start Ollama, download models or send evidence.

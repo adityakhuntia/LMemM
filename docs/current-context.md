@@ -59,7 +59,7 @@ The user selected **resume work on a project** as the first agent workflow.
 The agreed MVP is accurate project knowledge exposed to AI agents through MCP,
 with acceptable measured performance and low resource use. Broader companion
 features come after this. Graph understanding is now in **brainstorming**;
-see [discussion brief](docs/knowledge-graph-discussion.md).
+see [discussion brief](knowledge-graph-discussion.md).
 
 Recommended order: define one agent workflow and evidence quality criteria;
 enforce app/site access and foreground source boundaries; establish performance
@@ -76,8 +76,8 @@ not proof of a shared project.
 .venv/bin/python lmemm.py notes done NOTE_ID
 .venv/bin/python lmemm.py notes reopen NOTE_ID
 .venv/bin/python lmemm.py memory 100 --events --content
-.venv/bin/python -m unittest discover -s tests -v
+PYTHON=.venv/bin/python ./scripts/test.sh -v
 ```
 
 One tracker at a time; restart after code/permission changes. README is the user
-guide and ARCHITECTURE.md describes the integrated modules.
+guide and docs/architecture.md describes the integrated modules.

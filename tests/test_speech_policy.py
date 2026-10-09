@@ -8,7 +8,7 @@ from pathlib import Path
 
 class SpeechPolicyTests(unittest.TestCase):
     def test_native_policy_refuses_unsupported_recognizer_and_requires_local_when_supported(self):
-        source = Path(__file__).resolve().parents[1] / "listen" / "listen.m"
+        source = Path(__file__).resolve().parents[1] / "native" / "listen" / "listen.m"
         harness = '''
 #define main listener_main
 #include "LISTENER_SOURCE"

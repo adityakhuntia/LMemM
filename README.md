@@ -267,11 +267,23 @@ deletion works are in [docs/input-timeline.md](docs/input-timeline.md).
 - Voice: on-device recognition only; the helper runs only while the note window is
   open and keeps no audio.
 
+## Layout
+
+```
+lmemm.py        entry point (the menu and every command)
+run.sh          run it detached in the background
+src/            the Python modules (see docs/architecture.md)
+native/listen/  Objective-C speech helper, built on first use
+tests/          unit tests
+scripts/        dev helpers (test.sh)
+docs/           architecture, specs, plans, history
+```
+
 ## Develop
 
 ```bash
-python3 -m unittest discover -s tests      # 159 tests, incl. real on-device OCR
+./scripts/test.sh      # 159 tests, incl. real on-device OCR
 ```
 
-[ARCHITECTURE.md](ARCHITECTURE.md) covers how the modules fit and where to extend it.
+[docs/architecture.md](docs/architecture.md) covers how the modules fit and where to extend it.
 [docs/](docs/) has specs, plans and the development history.

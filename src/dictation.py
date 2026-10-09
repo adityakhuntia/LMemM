@@ -12,7 +12,7 @@ The hotkey uses Carbon's RegisterEventHotKey: macOS tells us about that one key
 combination only. No keyboard monitoring, no Accessibility permission.
 
 Speech to text is Apple's on-device speech recognizer, run by a tiny helper app
-(listen/listen.m -> bin/LMemM Listen.app, built with clang on first use). It has
+(native/listen/listen.m -> bin/LMemM Listen.app, built with clang on first use). It has
 to be its own app: macOS only lets an app with its own microphone/speech usage
 strings use the recognizer. It only runs while the note window is open. First
 time, macOS asks to allow Microphone and Speech Recognition for "LMemM Listen".
@@ -93,18 +93,18 @@ def start_app():
     return app
 
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LISTEN_APP = os.path.join(HERE, "bin", "LMemM Listen.app")
 
 
 def ensure_listener():
     """Build the speech helper app once (needs Xcode Command Line Tools' clang)."""
     exe = os.path.join(LISTEN_APP, "Contents", "MacOS", "listen")
-    src = os.path.join(HERE, "listen", "listen.m")
+    src = os.path.join(HERE, "native", "listen", "listen.m")
     if os.path.exists(exe) and os.path.getmtime(exe) >= os.path.getmtime(src):
         return True
     os.makedirs(os.path.dirname(exe), exist_ok=True)
-    subprocess.run(["cp", os.path.join(HERE, "listen", "Info.plist"),
+    subprocess.run(["cp", os.path.join(HERE, "native", "listen", "Info.plist"),
                     os.path.join(LISTEN_APP, "Contents", "Info.plist")], check=False)
     r = subprocess.run(["clang", "-fobjc-arc", "-O2", "-framework", "Foundation", "-framework",
                         "Speech", "-framework", "AVFoundation", src, "-o", exe],

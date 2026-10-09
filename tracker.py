@@ -43,6 +43,7 @@ import macos
 import notes
 import resolver
 import retention
+import rules
 import store
 import understand
 import widget
@@ -97,6 +98,9 @@ class Tracker:
         self.pending = None                  # (trigger, due, first_seen)
         self.pin = False
         self.note_request = False
+        self.waiting = []                    # saved notes whose screen is still being read
+        self.cur_place = None                # (app, window) of the newest timeline event
+        self.pill_place = None               # (app, window) the pill last refreshed for
         self.paused = None                   # automatic pause reason (idle, locked, ...)
         self.manual_paused = False           # `lmemm.py pause`
         self.last_sig = None
@@ -331,6 +335,11 @@ class Tracker:
         self.process_control()
         self.poll_input()
         self.maintain()
+        if self.widget:
+            here = self.front_sig()
+            if here != self.pill_place:             # you switched tab or app: update the pill now, not within a second
+                self.pill_place = here
+                self.last_widget_refresh = 0.0
         if self.widget and time.time() - self.last_widget_refresh >= 1:
             self.last_widget_refresh = time.time()
             self.widget.refresh()
@@ -338,21 +347,27 @@ class Tracker:
             self.widget.pulse(self.widget_heard())      # waveform + words while the note window is open
         if self.manual_paused:
             return
-        if self.widget and self.widget.card_open:
-            self.close_interval()
-            return                      # the card is open: don't capture it into memory
         if any(self.flags.values()):
             self.note_request = False
             if self.panel.open:
                 self.panel.close(save=False)
         if self.panel.open:
+            self.note_request = False                  # R3: already open, a second press does nothing
             self.close_interval()
             self.panel.poll()           # show what you've said so far
             return                      # don't capture the note window itself
         if self.note_request:
             self.note_request = False
-            self.open_note()
+            card_open = bool(self.widget and self.widget.card_open)
+            action = rules.hotkey_action(False, card_open, self.manual_paused)
+            if action == "close_card_then_open_note":
+                self.widget.close_card()                # R2
+            if action != "ignore":
+                self.open_note()
             return
+        if self.widget and self.widget.card_open:
+            self.close_interval()
+            return                      # the card is open: don't capture it into memory
         now = time.time()
         f = macos.front()
 
@@ -523,24 +538,52 @@ class Tracker:
         label = meta["app"] + (f": {meta['tab_title'] or meta['window']}"
                                if meta.get("tab_title") or meta.get("window") else "")
         target = ("frame", meta["ts"])
-        self.panel.show(label, lambda text: self.save_note(target, text))
+        here = notes.note_target(self._card_here() if self.widget else None, label)
+        sig = self.front_sig()
+        self.panel.show(here["crumb"], lambda text: self.save_note(target, text, here["where"], sig))
         self.poll_input()
         return True
 
-    def save_note(self, target, text):
+    def save_note(self, target, text, where=None, sig=None):
         if not text:
             line(now_hms(), "", "note cancelled")
             return
+        if self.widget and where:
+            self.widget.flash(f"Saved to {where}"[:44])
         at = datetime.now().isoformat(timespec="seconds")
         with self.lock:
             item = notes.record(self.items, self.frame_item, self.notes, target, text, at)
             self.save(force=True)
+            if item is None:
+                self.waiting.append({"at": at, "text": text, "sig": sig})      # shown on the pill meanwhile
+        self.widget_refresh_soon()
         line(at[11:19], (item or {}).get("app", "?"), "note saved" + (" (awaiting context)" if item is None else ""))
+
+    def widget_refresh_soon(self):
+        self.last_widget_refresh = 0.0
 
     # ------------------------------------------------------------ the on-screen pill
 
+    def front_sig(self):
+        """Where you are right now (app, window), read live so the pill never trails a switch."""
+        sig = macos.front() or self.last_sig
+        return (sig["app"], sig["window"]) if sig else None
+
     def widget_card(self):
-        """What the pill's card shows: the project of the thing you're on right now."""
+        """What the pill's card shows: the project of the thing you're on right now. A note you
+        just wrote there counts at once (rules.py R4), even before its screen has been read."""
+        card = self._card_here()
+        here = self.front_sig()
+        with self.lock:
+            for w in list(self.waiting):
+                note = next((n for n in self.notes if n["at"] == w["at"] and n["text"] == w["text"]), None)
+                if note is None or note.get("status") != "pending":
+                    self.waiting.remove(w)             # attached (or given up): the real item has it now
+            waiting = [w for w in self.waiting if w["sig"] == here]   # only where you wrote it
+        card_out = card
+        return rules.with_pending(card_out, waiting, lambda: notes.blank_card(here[0] if here else "", here[0] if here else ""))
+
+    def _card_here(self):
         with self.lock:
             cur = self.events[-1] if self.events else None
             if self.ax_now and self.ax_now["pid"] == (self.last_sig or {}).get("pid"):
@@ -555,7 +598,10 @@ class Tracker:
             front = self.last_sig and (self.last_sig["app"], self.last_sig["window"])
             if self.now and self.now["raw"] == front:
                 return notes.card(self.items, self.now["item"]) if self.now["item"] in self.items else None
-            return notes.card(self.items, cur["item"]) if cur else None
+            if cur and self.cur_place == front:
+                return notes.card(self.items, cur["item"])
+            app = (self.last_sig or {}).get("app") or ""
+            return notes.blank_card(app, app)       # not read yet: say "no notes here", never the last thing's
 
     # ------------------------------------------------------------ "what am I on?", right now
 
@@ -676,8 +722,8 @@ class Tracker:
                 line(now_hms(), "", f"accessibility read failed: {e}")
 
     def widget_heard(self):
-        """None, or the words said so far while the ⌃⌥N note window is open."""
-        return self.panel.shown if self.panel.open else None
+        """The pill no longer shows the words (the note card does), so this is always None."""
+        return None                     # the note card shows the waveform and words itself
 
     def widget_tick(self, ids, done):
         with self.lock:
@@ -884,6 +930,7 @@ class Tracker:
             line(t, st["app"], st["doing"] + ("  (back to it)" if came_back and item["visits"] > 1 else ""))
             if came_back:
                 self.resurface(item, cur, meta)
+        self.cur_place = (meta["app"], meta["window"])      # where the newest event was read
         if dt:
             cur["activity"][act["category"]] = cur["activity"].get(act["category"], 0) + int(dt)
             cur["mostly"] = max(cur["activity"], key=cur["activity"].get)
@@ -1068,7 +1115,7 @@ class Tracker:
                                         heard=self.widget_heard, hotkey=dictation.HOTKEY_LABEL,
                                         suggestion=self.widget_suggestion, on_project=self.widget_project,
                                         on_decline=self.widget_decline, picker=self.widget_picker,
-                                        on_unfile=self.widget_unfile)
+                                        on_unfile=self.widget_unfile, busy=lambda: self.panel.open)
         if self.input_monitor:
             self.input_monitor.start(request_permission=True)
             say(f"Input monitoring: {self.input_monitor.status()['state']} · allowed app: VS Code · no key values recorded")

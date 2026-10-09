@@ -81,5 +81,18 @@ class ProjectTests(unittest.TestCase):
         self.assertIsNone(notes.suggestion_view({"name": "X", "ids": ["a", "gone"]}, self.items))
 
 
+class NoteTargetTests(unittest.TestCase):
+    def test_a_filed_thing_shows_its_project(self):
+        data = {"title": "Q3 plan", "filed": "Pricing"}
+        self.assertEqual(notes.note_target(data, "Docs: x"), {"crumb": "Pricing › Q3 plan", "where": "Q3 plan"})
+
+    def test_an_unfiled_thing_is_just_its_name(self):
+        self.assertEqual(notes.note_target({"title": "Q3 plan", "filed": None}, "Docs")["crumb"], "Q3 plan")
+
+    def test_nothing_known_falls_back_to_the_label(self):
+        for data in (None, {"title": " "}):
+            self.assertEqual(notes.note_target(data, "Safari: Home"), {"crumb": "Safari: Home", "where": "Safari: Home"})
+
+
 if __name__ == "__main__":
     unittest.main()

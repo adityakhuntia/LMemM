@@ -27,10 +27,9 @@ import tempfile
 import time
 from ctypes import CFUNCTYPE, POINTER, Structure, c_int32, c_uint32, c_void_p
 
-import objc
-from AppKit import (NSApp, NSApplication, NSBackingStoreBuffered, NSColor, NSFont,
-                    NSMakeRect, NSObject, NSPanel, NSScreen,
-                    NSScrollView, NSTextField, NSTextView, NSWorkspace)
+from AppKit import NSApplication
+
+import notecard
 
 # ⌃⌥N  ("note"). kVK_ANSI_N = 45; Carbon modifier bits: control 4096, option 2048
 HOTKEY_CODE = 45
@@ -92,29 +91,6 @@ def start_app():
     app.setActivationPolicy_(1)                        # accessory
     app.finishLaunching()
     return app
-
-
-class _Keys(NSObject):
-    """Return saves, Escape cancels, Shift-Return makes a new line."""
-
-    def initWithPanel_(self, panel):
-        self = objc.super(_Keys, self).init()
-        self.panel = panel
-        return self
-
-    def textView_doCommandBySelector_(self, tv, sel):
-        sel = sel.decode() if isinstance(sel, bytes) else str(sel)
-        if sel == "insertNewline:":
-            self.panel.close(save=True)
-            return True
-        if sel == "cancelOperation:":
-            self.panel.close(save=False)
-            return True
-        return False
-
-    def windowShouldClose_(self, window):
-        self.panel.close(save=False)
-        return False
 
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -209,97 +185,50 @@ class Listener:
 
 
 class NotePanel:
-    """A small floating window: 'Note for: <what you're doing>' + a text box that
-    fills in as you speak."""
+    """The note card (notecard.py) plus the speech helper: your words fill in as you speak."""
 
     def __init__(self):
-        self.win = None
+        self.card = None
         self.on_done = None
-        self.prev_app = None
         self.listener = Listener()
         self.shown = ""                  # last transcript we put in the box
 
     @property
     def open(self):
-        return self.win is not None and self.win.isVisible()
+        return self.card is not None and self.card.visible
 
     def show(self, context_label, on_done):
+        """context_label: what the note is for, e.g. "Pricing › Q3 plan"."""
         self.on_done = on_done
-        self.prev_app = NSWorkspace.sharedWorkspace().frontmostApplication()
-        if self.win is None:
-            self._build()
-        self.label.setStringValue_(f"Note for: {context_label}"[:110])
-        self.text.setString_("")
+        if self.card is None:
+            self.card = notecard.NoteCard(lambda: self.close(save=True), lambda: self.close(save=False))
         self.shown = ""
         listening = self.listener.start()
-        self.status.setStringValue_("🎙  Listening… speak now  ·  or type" if listening
-                                    else "Speech helper unavailable, type your note")
-        scr = NSScreen.mainScreen().visibleFrame()
-        w, h = 560, 170
-        self.win.setFrame_display_(NSMakeRect(scr.origin.x + (scr.size.width - w) / 2,
-                                              scr.origin.y + scr.size.height - h - 60, w, h), True)
-        NSApp.setActivationPolicy_(0)         # a normal app while the window is up (keyboard focus)
-        NSApp.activateIgnoringOtherApps_(True)
-        self.win.makeKeyAndOrderFront_(None)
-        self.win.makeFirstResponder_(self.text)
+        self.card.show(context_label, listening)
+        if not listening:
+            self.card.status_is(False, "Speech helper unavailable. Type your note instead.")
 
     def poll(self):
-        """Call often while the window is open: shows what you've said so far."""
+        """Call often while the card is open: shows what you've said so far."""
+        self.card.animate()
         if not self.listener.out:
             return
         err = self.listener.error()
         if err:
-            self.status.setStringValue_(f"⚠️  {err}"[:120])
+            self.card.status_is(False, err[:80])
             self.listener.stop(wait=0)
             return
         said = self.listener.text()
-        current = self.text.string()
-        if said != self.shown and current == self.shown:   # don't overwrite your typing
-            self.text.setString_(said)
+        if said != self.shown and self.card.string() == self.shown:   # don't overwrite your typing
+            self.card.set_text(said)
             self.shown = said
-        if not self.win.isKeyWindow():
-            NSApp.activateIgnoringOtherApps_(True)
-            self.win.makeKeyAndOrderFront_(None)
 
     def close(self, save):
         final = self.listener.stop(wait=2.0 if save else 0.3)
-        text = self.text.string().strip()
-        if save and final and self.text.string() == self.shown:
+        text = self.card.string().strip()
+        if save and final and self.card.string() == self.shown:
             text = final.strip()                           # include the last words
-        self.win.orderOut_(None)
-        NSApp.setActivationPolicy_(1)                     # back to invisible
-        if self.prev_app is not None:
-            self.prev_app.activateWithOptions_(0)       # back to what you were doing
+        self.card.hide()
         done, self.on_done = self.on_done, None
         if done:
             done(text if save and text else None)
-
-    def _build(self):
-        style = 1 | 2 | 8                                 # titled, closable, resizable
-        self.win = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
-            NSMakeRect(0, 0, 560, 170), style, NSBackingStoreBuffered, False)
-        self.win.setTitle_("LMemM note  ·  Return saves  ·  Esc cancels")
-        self.win.setLevel_(3)                             # floating above other windows
-        self.win.setReleasedWhenClosed_(False)
-        content = self.win.contentView()
-        self.label = NSTextField.labelWithString_("")
-        self.label.setFrame_(NSMakeRect(14, 136, 532, 20))
-        self.label.setFont_(NSFont.boldSystemFontOfSize_(12))
-        self.label.setTextColor_(NSColor.secondaryLabelColor())
-        content.addSubview_(self.label)
-        scroll = NSScrollView.alloc().initWithFrame_(NSMakeRect(14, 20, 532, 110))
-        scroll.setHasVerticalScroller_(True)
-        scroll.setBorderType_(2)
-        self.text = NSTextView.alloc().initWithFrame_(NSMakeRect(0, 0, 532, 118))
-        self.text.setFont_(NSFont.systemFontOfSize_(15))
-        self.text.setRichText_(False)
-        self.keys = _Keys.alloc().initWithPanel_(self)
-        self.text.setDelegate_(self.keys)
-        self.win.setDelegate_(self.keys)
-        scroll.setDocumentView_(self.text)
-        content.addSubview_(scroll)
-        self.status = NSTextField.labelWithString_("")
-        self.status.setFrame_(NSMakeRect(14, 2, 532, 14))
-        self.status.setFont_(NSFont.systemFontOfSize_(10))
-        self.status.setTextColor_(NSColor.secondaryLabelColor())
-        content.addSubview_(self.status)

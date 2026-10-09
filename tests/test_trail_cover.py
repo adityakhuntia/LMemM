@@ -107,6 +107,22 @@ class JudgeTests(unittest.TestCase):
         self.assertTrue(trail_cover.judge(snap, g, DISPLAY, 2.0)["ok"])
 
 
+class MapTests(unittest.TestCase):
+    def test_ascii_map_marks_explained_and_unexplained_ink(self):
+        g = screen()
+        ink(g, 150, 200, 300, 20)
+        ink(g, 150, 400, 300, 40)
+        snap = collect(window(text("hello there", 150, 200)))
+        out = trail_cover.ascii_map(snap, g, DISPLAY, 1.0)
+        self.assertIn("#", out)
+        self.assertIn("X", out)
+
+    def test_size_and_point_are_read_from_their_printed_form(self):
+        self.assertEqual(trail_ax._from_text("<AXValue 0x1 {value = x:12.5 y:34.0 type = kAXValueCGPointType}>"), (12.5, 34.0))
+        self.assertEqual(trail_ax._from_text("<AXValue 0x1 {value = w:600.0 h:500.0 type = kAXValueCGSizeType}>"), (600.0, 500.0))
+        self.assertIsNone(trail_ax._from_text("nothing here"))
+
+
 class ResultTests(unittest.TestCase):
     META = {"ts": "20261009-120000", "image": "x.jpg", "app": "App", "window": "App"}
 

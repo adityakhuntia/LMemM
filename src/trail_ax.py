@@ -12,6 +12,7 @@ plain test data on any OS. `LiveNode` (bottom of the file) is the macOS implemen
 which is what makes a read ~10-40 ms instead of hundreds.
 """
 
+import re
 import time
 from dataclasses import dataclass, field
 
@@ -256,6 +257,22 @@ class LiveNode:
         return []
 
 
+_NUM = r"(-?\d+(?:\.\d+)?)"
+_XY = re.compile(r"x\s*:\s*" + _NUM + r"\s+y\s*:\s*" + _NUM)
+_WH = re.compile(r"w(?:idth)?\s*:\s*" + _NUM + r"\s+h(?:eight)?\s*:\s*" + _NUM)
+
+
+def _from_text(v):
+    """(a, b) read out of an AXValue's printed form ("{value = x:12 y:34 type = kAXValueCGPointType}").
+    The fallback for when AXValueGetValue will not give the struct back."""
+    text = str(v)
+    for rx in (_XY, _WH):
+        m = rx.search(text)
+        if m:
+            return float(m.group(1)), float(m.group(2))
+    return None
+
+
 def _plain(AS, v):
     """An attribute value as str / number / bool / (x, y), or None when it is an error or an
     object we don't read."""
@@ -275,6 +292,8 @@ def _plain(AS, v):
             return (size.width, size.height) if ok else None
     except Exception:
         pass
+    if type(v).__name__ == "AXValueRef":
+        return _from_text(v)
     return str(v) if type(v).__name__ in {"NSURL", "__NSCFString"} else None
 
 

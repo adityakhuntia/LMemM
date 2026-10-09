@@ -146,3 +146,31 @@ def to_res(snap, meta, size, display, scale, seconds=0.0):
         "entities": ents, "objects": objs,
         "resolver": {"engine": "accessibility", "fast": True, "seconds": round(seconds, 3)},
     }
+
+
+def ascii_map(snap, gray, display, scale, cols=78):
+    """A small text picture of the verdict, for debugging on a real Mac:
+    '#' ink the tree explains, 'X' ink nothing explains, '.' nothing drawn, ' ' outside the window."""
+    if gray is None or snap is None or not snap.window:
+        return "(no window)"
+    win = to_px(snap.window, display, scale)
+    ink, (ox, oy) = ink_grid(gray, win)
+    if ink is None:
+        return "(window too small)"
+    covered = np.zeros_like(ink)
+    for rect, _kind in snap.regions:
+        box = to_px(rect, display, scale)
+        r0, r1, c0, c1 = _cells((box[0] - ox, box[1] - oy, box[2], box[3]), ink.shape)
+        if r1 > r0 and c1 > c0:
+            covered[r0:r1, c0:c1] = True
+    step = max(1, -(-ink.shape[1] // cols))
+    lines = []
+    for r in range(0, ink.shape[0], step * 2):
+        row = []
+        for c in range(0, ink.shape[1], step):
+            blk_i = ink[r:r + step * 2, c:c + step]
+            blk_c = covered[r:r + step * 2, c:c + step]
+            gap = (blk_i & ~blk_c).any()
+            row.append("X" if gap else "#" if blk_i.any() else "." if not blk_c.any() else "+")
+        lines.append("".join(row))
+    return "\n".join(lines)

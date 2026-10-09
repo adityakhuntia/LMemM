@@ -41,7 +41,10 @@ import dictation
 import identity
 import input_monitor as input_hooks
 import macos
+import menu_model
+import menubar
 import notes
+import permissions
 import onboarding
 import resolver
 import retention
@@ -132,6 +135,13 @@ class Tracker:
         self.use_trail = trail               # the accessibility event trail (trail_mac.py) runs inside this process
         self.trail = None
         self.widget = None                   # the on-screen pill (widget.py), made in run()
+        self.menubar = None                  # the menu-bar item (menubar.py), made in run()
+        self.menu_refreshed = 0.0
+        self.menu_reported = False
+        self.started_at = time.time()
+        self.quit_requested = False          # "Quit LMemM" in the menu: ends the main loop
+        self.after_exit = None               # what to do once stopped: "restart", "setup" or "delete" (hand_over)
+        self.screen_restart, self.restart_checked = False, 0.0   # screen access is on for a new run, not this one
         self.suggestion = None               # a group offered as one project: {name, ids, reason}
         self.suggest_answers = self.load_answers()
         self.last_widget_refresh = 0.0
@@ -343,6 +353,8 @@ class Tracker:
 
     def tick(self):
         """One pass of the main loop (~4x a second)."""
+        if self.quit_requested:
+            raise KeyboardInterrupt
         self.process_control()
         self.poll_input()
         self.maintain()
@@ -354,6 +366,12 @@ class Tracker:
         if self.widget and time.time() - self.last_widget_refresh >= 1:
             self.last_widget_refresh = time.time()
             self.widget.refresh()
+        if self.menubar and time.time() - self.menu_refreshed >= 1:
+            self.menu_refreshed = time.time()
+            if not self.menu_reported and time.time() - self.started_at > 4:
+                self.menu_reported = True               # after the run loop has laid the bar out
+                say(f"Menu-bar item, 4s later: {self.menubar.where()}")
+            self.menubar.update(menu_model.view(self.widget_status(), self.watch_apps, hotkey=dictation.HOTKEY_LABEL))
         if self.widget:
             self.widget.pulse(self.widget_heard())      # waveform + words while the note window is open
         if self.manual_paused and self.pause_until and time.time() >= self.pause_until:
@@ -605,12 +623,73 @@ class Tracker:
         if time.time() - self.screen_checked > 5:
             self.screen_ok, self.screen_checked = macos.screen_recording_allowed(request=False), time.time()
         kind = "manual" if self.manual_paused else "away" if self.paused == "idle" else None
+        if self.screen_ok:
+            self.screen_restart = False
+        elif time.time() - self.restart_checked > 15:           # on in System Settings, but only for a new run?
+            self.restart_checked = time.time()
+            threading.Thread(target=self.check_restart, daemon=True).start()   # a child process: never on the UI thread
         now = datetime.now()
         end = datetime.fromtimestamp(self.pause_until) if self.pause_until else None
-        return {"screen": self.screen_ok, "mic_off": dictation.mic_off(),
+        return {"screen": self.screen_ok, "restart": self.screen_restart, "mic_off": dictation.mic_off(),
                 "private": self.skip_kind == "private" and self.skipped_place == self.front_sig(),
                 "unwatched": self.skip_kind == "unwatched" and self.skipped_place == self.front_sig(),
                 "paused": kind, "pause_view": rules.paused_view(kind, end, now) if kind else None}
+
+    def check_restart(self):
+        self.screen_restart = permissions.screen_allowed_fresh()
+
+    def menu_pick(self, row):
+        """A row of the menu-bar item was clicked (menu_model.view lists the ids)."""
+        kind = menu_model.pause_kind(row)
+        if kind:
+            self.widget_pause(kind)                     # the same Pause as the pill's (R9)
+        elif row == "resume":
+            self.widget_resume()
+        elif row == "add_note":
+            self.note_request = True                    # the same as ⌃⌥N, paused card and all (R9)
+        elif row == "access":
+            self.check_access()
+        elif row in {"restart", "setup", "delete"}:
+            if not self.confirm_leaving(row):
+                return
+            self.after_exit = row
+            self.quit_requested = True
+        elif row == "quit":
+            self.quit_requested = True
+        else:
+            return
+        self.menu_refreshed = 0.0                       # show the new state at the next tick
+        if self.nsapp is not None:
+            macos.wake(self.nsapp)                      # act now, not at the next 0.25 s boundary
+
+    def check_access(self):
+        """"Check access…": open the pane for what is off, or restart when macOS only needs that,
+        or say that all is on."""
+        status = self.widget_status()
+        action = menu_model.access_action(status)
+        if action == "restart":
+            if self.confirm_leaving("restart"):
+                self.after_exit, self.quit_requested = "restart", True
+        elif action in {"screen", "mic"}:
+            permissions.MacSystem().open_settings("screen" if action == "screen" else "voice")
+        elif self.widget:
+            self.widget.flash("All access is on")
+
+    def confirm_leaving(self, row):
+        """Ask before a restart, reopening setup or deleting everything. The words come from
+        menu_model; nothing happens on Cancel."""
+        if row == "delete":
+            import forget
+            try:
+                title, text = menu_model.delete_words(forget.plan(config.paths().data_dir))
+            except ValueError as error:
+                say(str(error))
+                return False
+            return self.menubar.ask(title, text, "Delete everything", careful=True)
+        if row == "setup":
+            title, text = menu_model.setup_words()
+            return self.menubar.ask(title, text, "Reopen setup")
+        return True                                      # a restart has nothing to lose
 
     def widget_pause(self, kind):
         """The pill's Pause row: kind is one of rules.PAUSE_CHOICES."""
@@ -1220,6 +1299,12 @@ class Tracker:
                                         on_decline=self.widget_decline, picker=self.widget_picker,
                                         on_unfile=self.widget_unfile, busy=lambda: self.panel.open, status=self.widget_status,
                                         on_pause=self.widget_pause, on_resume=self.widget_resume)
+            try:
+                self.menubar = menubar.MenuBar(self.menu_pick)
+                say(f"Menu-bar item: {self.menubar.where()}")
+            except Exception as e:                      # the pill still works; say why the menu is missing
+                self.menubar = None
+                say(f"Menu-bar item could not be made: {e!r}")
         if self.input_monitor:
             self.input_monitor.start(request_permission=True)
             say(f"Input monitoring: {self.input_monitor.status()['state']} · allowed app: VS Code · no key values recorded")
@@ -1262,6 +1347,27 @@ class Tracker:
             pass
         finally:
             self.finish()
+        self.hand_over()
+
+    def hand_over(self):
+        """Restart, reopen setup, or delete everything, once LMemM has saved and stopped. A restart
+        replaces this process in place, so macOS sees the same app (permissions.relaunch does the same)."""
+        if not self.after_exit:
+            return
+        python, script = sys.executable, os.path.abspath(sys.argv[0])
+        if self.after_exit == "delete":
+            import forget
+            try:
+                result = forget.delete_all(config.paths().data_dir, None)
+                say(f"deleted {result['files']} file(s). LMemM will ask you to set up again.")
+            except ValueError as error:
+                say(str(error))
+            argv = [python, script, "start"]
+        elif self.after_exit == "setup":
+            argv = [python, script, "setup", "--again"]
+        else:
+            argv = [python] + sys.argv
+        os.execv(python, argv)
 
     def finish(self):
         p = config.paths()
@@ -1270,6 +1376,8 @@ class Tracker:
             self.input_monitor.stop()
         if self.panel.open:
             self.panel.close(save=False)
+        if self.menubar:
+            self.menubar.remove()
         say("\nstopping…")
         if self.trail:
             self.trail.stop()

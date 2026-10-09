@@ -77,6 +77,17 @@ class CliTests(unittest.TestCase):
         self.assertIn("SELECTED", dump)
 
 
+    def test_probe_dump_skips_empty_wrappers_and_does_not_open_toolbars(self):
+        win = Node("AXWindow", [Node("AXToolbar", [Node("AXButton", Title="Back")]),
+                                Node("AXGroup", [Node("AXGroup", [Node("AXWebArea", [text("hi")], Title="Page")])])], Title="W")
+        dump = trail_cli.dump_tree(win)
+        self.assertIn("AXToolbar (not opened)", dump)
+        self.assertNotIn("Back", dump)
+        self.assertNotIn("AXGroup", dump)
+        self.assertIn('AXWebArea title="Page"', dump)
+        self.assertIn('AXStaticText value="hi"', dump)
+
+
 class MacFilesCompile(unittest.TestCase):
     def test_macos_only_files_at_least_compile(self):
         for name in ("trail_mac.py", "trail_cli.py"):

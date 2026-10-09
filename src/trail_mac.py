@@ -60,6 +60,7 @@ class AXReader:
         self.AS = AS
         self.apps = {}                       # pid -> app element
         self.enabled = {}                    # pid -> element whose AXManualAccessibility we switched on
+        self.enabled_at = {}                 # pid -> when; the app builds its tree for a few seconds after
         self.url_cache = {}                  # (pid, title) -> url found by a tree search
 
     def trusted(self):
@@ -73,7 +74,12 @@ class AXReader:
             if bundle_id in BROWSER_IDS[:-1] or bundle_id in ELECTRON_IDS:   # Chromium builds its tree on request
                 if self.AS.AXUIElementSetAttributeValue(el, "AXManualAccessibility", True) == 0:
                     self.enabled[pid] = el
+                    self.enabled_at[pid] = time.monotonic()
         return el
+
+    def warming(self, pid, seconds=6.0):
+        """True while an app we just switched accessibility on for is still building its tree."""
+        return time.monotonic() - self.enabled_at.get(pid, -1e9) < seconds
 
     def read(self, front, full):
         if not self.trusted():
@@ -307,6 +313,10 @@ class Trail:
                         self.observers.failed.add(info["pid"])
                         self.observers.detach()
                         self.say(f"no change notifications for {info['app']} ({type(e).__name__}: {e}); checking every second")
+                if info and self.reader.warming(info["pid"]):      # its tree is still filling in: look again
+                    self.engine.last_sig = None
+                    self.sched.poke("window", now)
+                    self.sched.poke("layout", now)
                 self.drain(now)
                 jobs = self.sched.due(now)
                 if jobs:

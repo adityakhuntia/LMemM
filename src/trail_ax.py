@@ -24,7 +24,8 @@ MAX_CHARS = 6000           # characters kept per snapshot
 MAX_CHILDREN = 80          # children looked at per node (long lists: the visible part only)
 
 SKIP_ROLES = {"AXMenuBar", "AXMenu", "AXMenuItem", "AXMenuBarItem", "AXScrollBar", "AXValueIndicator",
-              "AXSlider", "AXImage", "AXBusyIndicator", "AXProgressIndicator", "AXSplitter"}
+              "AXSlider", "AXImage", "AXBusyIndicator", "AXProgressIndicator", "AXSplitter",
+              "AXToolbar", "AXTabGroup", "AXPopUpButton", "AXMenuButton"}      # a browser's tabs and bookmarks are not the page
 TEXT_FIELDS = {"AXTextArea", "AXTextField", "AXComboBox", "AXSearchField"}
 ROW_ROLES = {"AXRow", "AXCell", "AXOutlineRow", "AXListItem", "AXGroup", "AXStaticText_row"}
 TAB_ROLES = {"AXTab", "AXRadioButton", "AXTabButton"}
@@ -116,7 +117,7 @@ def collect(window, focus=None, app=None, clock=time.monotonic, max_nodes=MAX_NO
                     if _s(fa.get(key)):
                         snap.focus_label = _s(fa.get(key), 160)
                         break
-        queue, total = ([(window, 0)] if window is not None and max_nodes > 0 else []), 0
+        queue, total, web = ([(window, 0)] if window is not None and max_nodes > 0 else []), 0, False
         while queue:
             node, depth = queue.pop(0)
             if snap.nodes >= max_nodes or (clock() - t0) * 1000 > max_ms:
@@ -127,8 +128,11 @@ def collect(window, focus=None, app=None, clock=time.monotonic, max_nodes=MAX_NO
             role, sub = a.get("AXRole"), a.get("AXSubrole")
             if role in SKIP_ROLES or role == SECURE or sub == SECURE:
                 continue
-            if role == "AXWebArea" and not snap.url:
-                snap.url = _s(a.get("AXURL"), 500)
+            if role == "AXWebArea":
+                if not snap.url:
+                    snap.url = _s(a.get("AXURL"), 500)
+                if not web:                       # the page itself: stop spending the budget on the browser around it
+                    web, queue = True, []
             y, x = (_pos(a.get("AXPosition")) or (0.0, 0.0))[::-1]
             if role == "AXStaticText":
                 t = _s(a.get("AXValue") or a.get("AXTitle") or a.get("AXDescription"))

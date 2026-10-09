@@ -132,27 +132,35 @@ def forget(store, args):
     print(f"removed {n} event(s)")
 
 
-def dump_tree(window, max_nodes=250, max_depth=14, width=60):
+def dump_tree(window, max_nodes=500, max_depth=18, width=60):
     """The accessibility tree as indented text, for tuning a new app's rules. Typed text and
-    password fields are not shown; other values are cut to `width` characters."""
-    out, stack, n = [], [(window, 0)], 0
+    password fields are not shown; other values are cut to `width` characters. Empty wrapper
+    groups are left out, and a browser's toolbars and tab strip are named but not opened, so the
+    page itself is what fills the file."""
+    out, stack, n = [], [(window, 0, 0)], 0
     while stack and n < max_nodes:
-        node, depth = stack.pop()
+        node, depth, shown = stack.pop()
         n += 1
         a = node.attrs()
         role, sub = a.get("AXRole"), a.get("AXSubrole")
         parts = [role or "?"] + ([sub] if sub else [])
         hide = sub == trail_ax.SECURE or role in trail_ax.TEXT_FIELDS and role != "AXSearchField"
+        said = False
         for key, tag in (("AXTitle", "title"), ("AXDescription", "desc"), ("AXPlaceholderValue", "placeholder"),
                          ("AXURL", "url")) + (() if hide else (("AXValue", "value"),)):
             v = a.get(key)
             if isinstance(v, str) and v.strip():
                 parts.append(f'{tag}="{" ".join(v.split())[:width]}"')
+                said = True
         if a.get("AXSelected") is True:
             parts.append("SELECTED")
-        out.append("  " * depth + " ".join(parts))
-        if depth < max_depth:
-            stack.extend((c, depth + 1) for c in reversed(node.children()[:trail_ax.MAX_CHILDREN]))
+            said = True
+        skipped = role in trail_ax.SKIP_ROLES
+        if said or role not in (None, "AXGroup", "AXScrollArea") or skipped:
+            out.append("  " * shown + " ".join(parts) + (" (not opened)" if skipped else ""))
+            shown += 1
+        if depth < max_depth and not skipped:
+            stack.extend((c, depth + 1, shown) for c in reversed(node.children()[:trail_ax.MAX_CHILDREN]))
     return "\n".join(out)
 
 
@@ -165,6 +173,9 @@ def probe(delay=3.0):
     if not reader.trusted():
         sys.exit("Accessibility is off for this app.")
     el = reader.app_element(info["pid"], info["bundle_id"])
+    if reader.warming(info["pid"]):
+        print("this app just switched its accessibility tree on; waiting 3 s for it to fill in…")
+        time.sleep(3)
     win = trail_ax.element_attr(el, "AXFocusedWindow") or trail_ax.element_attr(el, "AXMainWindow")
     if win is None:
         sys.exit(f"{info['app']} exposes no window to accessibility.")

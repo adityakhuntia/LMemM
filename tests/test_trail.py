@@ -72,6 +72,14 @@ class CollectTests(unittest.TestCase):
         s = collect(win, clock=lambda: next(t) / 1000, max_ms=45)
         self.assertTrue(s.truncated)
 
+    def test_a_browsers_chrome_does_not_eat_the_budget_the_page_is_read_first(self):
+        chrome = Node("AXToolbar", [text(f"bookmark {i}") for i in range(60)])
+        tabs = Node("AXTabGroup", [Node("AXRadioButton", Title="tab", Value=1) for _ in range(40)])
+        page = Node("AXWebArea", [Node("AXGroup", [text("Mum"), text("hello")])], URL="https://web.whatsapp.com/")
+        s = collect(Node("AXWindow", [chrome, tabs, Node("AXGroup", [page])], Title="WhatsApp"), max_nodes=20)
+        self.assertEqual(s.url, "https://web.whatsapp.com/")
+        self.assertEqual(s.texts, ["Mum", "hello"])
+
     def test_a_selected_cell_with_only_a_description_is_read(self):
         cell = Node("AXCell", Selected=True, Description="Mum 10:02 pm see you")
         s = collect(Node("AXWindow", [cell]))

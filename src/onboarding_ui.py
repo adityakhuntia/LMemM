@@ -32,7 +32,7 @@ def _accent(alpha=1.0):
     return NSColor.colorWithRed_green_blue_alpha_(*ACCENT, alpha)
 
 
-class _Mark(_Flipped):
+class _SetupMark(_Flipped):
     """The app's mark: a dark tile with the pill's shape, a white capsule and a small orange dot."""
 
     def drawRect_(self, rect):
@@ -44,11 +44,11 @@ class _Mark(_Flipped):
         NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(42, 26, 8, 8)).fill()
 
 
-class _Dots(_Flipped):
+class _SetupDots(_Flipped):
     """Five little dots; the current screen's is orange."""
 
     def initWithIndex_(self, index):
-        self = objc.super(_Dots, self).initWithFrame_(NSMakeRect(0, 0, 5 * 13, 8))
+        self = objc.super(_SetupDots, self).initWithFrame_(NSMakeRect(0, 0, 5 * 13, 8))
         self.index = index
         return self
 
@@ -58,11 +58,11 @@ class _Dots(_Flipped):
             NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(i * 13 + 1, 1, 6, 6)).fill()
 
 
-class _Tile(_Flipped):
+class _SetupTile(_Flipped):
     """A permission's icon: a soft rounded square with an SF Symbol; green once granted, red when off."""
 
     def initWithSymbol_tone_(self, symbol, tone):
-        self = objc.super(_Tile, self).initWithFrame_(NSMakeRect(0, 0, 34, 34))
+        self = objc.super(_SetupTile, self).initWithFrame_(NSMakeRect(0, 0, 34, 34))
         self.tone = tone
         image = _symbol(symbol)
         if image is not None:
@@ -80,7 +80,7 @@ class _Tile(_Flipped):
         NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(self.bounds(), 10, 10).fill()
 
 
-class _Box(_Flipped):
+class _SetupBox(_Flipped):
     """A soft rounded outline (the name field)."""
 
     def drawRect_(self, rect):
@@ -91,14 +91,14 @@ class _Box(_Flipped):
         path.stroke()
 
 
-class _Window(NSWindow):
+class _SetupWindow(NSWindow):
     def canBecomeKeyWindow(self):
         return True
 
 
-class _Closing(NSObject):
+class _SetupClosing(NSObject):
     def initWithOwner_(self, owner):
-        self = objc.super(_Closing, self).init()
+        self = objc.super(_SetupClosing, self).init()
         self.owner = owner
         return self
 
@@ -120,14 +120,14 @@ class SetupWindow:
         self.name_field = self.primary_tap = self.hint = None
 
         style = 1 | 2 | (1 << 15)                                  # titled, closable, content under the title bar
-        self.window = _Window.alloc().initWithContentRect_styleMask_backing_defer_(
+        self.window = _SetupWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             NSMakeRect(0, 0, W, H), style, 2, False)
         self.window.setTitlebarAppearsTransparent_(True)
         self.window.setTitleVisibility_(1)
         for button in (1, 2):                                      # no minimise, no zoom: only a way out
             self.window.standardWindowButton_(button).setHidden_(True)
         self.window.setReleasedWhenClosed_(False)
-        self.closing = _Closing.alloc().initWithOwner_(self)
+        self.closing = _SetupClosing.alloc().initWithOwner_(self)
         self.window.setDelegate_(self.closing)
         effect = NSVisualEffectView.alloc().initWithFrame_(NSMakeRect(0, 0, W, H))
         effect.setMaterial_(POPOVER_MATERIAL)
@@ -224,7 +224,7 @@ class SetupWindow:
         view = self.setup.view()
         self.signature = self._signature()
         root = self.root
-        dots = _Dots.alloc().initWithIndex_(view["index"])
+        dots = _SetupDots.alloc().initWithIndex_(view["index"])
         dots.setFrame_(NSMakeRect((W - 65) / 2, 24, 65, 8))
         root.addSubview_(dots)
         if view["back"]:
@@ -291,7 +291,7 @@ class SetupWindow:
     # -- the five screens
 
     def _intro(self, root, view):
-        mark = _Mark.alloc().initWithFrame_(NSMakeRect(X, 96, 60, 60))
+        mark = _SetupMark.alloc().initWithFrame_(NSMakeRect(X, 96, 60, 60))
         root.addSubview_(mark)
         y = self._text(root, view["title"], 184, 28, bold=True, gap=12)
         y = self._text(root, view["sub"], y, 16, color=NSColor.secondaryLabelColor(), gap=16)
@@ -302,7 +302,7 @@ class SetupWindow:
 
     def _you(self, root, view):
         y = self._text(root, view["title"], 78, 28, bold=True, gap=22)
-        box = _Box.alloc().initWithFrame_(NSMakeRect(X, y, CW, 48))
+        box = _SetupBox.alloc().initWithFrame_(NSMakeRect(X, y, CW, 48))
         root.addSubview_(box)
         self.name_field = _field(view["name"]["value"], view["name"]["placeholder"], 20, False,
                                  (X + 14, y + 11, CW - 28, 26), self.fields)
@@ -343,7 +343,7 @@ class SetupWindow:
     def _permission(self, root, row, view, y):
         state = row["state"]
         tone = "good" if state == onboarding.GRANTED else "bad" if state == onboarding.DENIED else "soft"
-        tile = _Tile.alloc().initWithSymbol_tone_(ICON_SYMBOLS[row["key"]], tone)
+        tile = _SetupTile.alloc().initWithSymbol_tone_(ICON_SYMBOLS[row["key"]], tone)
         tile.setFrame_(NSMakeRect(X, y + 4, 34, 34))
         root.addSubview_(tile)
         text_x, button_w = X + 46, 134
@@ -410,7 +410,7 @@ class SetupWindow:
         y = self._text(body, "Where should LMemM look?", 40, 24, bold=True, gap=8)
         y = self._text(body, "Apps installed on this Mac. LMemM looks only at the ones you pick and stays off in every other app.",
                        y, 13, color=NSColor.secondaryLabelColor(), gap=14)
-        box = _Box.alloc().initWithFrame_(NSMakeRect(X, y, CW, 36))
+        box = _SetupBox.alloc().initWithFrame_(NSMakeRect(X, y, CW, 36))
         body.addSubview_(box)
         search = _field(state["query"], "Search apps", 14, False, (X + 12, y + 8, CW - 24, 20),
                         _Fields.alloc().initWithChange_submit_cancel_(self._query, lambda _t: None, lambda: None))

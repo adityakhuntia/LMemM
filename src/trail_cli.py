@@ -209,7 +209,14 @@ def cover(delay=3.0):
     display_index, _frame = macos.display_for(info["bounds"])
     display = macos.display_bounds(display_index)
     shot = macos.grab(display_index)
-    snap = trail.read_now(info)
+    snap = None
+    for attempt in range(6):                  # a browser builds its page tree a while after being asked to
+        trail.reader.enabled_at.pop(info["pid"], None)       # read_now refuses while "warming"; here we wait ourselves
+        snap = trail.read_now(info)
+        print(f"  read {attempt + 1}: {snap.nodes if snap else '-'} nodes, {len(snap.items) if snap else '-'} texts")
+        if snap is not None and snap.items:
+            break
+        time.sleep(1.5)
     if shot is None or snap is None:
         sys.exit(f"could not read: screenshot={'ok' if shot else 'none (Screen Recording?)'} tree={'ok' if snap else 'none'}")
     scale = shot.width / display["Width"]
@@ -219,8 +226,12 @@ def cover(delay=3.0):
     print(f"tree window rect: {snap.window}   display: {display}   frame: {shot.width}x{shot.height}   scale: {scale:.3f}")
     print(f"nodes: {snap.nodes}  truncated: {snap.truncated}  texts: {len(snap.items)}  regions: {dict(kinds)}")
     print(f"verdict: {'READ FROM ACCESSIBILITY' if v['ok'] else 'read the screen'}  ({v['why']}; {v['gap']} of {v['ink']} ink cells unexplained)")
-    for text, rect in snap.items[:5]:
+    for text, rect in snap.items[:6] + snap.items[-3:]:
         print("  sample:", [round(n) for n in rect], text[:40])
+    if snap.items:
+        xs = [r[0] for _t, r in snap.items]
+        ys = [r[1] for _t, r in snap.items]
+        print(f"  text boxes span x {round(min(xs))}..{round(max(xs))}  y {round(min(ys))}..{round(max(ys))}")
     print("\n# explained ink   X unexplained ink   + covered, no ink   . empty\n")
     print(trail_cover.ascii_map(snap, shot.gray, display, scale))
     shot.release()

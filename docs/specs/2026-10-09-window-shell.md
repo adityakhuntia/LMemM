@@ -79,3 +79,23 @@ Rules A1-A6 are in `src/project_actions.py` (tests in `tests/test_project_action
 
 - The name field was added to the overlay before the dimmed backdrop and card, so both covered it and clicks never reached it. It is now moved above them every time a dialog is drawn.
 - Archiving no longer makes a project vanish. The tree ends with an **Archived** folder (count beside it). Opening it lists the archived projects with Bring back; each can be opened, read, and brought back from its own page. The separate "Archived · n" link under the tree is gone.
+
+## Step 8: Assign
+
+Rules T1–T6 are in `src/thing_actions.py` (tested in `tests/test_thing_actions.py`).
+
+- **A thing's page** has "Move to…" and "⋯" beside its title, and a "Why it is here" section that only states what is stored (main project, also in, kept out of). The menu: Move to…, Also in…, Not in “X” (one row per project it is in), Forget this….
+- **Select** (project page, beside "Things"): tick several things, then Move to…, Also in…, Not in here, Forget…, or Done. The selection ends when you go to another page.
+- **Forget** is the only action that asks first (it removes a thing from memory), says what goes with it, and can be undone from the toast. Everything else just happens with Undo.
+- **The pill and the window agree.** The pill used to write only a project's name, so moving a thing from the pill left the tree pointing at the old project. Filing, "take it out" and "not this project" on the pill now go through the project tree (`tracker.in_tree`).
+- Capture copes with a thing forgotten mid-session (no more adding time to a thing that is gone).
+
+## Step 9: Suggestions
+
+Rules S1–S5 are in `src/suggestions.py` (tests in `tests/test_suggestions.py`). Proposals wait in `data/memory/suggestions.json` until answered.
+
+- **First page:** a "Suggestions" section. A project proposal is a card ("Make “Trip” a project?", the things it would hold, **Create** / **Dismiss**). A project with things waiting shows one row with **Review**.
+- **A project's page:** "Suggested for this project" above its things, one row per thing with **Add** / **Not here**, and **Add all**. Also shown on an empty project.
+- **Dismiss and Not here are permanent** (R14); Add and Create are the same actions as in step 8, so each says what it did and offers Undo (which also brings the proposal back).
+- **The pill and the window share the list.** Answering in either clears it in both; the pill shows the first project proposal waiting.
+- **Stand-ins for the model:** `lmemm.py suggest [NAME] [ID…]` (a project) and `lmemm.py suggest-for PROJECT [ID…]` (things for an existing one; with no ids, the three latest not in it).

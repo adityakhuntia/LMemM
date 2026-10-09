@@ -84,6 +84,7 @@ Every item is also a direct command, for scripts and muscle memory:
 | `lmemm.py memory [N] [--content] [--events]` | latest N things; `--content` adds kept excerpts, `--events` the input timeline |
 | `lmemm.py notes [--all] [PROJECT]` | open notes grouped project → thing; `--all` includes done ones |
 | `lmemm.py notes done ID…` / `notes reopen ID…` | mark notes done / open again |
+| `lmemm.py suggest-for PROJECT [ID…]` | offer things for an existing project in the window (Add / Not here) |
 | `lmemm.py suggest [NAME] [ID…]` | offer things as one project on the pill (stands in for the model until it exists) |
 | `lmemm.py context [SESSION] [--days N]` | a clean, de-noised export for an AI (below) |
 | `lmemm.py setup [--again] [--no-start]` | first-run setup, then LMemM starts and the pill appears (`--no-start` stops after setup; also runs once before `start`) |

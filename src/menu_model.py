@@ -19,6 +19,8 @@ you can do. menubar.py only draws this and forwards clicks; it decides nothing.
         restart, the menu says so and offers "Restart LMemM" first. "Reopen setup…" and
         "Delete all my data…" ask once, in words, before they do anything. Delete tells you
         what it will remove; nothing is deleted while LMemM is running, it stops first.
+    M7  When LMemM has suggestions waiting, "Open LMemM" says how many ("2 suggestions") so you
+        know where to answer them.
     M6  "Open LMemM" is the first row and opens the window (window_model.py). A row that cannot
         do its job yet is not shown (no "Open project page" until there is one).
 """
@@ -100,7 +102,8 @@ def rows_for(status, now, hotkey="⌃⌥N"):
     rows = []
     if not status.get("screen", True) and status.get("restart"):
         rows += [{"id": "restart", "title": "Restart LMemM"}, DIVIDER]
-    rows += [{"id": "open", "title": "Open LMemM"},
+    waiting = status.get("suggestions", 0)
+    rows += [{"id": "open", "title": "Open LMemM", **({"detail": f"{waiting} suggestion{'s' * (waiting != 1)}"} if waiting else {})},
              {"id": "add_note", "title": "Add a note", "detail": hotkey}, DIVIDER]
     if kind == "manual":
         rows += [{"id": "resume", "title": "Resume LMemM"}, DIVIDER]

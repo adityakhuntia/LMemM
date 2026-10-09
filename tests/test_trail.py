@@ -252,6 +252,20 @@ class StandardPipelineNameTests(unittest.TestCase):
         self.assertFalse(config.SKIP_TITLES.search("Private equity fund model - Google Sheets"))
 
 
+class WarmTests(unittest.TestCase):
+    def test_warm_touches_every_name_once_and_ignores_missing_ones(self):
+        touched = []
+
+        class Mod:
+            def __getattr__(self, name):
+                touched.append(name)
+                if name == "missing":
+                    raise AttributeError(name)
+                return 1
+        trail_ax.warm(Mod(), ("a", "missing", "b"))
+        self.assertEqual(touched, ["a", "missing", "b"])
+
+
 class SettleTests(unittest.TestCase):
     def P(self, key, conf=0.5, app="A", kind="chat"):
         return {"key": key, "app": app, "kind": kind, "confidence": conf, "name": key, "signals": [], "conflict": False, "url": ""}

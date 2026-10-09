@@ -1,0 +1,328 @@
+"""LMemM - the project page, as data. Plain functions, no UI, all tested.
+
+The page answers one question: "where was I?". Everything here is read only: it looks at the
+project tree (projects.py) and the remembered things and returns what to show. window.py
+draws it and forwards presses to `press()`; it decides nothing.
+
+    P1  The sidebar is the tree. Any depth, each level pages itself ("Show 12 more"), a
+        project opens and closes on its own, and an archived project (or anything inside one)
+        is not there. Counts roll up by each thing's main project (R13), so nothing is counted twice.
+    P2  A project page opens with "Pick up where you left off": the things in it (and inside it)
+        with open notes, newest first, at most three. With none it says All caught up and names
+        the last thing you worked on. It never shows an empty gap.
+    P3  Under that, the sub-projects, then the things, grouped Today / This week / Earlier,
+        newest first. "Only here" or "With sub-projects" is one switch; the filters are the apps
+        that are actually in this project, never a fixed list.
+    P4  A thing shows where it lives only when that is not the page you are on, and the other
+        projects it is also in, softly ("also in ...").
+    P5  Needs you is every thing with an open note, anywhere, newest first. Home shows the top
+        few and the count; "See all" is the full list.
+    P6  Search looks at project names (and the old names left by a merge), thing titles and open
+        notes, case and accents ignored, across every project. Nothing matches: it says so.
+    P7  Every list is cut at a sensible number with a "Show N more" row; nothing is silently
+        dropped, and 10,000 projects stay as quick as 10.
+    P8  Press only changes what you are looking at (`press`). Nothing here writes to memory.
+"""
+
+import unicodedata
+from datetime import datetime
+
+import notes
+import projects
+
+SIDE_LIMIT = 8                        # rows per level in the sidebar before "Show more"
+PICK_UP = 3
+NOTES_SHOWN = 3
+SUBS_SHOWN = 6
+THINGS_SHOWN = 20
+NEEDS_HOME = 3
+NEEDS_SIDE = 3
+SEARCH_LIMITS = {"projects": 6, "notes": 8, "things": 25}
+CRUMBS_MAX = 5
+
+
+# ---------------------------------------------------------------- words
+
+def fold(text):
+    """For matching: lower case, no accents."""
+    text = unicodedata.normalize("NFKD", text or "")
+    return "".join(c for c in text if not unicodedata.combining(c)).casefold()
+
+
+def parse(iso):
+    try:
+        return datetime.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return None
+
+
+def ago(iso, now):
+    """"Just now", "12 min ago", "3 h ago", "Yesterday", "Oct 3"."""
+    when = parse(iso)
+    if not when:
+        return ""
+    seconds = (now - when).total_seconds()
+    if seconds < 60:
+        return "Just now"
+    if seconds < 3600:
+        return f"{int(seconds // 60)} min ago"
+    if when.date() == now.date():
+        return f"{int(seconds // 3600)} h ago"
+    days = (now.date() - when.date()).days
+    if days == 1:
+        return "Yesterday"
+    if days < 7:
+        return f"{days} days ago"
+    return when.strftime("%b ") + str(when.day) + ("" if when.year == now.year else f", {when.year}")
+
+
+def group_of(iso, now):
+    when = parse(iso)
+    if not when:
+        return "Earlier"
+    days = (now.date() - when.date()).days
+    return "Today" if days <= 0 else "This week" if days < 7 else "Earlier"
+
+
+def title_of(item):
+    return item.get("title") or item.get("doing") or item.get("app") or "Untitled"
+
+
+def plural(n, one, many=None):
+    return f"{n:,} {one if n == 1 else many or one + 's'}"
+
+
+# ---------------------------------------------------------------- what you are looking at
+
+def new_state():
+    return {"view": "home", "pid": None, "q": "", "open": [], "deep": True, "app": None,
+            "shown": THINGS_SHOWN, "subs": SUBS_SHOWN, "lim": {}, "needs_all": False}
+
+
+def press(reg, state, action, arg=None):
+    """A new state after a press. Unknown projects (deleted since) fall back to home."""
+    s = {**state, "open": list(state["open"]), "lim": dict(state["lim"])}
+    if action == "home":
+        s.update(view="home", pid=None, q="", needs_all=False)
+    elif action == "go":
+        if not projects.exists(reg, arg):
+            return press(reg, state, "home")
+        s.update(view="project", pid=arg, q="", app=None, shown=THINGS_SHOWN, subs=SUBS_SHOWN, needs_all=False)
+        for up in projects.ancestors(reg, arg):                    # the sidebar shows where you are
+            if up not in s["open"]:
+                s["open"].append(up)
+    elif action == "toggle":
+        if arg in s["open"]:
+            s["open"].remove(arg)
+        else:
+            s["open"].append(arg)
+    elif action == "deep":
+        s.update(deep=bool(arg), shown=THINGS_SHOWN)
+    elif action == "app":
+        s.update(app=arg, shown=THINGS_SHOWN)
+    elif action == "more":
+        s["shown"] += THINGS_SHOWN
+    elif action == "more_subs":
+        s["subs"] += SUBS_SHOWN
+    elif action == "more_side":
+        key = arg or "top"
+        s["lim"][key] = s["lim"].get(key, SIDE_LIMIT) + SIDE_LIMIT
+    elif action == "needs":
+        s.update(view="needs", pid=None, q="")
+    elif action == "search":
+        q = (arg or "").strip()
+        if q:
+            s.update(view="search", q=q)
+        else:
+            return press(reg, state, "clear")
+    elif action == "clear":
+        back = "project" if s["pid"] and projects.exists(reg, s["pid"]) else "home"
+        s.update(view=back, q="")
+    return s
+
+
+# ---------------------------------------------------------------- rows
+
+def _live(reg, pid):
+    return projects.exists(reg, pid) and not projects.hidden(reg, pid)
+
+
+def _thing(reg, item, now, here=None, with_notes=False):
+    """One thing as a row. `here` is the project page it is shown on (P4)."""
+    main = projects._main(item)
+    others = [projects.get(reg, p)["name"] for p in projects._members_of(item)
+              if p != main and _live(reg, p)]
+    bits = [item.get("app", "")]
+    if main and main != here and _live(reg, main):
+        bits.append(" › ".join(projects.path_names(reg, main)))
+    if others:
+        bits.append("also in " + ", ".join(others))
+    open_notes = notes.open_notes(item)
+    row = {"id": item["id"], "pid": main if main and _live(reg, main) else None, "title": title_of(item), "sub": " · ".join(b for b in bits if b),
+           "ago": ago(item.get("last_seen"), now), "open": len(open_notes), "app": item.get("app", "")}
+    if with_notes:
+        row["notes"] = [n["text"] for n in open_notes[:NOTES_SHOWN]]
+        row["more_notes"] = max(0, len(open_notes) - NOTES_SHOWN)
+    return row
+
+
+def _by_recent(things):
+    return sorted(things, key=lambda i: i.get("last_seen", ""), reverse=True)
+
+
+def needs_you(items):
+    return _by_recent(i for i in items.values() if notes.open_notes(i))
+
+
+def _count_line(c):
+    parts = [plural(c["things"], "thing")]
+    if c["open"]:
+        parts.append(f"{c['open']} open")
+    return " · ".join(parts)
+
+
+# ---------------------------------------------------------------- the sidebar
+
+def side(reg, items, state, counts, now):
+    needs = needs_you(items)
+    return {"needs": {"count": len(needs), "rows": [_thing(reg, i, now) for i in needs[:NEEDS_SIDE]]},
+            "tree": tree_rows(reg, state, counts),
+            "unplaced": len(projects.unassigned(items))}
+
+
+def tree_rows(reg, state, counts):
+    """The visible rows of the tree, top to bottom (P1)."""
+    out = []
+    openset = set(state["open"])
+
+    def walk(parent, level):
+        kids = [k for k in projects.children(reg, parent) if not reg["projects"][k]["archived"]]
+        limit = state["lim"].get(parent or "top", SIDE_LIMIT)
+        for pid in kids[:limit]:
+            has = any(not reg["projects"][k]["archived"] for k in projects.children(reg, pid))
+            row = {"id": pid, "name": reg["projects"][pid]["name"], "level": level, "expandable": has,
+                   "expanded": has and pid in openset, "selected": state["view"] == "project" and state["pid"] == pid,
+                   "count": counts[pid]["things"], "open": counts[pid]["open"]}
+            out.append(row)
+            if row["expanded"]:
+                walk(pid, level + 1)
+        if len(kids) > limit:
+            left = len(kids) - limit
+            out.append({"id": None, "more": parent or "top", "level": level,
+                        "name": f"Show {min(left, SIDE_LIMIT)} more of {left}"})
+
+    walk(None, 0)
+    return out
+
+
+# ---------------------------------------------------------------- the main area
+
+def crumbs(reg, pid):
+    """All projects › ... › this one. A long path keeps its first and last two (P1)."""
+    chain = [{"id": p, "name": reg["projects"][p]["name"]} for p in projects.path(reg, pid)]
+    if len(chain) > CRUMBS_MAX:
+        hidden = chain[1:-2]
+        chain = chain[:1] + [{"id": None, "name": "…", "title": " › ".join(c["name"] for c in hidden)}] + chain[-2:]
+    return chain
+
+
+def main(reg, items, state, counts, now):
+    view = state["view"]
+    if view == "search":
+        return search(reg, items, state["q"], now)
+    if view == "needs":
+        rows = [_thing(reg, i, now, with_notes=True) for i in needs_you(items)]
+        return {"kind": "needs", "title": "Needs you", "meta": plural(len(rows), "thing") + " with open notes",
+                "things": rows, "back": True}
+    if view == "project" and _live(reg, state["pid"]):
+        return project_page(reg, items, state, counts, now)
+    return home(reg, items, counts, now)
+
+
+def home(reg, items, counts, now):
+    top = [p for p in projects.children(reg) if not reg["projects"][p]["archived"]]
+    needs = needs_you(items)
+    cards = [{"id": p, "name": reg["projects"][p]["name"], "line": _count_line(counts[p])} for p in top]
+    if not top and not items:
+        empty = {"title": "Nothing here yet", "line": "LMemM is learning what you work on. Things appear here by themselves."}
+    elif not top:
+        empty = {"title": "No projects yet", "line": "Your things are saved. Projects you make will appear here."}
+    else:
+        empty = None
+    return {"kind": "home", "title": "All projects", "meta": plural(len(top), "project"),
+            "needs": {"count": len(needs), "rows": [_thing(reg, i, now, with_notes=True) for i in needs[:NEEDS_HOME]]},
+            "cards": cards, "unplaced": len(projects.unassigned(items)), "empty": empty}
+
+
+def project_page(reg, items, state, counts, now):
+    pid = state["pid"]
+    c = counts[pid]
+    kids = [k for k in projects.children(reg, pid) if not reg["projects"][k]["archived"]]
+    deep = state["deep"] and bool(kids)
+    everything = projects.members(reg, items, pid, deep=True)
+    here = projects.members(reg, items, pid, deep=deep)
+    pick = [i for i in everything if notes.open_notes(i)][:PICK_UP]
+    page = {"kind": "project", "pid": pid, "title": reg["projects"][pid]["name"], "crumbs": crumbs(reg, pid),
+            "meta": " · ".join(([plural(len(kids), "sub-project")] if kids else []) + [_count_line(c)])}
+    if not everything and not kids:
+        page["empty"] = {"title": "Nothing here yet",
+                         "line": "Things you work on in this project show up by themselves."}
+        return page
+    page["pick_up"] = [_thing(reg, i, now, here=pid, with_notes=True) for i in pick]
+    if not pick:
+        last = everything[0] if everything else None
+        page["caught_up"] = {"title": "All caught up", "line": "No open notes in this project." + (
+            f" Last worked on: {title_of(last)}, {ago(last.get('last_seen'), now).lower()}." if last else "")}
+    page["subs"] = [{"id": k, "name": reg["projects"][k]["name"], "line": _count_line(counts[k])}
+                    for k in kids[:state["subs"]]]
+    page["subs_more"] = max(0, len(kids) - state["subs"])
+    apps = {}
+    for i in here:
+        apps[i.get("app", "")] = apps.get(i.get("app", ""), 0) + 1
+    page["filters"] = [{"app": a, "count": n} for a, n in sorted(apps.items(), key=lambda kv: (-kv[1], kv[0])) if a][:6]
+    chosen = [i for i in here if state["app"] is None or i.get("app") == state["app"]]
+    page["deep"] = {"on": deep, "show": bool(kids)}
+    page["total"] = len(chosen)
+    groups = {"Today": [], "This week": [], "Earlier": []}
+    for i in chosen[:state["shown"]]:
+        groups[group_of(i.get("last_seen"), now)].append(_thing(reg, i, now, here=pid))
+    page["groups"] = [{"title": t, "things": r} for t, r in groups.items() if r]
+    page["things_more"] = max(0, len(chosen) - state["shown"])
+    return page
+
+
+# ---------------------------------------------------------------- search
+
+def search(reg, items, q, now):
+    """Projects, things and open notes that match, across every project (P6)."""
+    want = fold(q)
+    found_projects = [p for p, row in reg["projects"].items()
+                      if _live(reg, p) and (want in fold(row["name"]) or any(want in fold(a) for a in row["aliases"]))]
+    things, hits = [], []
+    for item in _by_recent(items.values()):
+        if want in fold(title_of(item)):
+            things.append(item)
+        for note in notes.open_notes(item):
+            if want in fold(note["text"]):
+                hits.append((item, note))
+    lim = SEARCH_LIMITS
+    return {"kind": "search", "title": f"Results for “{q}”", "back": True,
+            "meta": f"{plural(len(found_projects), 'project')} · {plural(len(things), 'thing')} · {plural(len(hits), 'note')}",
+            "projects": [{"id": p, "name": reg["projects"][p]["name"], "path": " › ".join(projects.path_names(reg, p))}
+                         for p in found_projects[:lim["projects"]]],
+            "notes": [{"text": n["text"], "thing": title_of(i), "id": i["id"]} for i, n in hits[:lim["notes"]]],
+            "things": [_thing(reg, i, now) for i in things[:lim["things"]]],
+            "things_more": max(0, len(things) - lim["things"]),
+            "none": not (found_projects or things or hits)}
+
+
+# ---------------------------------------------------------------- the whole page
+
+def view(reg, items, state, now=None):
+    now = now or datetime.now()
+    counts = projects.counts(reg, items)
+    return {"side": side(reg, items, state, counts, now), "main": main(reg, items, state, counts, now)}
+
+
+def signature(v):
+    return repr(v)

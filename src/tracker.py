@@ -139,6 +139,7 @@ class Tracker:
         self.widget = None                   # the on-screen pill (widget.py), made in run()
         self.menubar = None                  # the menu-bar item (menubar.py), made in run()
         self.main_window = None              # the window (window.py), made the first time it is opened
+        self.page_data_said = False
         self.menu_refreshed = 0.0
         self.menu_reported = False
         self.started_at = time.time()
@@ -650,9 +651,39 @@ class Tracker:
         memory = window_model.MEMORY_OK if store.load_user() else window_model.MEMORY_FIRST_RUN
         return window_model.view(status, memory, self.watch_apps)
 
+    def page_data(self):
+        """What the project page reads: the project tree (a small file) and the remembered things.
+        The page only looks; nothing it does writes to either."""
+        import projects
+        try:
+            reg = projects.load()
+        except ValueError as error:                  # damaged: show no projects, never replace the file
+            if not self.page_data_said:
+                self.page_data_said = True
+                say(str(error))
+            reg = projects.empty()
+        return reg, dict(self.items)               # a copy, so the resolver thread can go on writing
+
+    def adopt_projects(self):
+        """Give every project name older versions filed things under a place in the project tree
+        (projects.adopt; safe to repeat). Writes only when something changed."""
+        import projects
+        try:
+            reg = projects.load()
+            with self.lock:
+                changed = projects.adopt(reg, self.items)
+                if changed:
+                    projects.save(reg)
+                    self.save(force=True)
+            if changed:
+                say(f"Projects: placed {changed} thing(s) in the project tree")
+        except ValueError as error:
+            say(str(error))
+
     def open_window(self):
         if self.main_window is None:
-            self.main_window = main_window.MainWindow(self.menu_pick)     # its button sends a menu row id
+            self.main_window = main_window.MainWindow(self.menu_pick, self.page_data)   # its button sends a menu row id
+        self.adopt_projects()                       # things filed by name since the last time
         self.main_window.show(self.window_view(self.widget_status()))
 
     def show_memory_file(self):

@@ -120,6 +120,19 @@ special-cased:
 Tested on Linux with synthetic trees and screens (`tests/test_trail_cover.py`). Not yet run on a Mac: that the
 rectangles line up with real windows on a Retina display, and what the gap is for real apps.
 
+## Reading only what changed (any app)
+
+A later frame of the same window is read only inside the boxes the pixel diff marked as changed
+(`src/ocr_regions.py`, `resolver.resolve_regions`); everything else is carried over from the last read.
+A scroll, a change over 35% of the screen, more than three separate boxes, a thin result, or eight partial
+reads in a row means a full read. Settings: `OCR_REGIONS`, `OCR_REGION_MAX_SHARE`, `OCR_REGION_PAD`,
+`OCR_REGION_FULL_EVERY`. An app whose accessibility tree keeps failing to explain the screen is only tried
+again every tenth capture.
+
+Found on a Mac (`lmemm.py trail cover`): rectangles line up exactly with the pixels, but Gmail's tree is cut
+off by the 90 ms budget after ~140 nodes and VS Code's editor text is not in the tree unless its
+screen-reader mode is on. For those the screen is rightly read, now only where it changed.
+
 ## Decisions taken (change in `config.py`)
 
 - 48 h retention, 50 MB cap. - Text inside text boxes is not read. - Screenshot fallback on. -

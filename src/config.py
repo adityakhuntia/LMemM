@@ -22,6 +22,10 @@ MAX_PX = 1600           # a captured screen wider than this is scaled down to it
 
 # ---------------------------------------------------------------- cost control
 
+OCR_REGIONS = True             # a later frame of the same window: read only the changed boxes, keep the rest
+OCR_REGION_MAX_SHARE = 0.35    # ...unless they cover more than this share of the screen
+OCR_REGION_PAD = 24            # pixels added around each changed box (the line next to a change)
+OCR_REGION_FULL_EVERY = 8      # a full read after this many partial ones in a row: no drift
 FAST_CONTINUATION = True    # fast OCR for later frames of the same window; accurate for the first look
 THIN_RATIO = 0.5            # fast OCR that finds under this share of the previous frame's lines is redone accurately
 THUMB_PX = 480              # kept screenshots are thumbnails with this long edge...

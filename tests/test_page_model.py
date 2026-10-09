@@ -250,6 +250,57 @@ class HomeAndNeedsTests(unittest.TestCase):
         self.assertEqual(pm.view(reg, items, state, NOW)["main"]["kind"], "home")
 
 
+class ThingPageTests(unittest.TestCase):
+    def open(self, tid, w=None):
+        reg, items, ids = w or world()
+        state = pm.press(reg, pm.press(reg, pm.new_state(), "go", ids["home"]), "thing", tid, items)
+        return pm.view(reg, items, state, NOW)["main"], state, (reg, items, ids)
+
+    def test_a_note_opens_its_thing_in_full(self):
+        page, state, _ = self.open("d")
+        self.assertEqual((page["kind"], page["title"], page["app"]), ("thing", "Garden plan", "Docs"))
+        self.assertEqual([n["text"] for n in page["open"]], ["buy soil", "call Lee"])
+        self.assertEqual(page["places"][0]["name"], "Home")
+        self.assertTrue(page["places"][0]["main"])
+        self.assertIn(("Visits", "0"), page["stats"])
+
+    def test_finished_notes_are_listed_apart(self):
+        reg, items, ids = world()
+        n = items["d"]["notes"][0]
+        items["d"]["notes_done"] = {__import__("notes").note_id(n): NOW.isoformat()}
+        page = pm.view(reg, items, pm.press(reg, pm.new_state(), "thing", "d", items), NOW)["main"]
+        self.assertEqual(([x["text"] for x in page["open"]], [x["text"] for x in page["done"]]), (["call Lee"], ["buy soil"]))
+
+    def test_it_shows_what_lmemm_read_and_cuts_a_long_text(self):
+        reg, items, ids = world()
+        items["a"]["content"] = "x" * 2000
+        items["a"]["state"] = {"to": "Sam", "subject": "Numbers"}
+        page = pm.view(reg, items, pm.press(reg, pm.new_state(), "thing", "a", items), NOW)["main"]
+        self.assertEqual(len(page["content"]), pm.EXCERPT + 1)
+        self.assertEqual(page["latest"], [("To", "Sam"), ("Subject", "Numbers")])
+
+    def test_it_lists_every_project_a_thing_is_in(self):
+        page, _, (reg, items, ids) = self.open("b")
+        self.assertEqual([(p["name"], p["main"]) for p in page["places"]], [("Budget", True), ("Home", False)])
+
+    def test_back_returns_to_the_page_you_came_from(self):
+        page, state, (reg, items, ids) = self.open("d")
+        again = pm.press(reg, state, "thing", "a", items)               # opening another keeps the first way back
+        back = pm.press(reg, again, "back", None, items)
+        self.assertEqual((back["view"], back["pid"], back["tid"], back["back"]), ("project", ids["home"], None, None))
+        searched = pm.press(reg, pm.press(reg, pm.new_state(), "search", "soil"), "thing", "d", items)
+        self.assertEqual(pm.press(reg, searched, "back", None, items)["q"], "soil")
+
+    def test_a_thing_that_is_gone_or_never_was_does_not_break_the_page(self):
+        reg, items, ids = world()
+        state = pm.press(reg, pm.new_state(), "thing", "nope", items)
+        self.assertEqual(state["view"], "home")
+        state = pm.press(reg, pm.new_state(), "thing", "a", items)
+        del items["a"]
+        self.assertEqual(pm.view(reg, items, state, NOW)["main"]["kind"], "home")
+        self.assertEqual(pm.press(reg, pm.new_state(), "back", None, items)["view"], "home")
+
+
 class SearchTests(unittest.TestCase):
     def results(self, q):
         reg, items, ids = world()
@@ -300,7 +351,7 @@ class WindowWiringTests(unittest.TestCase):
         with open(os.path.join(os.path.dirname(__file__), "..", "src", "window.py")) as fh:
             source = fh.read()
         sent = set(re.findall(r'self\.press\("([a-z_]+)"', source))
-        self.assertTrue({"go", "home", "toggle", "deep", "app", "more", "more_subs", "more_side", "needs", "search", "clear"} <= sent, sent)
+        self.assertTrue({"go", "home", "toggle", "deep", "app", "more", "more_subs", "more_side", "needs", "search", "clear", "thing", "back"} <= sent, sent)
         reg, _items, ids = world()
         for action in sent:
             pm.press(reg, pm.new_state(), action, ids["work"] if action in {"go", "toggle"} else "x")      # none raises

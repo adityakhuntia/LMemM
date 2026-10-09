@@ -50,7 +50,8 @@ def _scroll(parent):
     scroll = NSScrollView.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 10))
     scroll.setDrawsBackground_(False)
     scroll.setHasVerticalScroller_(True)
-    scroll.setAutohidesScrollers_(True)
+    scroll.setAutohidesScrollers_(False)                          # a visible bar says "this scrolls"
+    scroll.setScrollerStyle_(0)                                   # legacy: always shown
     parent.addSubview_(scroll)
     return scroll
 
@@ -81,7 +82,7 @@ class MainWindow:
         self.window.setDelegate_(self.closing)
         self.root = _Flipped.alloc().initWithFrame_(NSMakeRect(0, 0, W, H))
         self.window.setContentView_(self.root)
-        self.banner_host = _Flipped.alloc().initWithFrame_(NSMakeRect(0, TOP, W, 0))
+        self.banner_host = _Flipped.alloc().initWithFrame_(NSMakeRect(SIDE_W, TOP, W - SIDE_W, 0))
         self.root.addSubview_(self.banner_host)
         self.typing = _Fields.alloc().initWithChange_submit_cancel_(
             lambda text: self.press("search", text), lambda text: self.press("search", text), self._cancel_search)
@@ -111,11 +112,19 @@ class MainWindow:
         self.render()
 
     def press(self, action, arg=None):
-        reg, _items = self.data()
+        reg, items = self.data()
         if action in {"go", "home", "needs"}:
             self.search.setStringValue_("")                        # leaving a search clears its words
-        self.nav = page_model.press(reg, self.nav, action, arg)
+        self.nav = page_model.press(reg, self.nav, action, arg, items)
         self.render()
+
+    def back(self, kind):
+        if kind == "thing":
+            self.press("back")
+        elif kind == "search":
+            self.press("clear")
+        else:
+            self.press("home")
 
     def _cancel_search(self):
         self.search.setStringValue_("")
@@ -131,10 +140,10 @@ class MainWindow:
             return
         self.shown = sig
         top = self._banner(self.banner["banner"])
-        self.search.setFrame_(NSMakeRect(14, top + 8, SIDE_W - 28, 28))
-        self.side_scroll.setFrame_(NSMakeRect(0, top + 44, SIDE_W, H - top - 44))
+        self.search.setFrame_(NSMakeRect(14, TOP + 8, SIDE_W - 28, 28))
+        self.side_scroll.setFrame_(NSMakeRect(0, TOP + 44, SIDE_W, H - TOP - 44))
         self.main_scroll.setFrame_(NSMakeRect(SIDE_W, top, W - SIDE_W, H - top))
-        here = (self.nav["view"], self.nav["pid"], self.nav["q"])
+        here = (self.nav["view"], self.nav["pid"], self.nav["q"], self.nav["tid"])
         moved, self.where = here != self.where, here
         self._fill(self.side_scroll, SIDE_W, lambda doc: self._side(doc, page["side"]))
         self._fill(self.main_scroll, W - SIDE_W, lambda doc: self._main(doc, page["main"]), top=moved)
@@ -152,22 +161,30 @@ class MainWindow:
         clip.scrollToPoint_(NSMakePoint(0, max(0, min(keep, height + 24 - view_h))))
         scroll.reflectScrolledClipView_(clip)
 
+    BANNER_SYMBOLS = {"paused:manual": "pause.circle.fill", "paused:away": "moon.zzz.fill", "screen_off": "exclamationmark.circle.fill",
+                      "mic_off": "mic.slash.fill", "restart": "arrow.clockwise.circle.fill", "private": "lock.fill",
+                      "unwatched": "eye.slash.fill", "first_run": "sparkles", "loading": "hourglass",
+                      "damaged": "exclamationmark.triangle.fill"}
+
     def _banner(self, banner):
-        """The one state banner, with its one button, across the top. Returns where the body starts."""
+        """The one state banner: a soft box in the page's own column, its words on the left and
+        its one button on the right. Returns where the page starts."""
         for sub in list(self.banner_host.subviews()):
             sub.removeFromSuperview()
         if not banner:
-            self.banner_host.setFrame_(NSMakeRect(0, TOP, W, 0))
+            self.banner_host.setFrame_(NSMakeRect(SIDE_W, TOP, W - SIDE_W, 0))
             return TOP
-        x, w = 24, W - 48
-        height = kit.note(self.banner_host, TONES[banner["tone"]], banner["line"], x, 0, w, lead=banner["title"])
         button = banner["button"]
+        room = MAIN_W - (176 if button else 0)
+        symbol = self.BANNER_SYMBOLS.get(banner["kind"], "info.circle.fill")
+        height = kit.note(self.banner_host, TONES[banner["tone"]], banner["line"], PAD, 0, room,
+                          lead=banner["title"], symbol=symbol)
         if button:
             row = button["id"]
-            kit.button(self.banner_host, button["title"], x, height + 10, 220, 36, lambda: self.on_press(row), size=14)
-            height += 10 + 36
-        self.banner_host.setFrame_(NSMakeRect(0, TOP, W, height))
-        return TOP + height + 8
+            kit.button(self.banner_host, button["title"], PAD + room + 12, (height - 36) / 2, 164, 36,
+                       lambda: self.on_press(row), kind="outline", size=13, weight=600)
+        self.banner_host.setFrame_(NSMakeRect(SIDE_W, TOP + 6, W - SIDE_W, height))
+        return TOP + 6 + height + 6
 
     # ------------------------------------------------------------ icons
 
@@ -236,7 +253,7 @@ class MainWindow:
             self._link(doc, f"See all {needs['count']}", SIDE_W - 96, y - 6, lambda: self.press("needs"), size=12)
         y += 24
         for row in needs["rows"]:
-            tap = self._tap(doc, 8, y, SIDE_W - 16, 34, (lambda r=row: self.press("go", r["pid"]) if r["pid"] else self.press("needs")))
+            tap = self._tap(doc, 8, y, SIDE_W - 16, 34, (lambda r=row: self.press("thing", r["id"])))
             self._app_icon(tap, row["app"], 8, 5, 24)
             kit.put_text(tap, row["title"], 40, 0, SIDE_W - 16 - 40 - 40, 13, 500, wrap=False, height=34, middle=True)
             kit.put_text(tap, str(row["open"]), SIDE_W - 16 - 34, 0, 26, 12, 500, kit.mute(), align=RIGHT, wrap=False, height=34, middle=True)
@@ -277,14 +294,17 @@ class MainWindow:
         x, w = PAD, MAIN_W
         y = 30
         kind = page["kind"]
-        if kind in ("search", "needs"):
-            self._link(doc, "‹ Back", x - 6, y - 8, lambda: self.press("clear" if kind == "search" else "home"))
+        if kind in ("search", "needs", "thing"):
+            self._link(doc, "‹ Back", x - 6, y - 8, lambda: self.back(kind))
             y += 24
         if kind == "project":
             y = self._crumbs(doc, page["crumbs"], x, y)
         tx = x
         if kind == "project":
             self._project_icon(doc, page["hue"], x, y - 2, 40)
+            tx = x + 54
+        elif kind == "thing":
+            self._app_icon(doc, page["app"], x, y - 2, 40)
             tx = x + 54
         elif kind in ("home", "needs"):
             kit.tile(doc, ("square.stack.3d.up.fill", "folder.fill") if kind == "home" else ("bell.badge.fill", "bell.fill"),
@@ -295,7 +315,8 @@ class MainWindow:
         if page.get("meta"):
             self._label(doc, page["meta"], tx, y, w - (tx - x), size=13, weight=400)
             y += 34
-        build = {"home": self._home, "project": self._project, "needs": self._needs, "search": self._search}[kind]
+        build = {"home": self._home, "project": self._project, "needs": self._needs, "search": self._search,
+                 "thing": self._thing_page}[kind]
         return build(doc, page, x, y + 6, w)
 
     def _crumbs(self, doc, chain, x, y):
@@ -323,7 +344,7 @@ class MainWindow:
 
     def _thing(self, doc, t, x, y, w, notes=False):
         """A thing: its title, where it is, when. With notes: the open ones underneath. Returns the new y."""
-        box = _Flipped.alloc().initWithFrame_(NSMakeRect(x, y, w, 10))
+        box = _Tap.alloc().initWithFrame_callback_(NSMakeRect(x, y, w, 10), (lambda i=t["id"]: self.press("thing", i)))
         self._app_icon(box, t["app"], 0, 8, 34)
         tx = 46
         kit.put_text(box, t["title"], tx, 6, w - tx - 130, 14, 600, wrap=False, height=20)
@@ -346,7 +367,7 @@ class MainWindow:
 
     def _card(self, doc, t, x, y, w):
         """A pick-up card: a soft box with the thing and its open notes."""
-        tap = self._tap(doc, x, y, w, 10, lambda: None, fill=True)
+        tap = self._tap(doc, x, y, w, 10, (lambda i=t["id"]: self.press("thing", i)), fill=True)
         end = self._thing(tap, t, 12, 4, w - 24, notes=True)
         tap.setFrame_(NSMakeRect(x, y, w, end + 6))
         return y + end + 6 + 10
@@ -433,6 +454,47 @@ class MainWindow:
             y += 52
         return y
 
+    def _thing_page(self, doc, page, x, y, w):
+        """One thing in full: where it lives, its notes, the numbers, what LMemM read from it."""
+        if page["places"]:
+            y = self._section(doc, "In", x, y, w)
+            px = x
+            for p in page["places"]:
+                label = p["name"] + (" · main" if p["main"] else "")
+                width = kit.text_width(label, 13, 500) + 52
+                tap = self._tap(doc, px, y, width, 32, (lambda i=p["id"]: self.press("go", i)), fill=True)
+                self._project_icon(tap, p["hue"], 6, 5, 22)
+                kit.put_text(tap, label, 34, 0, width - 40, 13, 500, wrap=False, height=32, middle=True)
+                px += width + 8
+            y += 48
+        y = self._section(doc, f"Notes · {len(page['open'])} open", x, y, w)
+        for n in page["open"]:
+            y += kit.put_text(doc, "○  " + n["text"], x, y, w, 14, 500) + 2
+            self._label(doc, n["when"], x + 22, y, w, size=12, weight=400)
+            y += 24
+        if not page["open"]:
+            self._label(doc, "No open notes.", x, y, w, size=13, weight=400)
+            y += 26
+        if page["done"]:
+            y = self._section(doc, f"Finished · {len(page['done'])}", x, y + 8, w)
+            for n in page["done"]:
+                y += kit.put_text(doc, "✓  " + n["text"], x, y, w, 13, 400, kit.mute()) + 6
+        if page["stats"]:
+            y = self._section(doc, "About this", x, y + 8, w)
+            for k, v in page["stats"]:
+                self._label(doc, k, x, y, 140, size=13, weight=400)
+                kit.put_text(doc, v, x + 150, y, w - 150, 13, 500, wrap=False, height=20)
+                y += 24
+        if page["latest"]:
+            y = self._section(doc, "What LMemM saw", x, y + 8, w)
+            for k, v in page["latest"]:
+                self._label(doc, k, x, y, 140, size=13, weight=400)
+                y += kit.put_text(doc, v, x + 150, y, w - 150, 13, 500) + 8
+        if page["content"]:
+            y = self._section(doc, "Its text", x, y + 8, w)
+            y += kit.put_text(doc, page["content"], x, y, w, 12, 400, kit.mute()) + 6
+        return y
+
     def _search(self, doc, page, x, y, w):
         if page["none"]:
             return self._empty(doc, {"title": "Nothing matches", "line": "Try part of a name, a note or a project."}, x, y, w,
@@ -443,9 +505,10 @@ class MainWindow:
         if page["notes"]:
             y = self._section(doc, "Notes", x, y + 8, w)
             for n in page["notes"]:
-                kit.tile(doc, ("note.text", "doc.text.fill"), kit.mute(), x, y, 30)
-                kit.put_text(doc, n["text"], x + 42, y, w - 42, 14, 500, wrap=False, height=20)
-                kit.put_text(doc, n["thing"], x + 42, y + 18, w - 42, 12, 400, kit.mute(), wrap=False, height=16)
+                row = self._tap(doc, x, y, w, 42, (lambda i=n["id"]: self.press("thing", i)))
+                kit.tile(row, ("note.text", "doc.text.fill"), kit.mute(), 0, 6, 30)
+                kit.put_text(row, n["text"], 42, 4, w - 42, 14, 500, wrap=False, height=20)
+                kit.put_text(row, n["thing"], 42, 22, w - 42, 12, 400, kit.mute(), wrap=False, height=16)
                 y += 46
         if page["things"]:
             y = self._section(doc, "Things", x, y + 8, w)

@@ -35,3 +35,12 @@ Rules P1-P8 are in `src/page_model.py` (tests in `tests/test_page_model.py`); `s
 
 Known limits, for step 11: creating thousands of projects one by one is slow (each create checks its siblings by
 scanning); showing them is fast (50 ms for 10,000). The window is a fixed size.
+
+## Step 5b: a thing's own page, a banner that matches the page
+
+- Any thing or note (a Needs you row, a Pick up card, a row in Things, a search hit) opens its own page: the
+  title, the projects it is in, its open notes in full, the finished ones, last seen, time spent, visits and what
+  LMemM read from it. Back returns to where you were. Rule P9.
+- The banner sits at the top of the page's own column, as a soft box with an icon, its words on the left and its one
+  button on the right, in the same style as the cards.
+- Scroll bars are always shown, so it is clear what scrolls.

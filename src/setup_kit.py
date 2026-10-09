@@ -275,10 +275,11 @@ class _KitNote(_Flipped):
         NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(self.bounds(), 12, 12).fill()
 
 
-def note(parent, tone, text, x, y, w, lead=None):
-    """A note box. `lead` is a bold first phrase. Returns its height."""
-    symbol = {"good": "checkmark.circle.fill", "warn": "exclamationmark.triangle.fill",
-              "red": "exclamationmark.circle.fill"}.get(tone)
+def note(parent, tone, text, x, y, w, lead=None, symbol=None):
+    """A note box. `lead` is a bold first phrase; `symbol` an SF Symbol to lead with (the tone has a
+    default). Returns its height."""
+    symbol = symbol or {"good": "checkmark.circle.fill", "warn": "exclamationmark.triangle.fill",
+                        "red": "exclamationmark.circle.fill"}.get(tone)
     left = 14 + (26 if symbol else 0)
     inner = w - left - 14
     body = (lead + " " if lead else "") + text
@@ -287,7 +288,8 @@ def note(parent, tone, text, x, y, w, lead=None):
     box.setFrame_(NSMakeRect(x, y, w, h))
     parent.addSubview_(box)
     if symbol:
-        color = {"good": NSColor.systemGreenColor(), "red": NSColor.systemRedColor()}.get(tone, NSColor.systemOrangeColor())
+        color = {"good": NSColor.systemGreenColor(), "red": NSColor.systemRedColor(),
+                 "warn": NSColor.systemOrangeColor()}.get(tone, mute())
         holder = icon(symbol, 18, color, (14, 12, 18, 18))
         if holder is not None:
             box.addSubview_(holder)

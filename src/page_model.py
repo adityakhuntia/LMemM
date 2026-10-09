@@ -22,6 +22,10 @@ draws it and forwards presses to `press()`; it decides nothing.
     P7  Every list is cut at a sensible number with a "Show N more" row; nothing is silently
         dropped, and 10,000 projects stay as quick as 10.
     P8  Press only changes what you are looking at (`press`). Nothing here writes to memory.
+    P9  Any thing, and any note of it, opens its own page: the whole title, where it lives (and
+        the other projects it is in), the open notes in full, the finished ones, when you last
+        saw it and how long you spent, and what LMemM read from it. Back returns to the page you
+        came from, scrolled to the top of it.
 """
 
 import unicodedata
@@ -29,6 +33,7 @@ from datetime import datetime
 
 import notes
 import projects
+import store
 
 SIDE_LIMIT = 8                        # rows per level in the sidebar before "Show more"
 PICK_UP = 3
@@ -104,10 +109,10 @@ def plural(n, one, many=None):
 
 def new_state():
     return {"view": "home", "pid": None, "q": "", "open": [], "deep": True, "app": None,
-            "shown": THINGS_SHOWN, "subs": SUBS_SHOWN, "lim": {}, "needs_all": False}
+            "shown": THINGS_SHOWN, "subs": SUBS_SHOWN, "lim": {}, "needs_all": False, "tid": None, "back": None}
 
 
-def press(reg, state, action, arg=None):
+def press(reg, state, action, arg=None, items=None):
     """A new state after a press. Unknown projects (deleted since) fall back to home."""
     s = {**state, "open": list(state["open"]), "lim": dict(state["lim"])}
     if action == "home":
@@ -119,6 +124,17 @@ def press(reg, state, action, arg=None):
         for up in projects.ancestors(reg, arg):                    # the sidebar shows where you are
             if up not in s["open"]:
                 s["open"].append(up)
+    elif action == "thing":
+        if items is not None and arg not in items:
+            return state
+        if state["view"] != "thing":
+            s["back"] = {"view": state["view"], "pid": state["pid"], "q": state["q"]}
+        s.update(view="thing", tid=arg)
+    elif action == "back":
+        before = state.get("back") or {"view": "home", "pid": None, "q": ""}
+        if before["view"] == "project" and not projects.exists(reg, before["pid"]):
+            before = {"view": "home", "pid": None, "q": ""}
+        s.update(view=before["view"], pid=before["pid"], q=before["q"], tid=None, back=None)
     elif action == "toggle":
         if arg in s["open"]:
             s["open"].remove(arg)
@@ -243,6 +259,8 @@ def crumbs(reg, pid):
 
 def main(reg, items, state, counts, now):
     view = state["view"]
+    if view == "thing" and state.get("tid") in items:
+        return thing_page(reg, items[state["tid"]], now)
     if view == "search":
         return search(reg, items, state["q"], now)
     if view == "needs":
@@ -305,6 +323,34 @@ def project_page(reg, items, state, counts, now):
     page["groups"] = [{"title": t, "things": r} for t, r in groups.items() if r]
     page["things_more"] = max(0, len(chosen) - state["shown"])
     return page
+
+
+# ---------------------------------------------------------------- one thing
+
+EXCERPT = 700
+LATEST_SHOWN = 6
+
+
+def thing_page(reg, item, now):
+    """Everything LMemM knows about one thing, read only (P9)."""
+    main = projects._main(item)
+    places = [{"id": p, "name": projects.get(reg, p)["name"], "hue": hue(p), "main": p == main,
+               "path": " › ".join(projects.path_names(reg, p))}
+              for p in projects._members_of(item) if _live(reg, p)]
+    mine = item.get("notes", [])
+    done = [n for n in mine if notes.is_done(item, n)]
+    state = {k: v for k, v in (item.get("state") or {}).items() if v and str(v) != title_of(item)}
+    content = (item.get("content") or "").strip()
+    stats = [("Last seen", ago(item.get("last_seen"), now)), ("First seen", ago(item.get("first_seen"), now)),
+             ("Time spent", store.duration(item.get("seconds"))), ("Visits", f"{item.get('visits', 0):,}")]
+    return {"kind": "thing", "title": title_of(item), "app": item.get("app", ""), "back": True,
+            "meta": " · ".join(b for b in (item.get("app", ""), "last seen " + ago(item.get("last_seen"), now).lower()) if b),
+            "places": places,
+            "open": [{"text": n["text"], "when": ago(n.get("at"), now)} for n in notes.open_notes(item)],
+            "done": [{"text": n["text"], "when": ago(n.get("at"), now)} for n in done],
+            "stats": [(k, v) for k, v in stats if v],
+            "latest": [(str(k).replace("_", " ").capitalize(), str(v)[:200]) for k, v in list(state.items())[:LATEST_SHOWN]],
+            "content": content[:EXCERPT] + ("…" if len(content) > EXCERPT else "")}
 
 
 # ---------------------------------------------------------------- search

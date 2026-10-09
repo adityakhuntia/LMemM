@@ -120,6 +120,12 @@ class StandardMethodWiring(unittest.TestCase):
         self.assertIn("self.trail.stop()", t)
         self.assertIn("self.trail.wait_change(", t)
 
+    def test_the_trail_names_chats_for_the_standard_pipeline(self):
+        t = self.src("src", "tracker.py")
+        self.assertIn('meta["trail_chat"]', t)
+        self.assertIn("self.trail_state(", t)
+        self.assertIn("understand.chat_state(", t)
+
     def test_a_trail_that_cannot_start_does_not_stop_the_tracker(self):
         t = self.src("src", "tracker.py")
         i = t.index("self.trail.start()")

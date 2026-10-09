@@ -64,7 +64,7 @@ SKIP_SITES = re.compile(
     r"bank|netbanking|onlinesbi|hdfc|icici|axisbank|kotak|paypal\.|wise\.com|stripe\.com"
     r"|razorpay\.com/(app|dashboard)|paytm|phonepe|zerodha|groww|coinbase|binance"
     r"|accounts\.google\.com|appleid\.apple\.com|/login|/signin|password", re.I)
-SKIP_TITLES = re.compile(r"private browsing|incognito|inprivate|password", re.I)
+SKIP_TITLES = re.compile(r"private browsing|incognito|inprivate|password|\bprivate (?:tab|window)\b|\(private\)", re.I)
 LOCK_APPS = {"loginwindow", "ScreenSaverEngine"}   # frontmost while locked / screensaver
 
 

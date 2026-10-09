@@ -184,10 +184,19 @@ def chat(res, meta, app):
     else:
         who = meta.get("window") if meta.get("window") not in (None, app) else None
     ev = [f"open chat header: {who}" if who else "no chat header found"]
+    if meta.get("trail_chat"):         # the app itself named the chat (accessibility): exact, no OCR noise
+        return chat_state(app, meta["trail_chat"])
     if not who:
         return state(app, "browsing_chats", f"Looking through chats in {app}", target=None, evidence=ev)
     return state(app, "chatting", f"In the chat with {who}", target=who, details={"chat": who},
                  evidence=ev, doing_typing=f"Typing a message to {who}")
+
+
+def chat_state(app, who):
+    """The state of being in chat `who`, when something other than OCR (the app's accessibility
+    labels, via the event trail) named it. Same shape and same ref as chat() gives."""
+    return state(app, "chatting", f"In the chat with {who}", target=who, details={"chat": who},
+                 evidence=["chat named by the app (accessibility)"], doing_typing=f"Typing a message to {who}")
 
 
 def ai(res, meta, app):

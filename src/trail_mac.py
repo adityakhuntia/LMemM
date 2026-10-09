@@ -305,6 +305,16 @@ class Trail:
         (self.flags.add if on else self.flags.discard)(name)
         self.poke("app")
 
+    def chat_place(self, bundle_id, min_conf=0.7):
+        """The chat the user is in right now, as the event trail read it from the app, or None
+        when it is not sure (low confidence, conflicting signals, a different app in front)."""
+        cur = self.engine.tracker.current
+        if (cur and cur.get("bundle_id") == bundle_id and cur.get("kind") == "chat"
+                and cur.get("confidence", 0) >= min_conf and not cur.get("conflict")
+                and not cur["key"].endswith(":?") and cur.get("name")):
+            return dict(cur)
+        return None
+
     def paused(self):
         return bool(self.flags & {"asleep", "display_off", "locked"}) or bool(self.external_pause()) or os.path.exists(
             os.path.join(self.paths.trail_dir, ".paused"))

@@ -11,7 +11,11 @@ headings, the selected sidebar row, visible text). No screenshots and no Screen 
 It now runs **inside** `lmemm.py start` (turn off with `--no-trail`), and `lmemm.py trail start` runs it alone.
 Inside the tracker it shares the pause (Pause on the pill, idle, locked) and the "only these apps" list from setup, and
 the old 0.1 s accessibility poll that names the current chat for the pill now wakes on the trail's change notifications
-instead (1 s fallback). The screenshot pipeline and memory items are otherwise unchanged; the trail is not yet turned into memory.
+instead (1 s fallback). **Chat names:** when the trail is sure which chat is open (confidence >= 0.7, no conflicting signals) its name is used for
+the memory item and the pill instead of the OCR'd header (`meta["trail_chat"]`, `understand.chat_state`), and the pill skips the
+OCR "quick read" of the window strip for that app. If it is unsure, the old OCR route runs as before. Items made earlier from
+garbled OCR names stay as they were; new visits get the exact name. Private tabs ("New Private Tab", "(Private)") are now skipped.
+The rest of the screenshot pipeline and memory items are unchanged; the trail is not yet turned into memory.
 
 Screenshots stay as a **fallback**: when an app exposes too little (a canvas, a game, some Electron
 apps) and Screen Recording is already granted, one screen is read with Apple Vision, at most once per

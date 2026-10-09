@@ -177,6 +177,26 @@ class _Tap(_Flipped):
     def acceptsFirstMouse_(self, event):
         return True
 
+    # VoiceOver: a tap area reads as a button named by the words drawn inside it.
+    def isAccessibilityElement(self):
+        return True
+
+    def accessibilityRole(self):
+        return "AXButton"
+
+    def accessibilityLabel(self):
+        words = []
+        for sub in self.subviews():
+            try:
+                words.append(str(sub.stringValue()))
+            except Exception:
+                pass
+        return getattr(self, "label", None) or ", ".join(w for w in words if w) or "button"
+
+    def accessibilityPerformPress(self):
+        self.callback()
+        return True
+
 
 class _Fields(NSObject):
     """Delegate for the card's text fields: report typing, Return and Esc."""

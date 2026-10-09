@@ -22,6 +22,8 @@ Items keep two fields the older code reads: item["project"] (the main project's 
 new here, item["project_id"], item["also_in"] (ids) and item["not_in"] (ids).
 """
 
+import collections
+import contextlib
 import json
 import os
 from datetime import datetime
@@ -57,16 +59,39 @@ def get(reg, pid):
         raise ValueError("That project does not exist any more.") from None
 
 
+_INDEX = {"reg": None, "kids": None, "items": None, "by_project": None, "position": None}
+
+
+@contextlib.contextmanager
+def indexed(reg, items=None):
+    """While reading a big tree without changing it, look the children up in one table instead of
+    scanning every project each time (10,000 projects would otherwise take seconds). Nothing may change
+    `reg` (or `items`, when given) inside the block. Blocks nest; the outer one's table is kept."""
+    if _INDEX["reg"] is reg:
+        yield
+        return
+    kids = {}
+    for p in reg["projects"].values():
+        kids.setdefault(p["parent"], []).append(p["id"])
+    _INDEX.update(reg=reg, kids=kids, items=items, by_project=None, position=None)
+    try:
+        yield
+    finally:
+        _INDEX.update(reg=None, kids=None, items=None, by_project=None, position=None)
+
+
 def children(reg, pid=None):
     """The projects directly inside `pid` (None: top level), in the order they were made."""
+    if _INDEX["reg"] is reg:
+        return list(_INDEX["kids"].get(pid, ()))
     return [p["id"] for p in reg["projects"].values() if p["parent"] == pid]
 
 
 def descendants(reg, pid):
     """Everything inside `pid`, any depth, not including `pid`."""
-    out, todo = [], children(reg, pid)
+    out, todo = [], collections.deque(children(reg, pid))
     while todo:
-        cur = todo.pop(0)
+        cur = todo.popleft()
         out.append(cur)
         todo.extend(children(reg, cur))
     return out
@@ -284,7 +309,18 @@ def members(reg, items, pid, deep=True):
     """The things in `pid` (and, when deep, everything inside it), most recent first. A thing
     in two of those projects appears once."""
     wanted = {pid} | (set(descendants(reg, pid)) if deep else set())
-    mine = [i for i in items.values() if wanted & set(_members_of(i))]
+    if _INDEX["items"] is items and items is not None:
+        if _INDEX["by_project"] is None:                            # built the first time a project page asks
+            table, position = {}, {}
+            for n, (iid, item) in enumerate(items.items()):
+                position[iid] = n
+                for p in _members_of(item):
+                    table.setdefault(p, []).append(iid)
+            _INDEX["by_project"], _INDEX["position"] = table, position
+        ids = {i for p in wanted for i in _INDEX["by_project"].get(p, ())}
+        mine = [items[i] for i in sorted(ids, key=_INDEX["position"].__getitem__)]       # the same order a scan gives
+    else:
+        mine = [i for i in items.values() if wanted & set(_members_of(i))]
     return sorted(mine, key=lambda i: i.get("last_seen", ""), reverse=True)
 
 
@@ -455,6 +491,8 @@ def tree_lines(reg, items, include_hidden=False):
     """The tree as text, one line per project: name, things, open notes (rolled up, R13)."""
     total = counts(reg, items)
     out = []
+    table = indexed(reg)
+    table.__enter__()
 
     def walk(parent, level):
         for pid in children(reg, parent):
@@ -469,7 +507,10 @@ def tree_lines(reg, items, include_hidden=False):
                 bits.append("archived")
             out.append("  " * level + p["name"] + "  · " + " · ".join(bits))
             walk(pid, level + 1)
-    walk(None, 0)
+    try:
+        walk(None, 0)
+    finally:
+        table.__exit__(None, None, None)
     return out
 
 

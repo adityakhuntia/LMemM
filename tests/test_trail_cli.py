@@ -45,6 +45,11 @@ class CliTests(unittest.TestCase):
         self.assertIn("Mum", s)
         self.assertIn("chat", s)
 
+    def test_a_place_without_a_name_does_not_crash_the_views(self):
+        self.store.add("focus", app="X", place={"key": "x:page:/", "kind": "page", "service": "x"}, dwell_ms=0)
+        self.assertIn("x:page:/", out(trail_cli.show, self.store, 5))
+        self.assertIn("x:page:/", out(trail_cli.places, self.store, 1.0))
+
     def test_forget_requires_a_choice(self):
         with self.assertRaises(SystemExit):
             trail_cli.forget(self.store, [])

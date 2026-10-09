@@ -36,7 +36,7 @@ def seconds(ms):
 def describe(e):
     k = e["kind"]
     if k == "focus":
-        p = e["place"]
+        p = dict(e["place"], name=e["place"].get("name") or e["place"].get("key", "?"))
         how = f' [{"+".join(p.get("signals", []))} {p.get("confidence", 0):.2f}{" CONFLICT" if p.get("conflict") else ""}]'
         return f'→ {p["kind"]}: {p["name"]} ({p.get("service", e.get("app"))}){how}'
     if k == "app_switch":
@@ -74,7 +74,7 @@ def places(store, hours=2.0):
         print("no places in that time.")
         return
     for a, b in zip(focus, focus[1:] + [None]):
-        p = a["place"]
+        p = dict(a["place"], name=a["place"].get("name") or a["place"].get("key", "?"))
         end = datetime.fromisoformat(b["t"]) if b else datetime.now(timezone.utc)
         ms = (end - datetime.fromisoformat(a["t"])).total_seconds() * 1000
         print(f'{hms(a["t"])}  {seconds(ms):>5}  {p["kind"]:8}  {p["name"][:48]:48}  {p.get("service", "")}')

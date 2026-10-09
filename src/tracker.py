@@ -41,6 +41,8 @@ import dictation
 import identity
 import input_monitor as input_hooks
 import macos
+import menu_model
+import menubar
 import notes
 import onboarding
 import resolver
@@ -132,6 +134,9 @@ class Tracker:
         self.use_trail = trail               # the accessibility event trail (trail_mac.py) runs inside this process
         self.trail = None
         self.widget = None                   # the on-screen pill (widget.py), made in run()
+        self.menubar = None                  # the menu-bar item (menubar.py), made in run()
+        self.menu_refreshed = 0.0
+        self.quit_requested = False          # "Quit LMemM" in the menu: ends the main loop
         self.suggestion = None               # a group offered as one project: {name, ids, reason}
         self.suggest_answers = self.load_answers()
         self.last_widget_refresh = 0.0
@@ -343,6 +348,8 @@ class Tracker:
 
     def tick(self):
         """One pass of the main loop (~4x a second)."""
+        if self.quit_requested:
+            raise KeyboardInterrupt
         self.process_control()
         self.poll_input()
         self.maintain()
@@ -354,6 +361,9 @@ class Tracker:
         if self.widget and time.time() - self.last_widget_refresh >= 1:
             self.last_widget_refresh = time.time()
             self.widget.refresh()
+        if self.menubar and time.time() - self.menu_refreshed >= 1:
+            self.menu_refreshed = time.time()
+            self.menubar.update(menu_model.view(self.widget_status(), self.watch_apps))
         if self.widget:
             self.widget.pulse(self.widget_heard())      # waveform + words while the note window is open
         if self.manual_paused and self.pause_until and time.time() >= self.pause_until:
@@ -611,6 +621,13 @@ class Tracker:
                 "private": self.skip_kind == "private" and self.skipped_place == self.front_sig(),
                 "unwatched": self.skip_kind == "unwatched" and self.skipped_place == self.front_sig(),
                 "paused": kind, "pause_view": rules.paused_view(kind, end, now) if kind else None}
+
+    def menu_pick(self, row):
+        """A row of the menu-bar item was clicked (menu_model.view lists the ids)."""
+        if row == "quit":
+            self.quit_requested = True
+            if self.nsapp is not None:
+                macos.wake(self.nsapp)                  # leave the loop now, not at the next 0.25 s boundary
 
     def widget_pause(self, kind):
         """The pill's Pause row: kind is one of rules.PAUSE_CHOICES."""
@@ -1220,6 +1237,7 @@ class Tracker:
                                         on_decline=self.widget_decline, picker=self.widget_picker,
                                         on_unfile=self.widget_unfile, busy=lambda: self.panel.open, status=self.widget_status,
                                         on_pause=self.widget_pause, on_resume=self.widget_resume)
+            self.menubar = menubar.MenuBar(self.menu_pick)
         if self.input_monitor:
             self.input_monitor.start(request_permission=True)
             say(f"Input monitoring: {self.input_monitor.status()['state']} · allowed app: VS Code · no key values recorded")
@@ -1270,6 +1288,8 @@ class Tracker:
             self.input_monitor.stop()
         if self.panel.open:
             self.panel.close(save=False)
+        if self.menubar:
+            self.menubar.remove()
         say("\nstopping…")
         if self.trail:
             self.trail.stop()

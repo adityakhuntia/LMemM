@@ -153,7 +153,9 @@ PROFILES = {
     "com.apple.finder": {"service": "Finder", "kind": "files", "title": r"^(.+)$"},
 }
 BOX_FALLBACK = re.compile(r"(?i)^(?:type a message|write a message|send a message|message|reply|imessage|text message)"
-                          r"(?:\s+(?:to|in)\b)?\s*[-:·]?\s*(.*)$")
+                          r"(?:\s+(?:to|in)\b)?\s*[-:·]?\s*(?:group\s+(?=\S))?(.*)$")
+ROW_TAIL = re.compile(r"(?i)\s+(?:\d{1,2}:\d{2}(?:\s?[ap]\.?m\.?)?|yesterday|today|\d{1,2}/\d{1,2}/\d{2,4}|"
+                      r"(?:mon|tues?|wed(?:nes)?|thu(?:rs)?|fri|sat(?:ur)?|sun)(?:day)?\b).*$")
 AI_BOX = re.compile(r"(?i)^(?:ask|how can i help|message (?:chatgpt|claude)|reply to claude|send a message to|"
                     r"enter a prompt|write your prompt|talk to)")
 APP_SUFFIX = re.compile(r"\s*[-–—|·]\s*(?:Google Chrome|Brave|Microsoft Edge|Arc|Safari|Chromium|Firefox)\s*(?:[-–—]\s*\S+)?$")
@@ -292,7 +294,7 @@ def _chat_name(profile, snap, title, label, web_title=False):
     if snap:
         for row in snap.selected:
             if row:
-                cands.append(("selected", row[0]))
+                cands.append(("selected", ROW_TAIL.sub("", row[0]) if len(row) == 1 else row[0]))
         for h in snap.headings[:2]:
             cands.append(("heading", h))
     t, _c = _title_name(profile, title)

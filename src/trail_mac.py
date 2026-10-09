@@ -84,7 +84,7 @@ class AXReader:
             return trail_ax.Snapshot()
         focus = trail_ax.element_attr(el, "AXFocusedUIElement")
         snap = trail_ax.collect(trail_ax.LiveNode(win), trail_ax.LiveNode(focus) if focus is not None else None,
-                                max_nodes=trail_ax.MAX_NODES if full else 0)
+                                max_nodes=500 if full else 0, max_ms=config.TRAIL_FULL_MS)
         if not snap.url and front["bundle_id"] in BROWSER_IDS:           # the address is on the web area, not the window
             key = (front["pid"], snap.title)
             if key not in self.url_cache:

@@ -87,6 +87,10 @@ def _row_texts(node, limit=24):
             if t:
                 out.append(t)
         stack.extend(n.children()[:12])
+    if not out:                                   # a list cell that carries its text as one description
+        t = _s(node.attrs().get("AXDescription") or node.attrs().get("AXTitle"))
+        if t:
+            out.append(t)
     return out
 
 

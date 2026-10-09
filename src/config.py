@@ -39,6 +39,7 @@ TRAIL_RETENTION_HOURS = 48      # raw events stay on this Mac this long, then ar
 TRAIL_MAX_MB = 50               # hard cap on the trail folder; oldest day goes first
 TRAIL_READ_FIELD_TEXT = False   # read the text INSIDE the focused text box (an editor's document)? off: only that one exists
 TRAIL_TEXT_EVERY = 2.0          # seconds: least time between two text reads of one place
+TRAIL_FULL_MS = 90              # a full tree read stops after this long (Chromium apps cost ~0.5 ms a node)
 TRAIL_SETTLE_MS = 150           # a shaky place must hold this long before it counts as a switch
 TRAIL_POLL = 1.0                # seconds: the cheap fallback check when an app sends no notifications
 TRAIL_IDLE = 60                 # no input for this long -> idle event, reads slow right down

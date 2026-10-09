@@ -72,6 +72,11 @@ class CollectTests(unittest.TestCase):
         s = collect(win, clock=lambda: next(t) / 1000, max_ms=45)
         self.assertTrue(s.truncated)
 
+    def test_a_selected_cell_with_only_a_description_is_read(self):
+        cell = Node("AXCell", Selected=True, Description="Mum 10:02 pm see you")
+        s = collect(Node("AXWindow", [cell]))
+        self.assertEqual(s.selected, [["Mum 10:02 pm see you"]])
+
     def test_a_broken_node_never_raises(self):
         class Bad:
             def attrs(self): raise RuntimeError("AX timeout")
@@ -171,6 +176,17 @@ class ChatTests(unittest.TestCase):
         p = place(*CHROME, s)
         self.assertEqual((p["kind"], p["name"], p["service"]), ("chat", "Priya", "WhatsApp"))
         self.assertEqual(p["key"], "WhatsApp:chat:priya")
+
+    def test_a_sidebar_cell_that_is_one_description_gives_the_name_before_the_time(self):
+        s = snap(title="WhatsApp", url="https://web.whatsapp.com/", focus_label="Type a message to group Team 10",
+                 selected=[["Team 10 11:27 pm Hi I am testing"]])
+        p = place(*CHROME, s)
+        self.assertEqual(p["name"], "Team 10")
+        self.assertGreaterEqual(p["confidence"], 0.9)
+
+    def test_group_word_in_the_box_label_is_not_part_of_the_name(self):
+        p = place(*CHROME, snap(title="WhatsApp", url="https://web.whatsapp.com/", focus_label="Type a message to group Team 10"))
+        self.assertEqual(p["name"], "Team 10")
 
     def test_messages_app_uses_selected_conversation(self):
         p = place("Messages", "com.apple.MobileSMS", snap(title="Messages", selected=[["Dad", "call me"]]))

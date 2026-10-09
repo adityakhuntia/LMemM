@@ -331,6 +331,20 @@ EXCERPT = 700
 LATEST_SHOWN = 6
 
 
+def content_text(content):
+    """The latest text LMemM read from a thing. Older memory kept a plain string; now it is
+    {"excerpts": [{"text": ...}, ...]}, newest last (memory_content.py)."""
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, dict):
+        excerpts = [e for e in content.get("excerpts") or [] if isinstance(e, dict) and isinstance(e.get("text"), str)]
+        if excerpts:
+            return excerpts[-1]["text"].strip()
+        if isinstance(content.get("text"), str):
+            return content["text"].strip()
+    return ""
+
+
 def thing_page(reg, item, now):
     """Everything LMemM knows about one thing, read only (P9)."""
     main = projects._main(item)
@@ -340,9 +354,9 @@ def thing_page(reg, item, now):
     mine = item.get("notes", [])
     done = [n for n in mine if notes.is_done(item, n)]
     state = {k: v for k, v in (item.get("state") or {}).items() if v and str(v) != title_of(item)}
-    content = (item.get("content") or "").strip()
+    content = content_text(item.get("content"))
     stats = [("Last seen", ago(item.get("last_seen"), now)), ("First seen", ago(item.get("first_seen"), now)),
-             ("Time spent", store.duration(item.get("seconds"))), ("Visits", f"{item.get('visits', 0):,}")]
+             ("Time spent", store.duration(item.get("seconds"))), ("Visits", f"{int(item.get('visits') or 0):,}")]
     return {"kind": "thing", "title": title_of(item), "app": item.get("app", ""), "back": True,
             "meta": " · ".join(b for b in (item.get("app", ""), "last seen " + ago(item.get("last_seen"), now).lower()) if b),
             "places": places,

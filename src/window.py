@@ -7,6 +7,9 @@ project tree) and the page. The search field is built once and never rebuilt, so
 interrupted by a redraw; the two scrolling areas keep their place when the data underneath changes.
 """
 
+import sys
+import traceback
+
 from Foundation import NSObject
 from AppKit import (NSApplication, NSColor, NSImageView, NSMakePoint, NSMakeRect, NSScrollView, NSTextField,
                     NSWindow, NSWorkspace)
@@ -133,6 +136,16 @@ class MainWindow:
     # ------------------------------------------------------------ drawing
 
     def render(self):
+        """Draw the window. A failure here is printed and skipped: the window is never allowed to
+        stop LMemM from remembering."""
+        try:
+            self._render()
+        except Exception:
+            self.shown = None
+            print("window: could not draw the page:", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+
+    def _render(self):
         reg, items = self.data()
         page = page_model.view(reg, items, self.nav)
         sig = repr((window_model.signature(self.banner), page))

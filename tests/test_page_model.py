@@ -273,11 +273,27 @@ class ThingPageTests(unittest.TestCase):
 
     def test_it_shows_what_lmemm_read_and_cuts_a_long_text(self):
         reg, items, ids = world()
-        items["a"]["content"] = "x" * 2000
+        items["a"]["content"] = {"excerpts": [{"text": "x" * 2000}]}
         items["a"]["state"] = {"to": "Sam", "subject": "Numbers"}
         page = pm.view(reg, items, pm.press(reg, pm.new_state(), "thing", "a", items), NOW)["main"]
         self.assertEqual(len(page["content"]), pm.EXCERPT + 1)
         self.assertEqual(page["latest"], [("To", "Sam"), ("Subject", "Numbers")])
+
+    def test_the_text_it_read_comes_from_the_real_memory_shape(self):
+        self.assertEqual(pm.content_text({"version": 1, "excerpts": [{"text": "old"}, {"text": " newest "}]}), "newest")
+        self.assertEqual(pm.content_text("plain"), "plain")
+        for odd in (None, {}, {"excerpts": []}, {"excerpts": [None, {"text": 5}]}, 5, []):
+            self.assertEqual(pm.content_text(odd), "")
+        reg, items, ids = world()
+        items["a"]["content"] = {"version": 1, "excerpts": [{"text": "We agreed on the Q3 numbers."}]}
+        page = pm.view(reg, items, pm.press(reg, pm.new_state(), "thing", "a", items), NOW)["main"]
+        self.assertEqual(page["content"], "We agreed on the Q3 numbers.")
+
+    def test_odd_stored_values_never_break_a_page(self):
+        reg, items, ids = world()
+        items["a"].update(state={"x": {"deep": 1}, "y": None, "z": 5}, notes=[{"at": None, "text": "hm"}], seconds=None, visits=None)
+        page = pm.view(reg, items, pm.press(reg, pm.new_state(), "thing", "a", items), NOW)["main"]
+        self.assertEqual(page["open"][0]["text"], "hm")
 
     def test_it_lists_every_project_a_thing_is_in(self):
         page, _, (reg, items, ids) = self.open("b")

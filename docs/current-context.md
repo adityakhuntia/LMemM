@@ -59,7 +59,7 @@ The user selected **resume work on a project** as the first agent workflow.
 The agreed MVP is accurate project knowledge exposed to AI agents through MCP,
 with acceptable measured performance and low resource use. Broader companion
 features come after this. Graph understanding is now in **brainstorming**;
-see [discussion brief](docs/knowledge-graph-discussion.md).
+see [discussion brief](knowledge-graph-discussion.md).
 
 Recommended order: define one agent workflow and evidence quality criteria;
 enforce app/site access and foreground source boundaries; establish performance

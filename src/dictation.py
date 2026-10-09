@@ -12,7 +12,7 @@ The hotkey uses Carbon's RegisterEventHotKey: macOS tells us about that one key
 combination only. No keyboard monitoring, no Accessibility permission.
 
 Speech to text is Apple's on-device speech recognizer, run by a tiny helper app
-(listen/listen.m -> bin/LMemM Listen.app, built with clang on first use). It has
+(native/listen/listen.m -> bin/LMemM Listen.app, built with clang on first use). It has
 to be its own app: macOS only lets an app with its own microphone/speech usage
 strings use the recognizer. It only runs while the note window is open. First
 time, macOS asks to allow Microphone and Speech Recognition for "LMemM Listen".

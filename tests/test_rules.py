@@ -1,6 +1,7 @@
 """The pill's ground rules (rules.py): who owns the screen, and what each press does."""
 
 import unittest
+from datetime import datetime
 
 import notes
 import rules
@@ -27,7 +28,8 @@ class OwnershipTests(unittest.TestCase):
         self.assertEqual(rules.hotkey_action(False, True, False), "close_card_then_open_note")
         self.assertEqual(rules.hotkey_action(True, False, False), "ignore")
         self.assertEqual(rules.hotkey_action(True, True, False), "ignore")
-        self.assertEqual(rules.hotkey_action(False, False, True), "ignore")
+        self.assertEqual(rules.hotkey_action(False, False, True), "show_paused")   # R9
+        self.assertEqual(rules.hotkey_action(False, True, True), "show_paused")
 
     def test_clicking_the_pill_while_dictating_does_nothing(self):  # R1
         self.assertEqual(rules.pill_click_action(True), "ignore")
@@ -68,6 +70,39 @@ class MarkTests(unittest.TestCase):
         self.assertEqual(st(empty="fresh", hover=True), "fresh")
         self.assertEqual(st(empty="caught", card_open=True), "caught")
         self.assertEqual(st(mark="screen_off", empty="fresh", hover=True), "screen_off")
+
+
+class PauseTests(unittest.TestCase):
+    now = datetime(2026, 10, 9, 14, 40)
+
+    def test_when_each_choice_ends(self):
+        self.assertEqual(rules.pause_end("hour", self.now), datetime(2026, 10, 9, 15, 40))
+        self.assertEqual(rules.pause_end("tomorrow", self.now), datetime(2026, 10, 10, 8, 0))
+        self.assertEqual(rules.pause_end("tomorrow", datetime(2026, 10, 9, 2, 0)), datetime(2026, 10, 9, 8, 0))
+        self.assertIsNone(rules.pause_end("until_resume", self.now))
+
+    def test_clock(self):
+        self.assertEqual(rules.clock(datetime(2026, 10, 9, 15, 40), self.now), "at 3:40 PM")
+        self.assertEqual(rules.clock(datetime(2026, 10, 10, 8, 0), self.now), "tomorrow at 8:00 AM")
+
+    def test_options(self):
+        rows = rules.pause_options(self.now)
+        self.assertEqual([r["title"] for r in rows], ["1 hour", "Until tomorrow", "Until I resume"])
+        self.assertEqual([r["sub"] for r in rows], ["Back on at 3:40 PM", "Back on tomorrow at 8:00 AM", "You turn it back on"])
+
+    def test_paused_cards(self):
+        timed = rules.paused_view("manual", datetime(2026, 10, 9, 15, 40), self.now)
+        self.assertTrue(timed["resume"])
+        self.assertIn("3:40 PM", timed["line"])
+        self.assertIn("until you resume", rules.paused_view("manual", None, self.now)["line"])
+        away = rules.paused_view("away", None, self.now)
+        self.assertFalse(away["resume"])
+
+    def test_one_mark_for_every_pause(self):                        # R9
+        ok = {"screen": False, "private": True, "mic_off": True}
+        self.assertEqual(rules.pill_mark({**ok, "paused": "manual"}), "paused")
+        self.assertEqual(rules.pill_mark({**ok, "paused": "away"}, count=3), "paused")
+        self.assertEqual(rules.pill_mark(ok), "screen_off")
 
 
 class PendingTests(unittest.TestCase):

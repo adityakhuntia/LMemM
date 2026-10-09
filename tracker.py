@@ -104,7 +104,8 @@ class Tracker:
         self.cur_place = None                # (app, window) of the newest timeline event
         self.pill_place = None               # (app, window) the pill last refreshed for
         self.paused = None                   # automatic pause reason (idle, locked, ...)
-        self.manual_paused = False           # `lmemm.py pause`
+        self.manual_paused = False           # `lmemm.py pause`, or the pill's Pause
+        self.pause_until = None              # epoch seconds when a timed pause ends (None: until you resume)
         self.last_sig = None
         self.last_capture = 0.0
         self.last_poll = 0.0
@@ -154,8 +155,9 @@ class Tracker:
             self.events[-1]["_closed"] = True
         self.last_frame = None
 
-    def set_manual_pause(self, paused):
+    def set_manual_pause(self, paused, until=None):
         self.manual_paused = paused
+        self.pause_until = until if paused else None
         self.pending = None
         self.pin = False
         self.note_request = False
@@ -347,6 +349,15 @@ class Tracker:
             self.widget.refresh()
         if self.widget:
             self.widget.pulse(self.widget_heard())      # waveform + words while the note window is open
+        if self.manual_paused and self.pause_until and time.time() >= self.pause_until:
+            self.set_manual_pause(False)                # a timed pause ends by itself
+            line(now_hms(), "", "resumed (pause ended)")
+            if self.widget:
+                self.widget.flash("Remembering again")
+        if self.note_request and self.manual_paused:
+            self.note_request = False                   # R9: say why, with a way out, instead of nothing
+            if self.widget:
+                self.widget.show_paused()
         if self.manual_paused:
             return
         if any(self.flags.values()):
@@ -572,8 +583,26 @@ class Tracker:
         """What is wrong right now, for the pill's marks: screen access, a private window, the mic."""
         if time.time() - self.screen_checked > 5:
             self.screen_ok, self.screen_checked = macos.screen_recording_allowed(request=False), time.time()
+        kind = "manual" if self.manual_paused else "away" if self.paused == "idle" else None
+        now = datetime.now()
+        end = datetime.fromtimestamp(self.pause_until) if self.pause_until else None
         return {"screen": self.screen_ok, "mic_off": dictation.mic_off(),
-                "private": self.skipped_place is not None and self.skipped_place == self.front_sig()}
+                "private": self.skipped_place is not None and self.skipped_place == self.front_sig(),
+                "paused": kind, "pause_view": rules.paused_view(kind, end, now) if kind else None}
+
+    def widget_pause(self, kind):
+        """The pill's Pause row: kind is one of rules.PAUSE_CHOICES."""
+        end = rules.pause_end(kind, datetime.now())
+        self.set_manual_pause(True, end.timestamp() if end else None)
+        line(now_hms(), "", "paused" + (f" until {end:%H:%M}" if end else " until resumed"))
+        self.widget_refresh_soon()
+
+    def widget_resume(self):
+        self.set_manual_pause(False)
+        line(now_hms(), "", "resumed")
+        if self.widget:
+            self.widget.flash("Remembering again")
+        self.widget_refresh_soon()
 
     def front_sig(self):
         """Where you are right now (app, window), read live so the pill never trails a switch."""
@@ -1126,7 +1155,8 @@ class Tracker:
                                         heard=self.widget_heard, hotkey=dictation.HOTKEY_LABEL,
                                         suggestion=self.widget_suggestion, on_project=self.widget_project,
                                         on_decline=self.widget_decline, picker=self.widget_picker,
-                                        on_unfile=self.widget_unfile, busy=lambda: self.panel.open, status=self.widget_status)
+                                        on_unfile=self.widget_unfile, busy=lambda: self.panel.open, status=self.widget_status,
+                                        on_pause=self.widget_pause, on_resume=self.widget_resume)
         if self.input_monitor:
             self.input_monitor.start(request_permission=True)
             say(f"Input monitoring: {self.input_monitor.status()['state']} · allowed app: VS Code · no key values recorded")

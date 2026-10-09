@@ -132,6 +132,11 @@ follows light/dark, and shows over every app, Space and full-screen window.
   **Screen access is off** (red; the card opens System Settings); a lock, **Private window**
   (nothing is remembered from there); a slashed microphone, **Mic is off** (red; shown when
   there are no notes to count).
+- **Pause** is on the card: a plain "Pause LMemM" row at the bottom, then 1 hour, Until tomorrow
+  (8:00 AM) or Until I resume, each showing when it ends. While paused the pill shows one pause
+  mark and nothing else; its card says "Paused", when it ends, and has **Resume**. When you step
+  away (idle) the same mark shows, with no Resume because it ends by itself. ⌃⌥N while paused opens
+  that card. `lmemm.py pause` / `resume` show the same.
 - Nothing to show, on hover or with the card open: a pencil, **No notes yet**; a check,
   **All caught up** (with "Show done"); a folder, **Start a project**, when you have none yet.
 

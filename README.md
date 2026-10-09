@@ -86,7 +86,7 @@ Every item is also a direct command, for scripts and muscle memory:
 | `lmemm.py notes done ID…` / `notes reopen ID…` | mark notes done / open again |
 | `lmemm.py suggest [NAME] [ID…]` | offer things as one project on the pill (stands in for the model until it exists) |
 | `lmemm.py context [SESSION] [--days N]` | a clean, de-noised export for an AI (below) |
-| `lmemm.py setup [--again]` | first-run setup (also runs once before `start`) |
+| `lmemm.py setup [--again] [--no-start]` | first-run setup, then LMemM starts and the pill appears (`--no-start` stops after setup; also runs once before `start`) |
 | `lmemm.py delete-all --dry-run` / `--confirm` | remove everything LMemM has kept on this Mac |
 | `lmemm.py status` / `pause` / `resume` | the running tracker; pause stops all capture |
 | `lmemm.py pin` | force-save the current screen |

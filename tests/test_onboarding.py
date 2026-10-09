@@ -99,13 +99,6 @@ class NameTests(unittest.TestCase):
         for bad in ("", "   ", "...", "-", "\n\t", None, 5):
             self.assertFalse(ob.valid_name(bad), repr(bad))
 
-    def test_default_name_is_the_first_word(self):
-        self.assertEqual(ob.default_name("Aditya Khuntia"), "Aditya")
-        self.assertEqual(ob.default_name("  Mary   Ann Smith"), "Mary")
-        self.assertEqual(ob.default_name(""), "")
-        self.assertEqual(ob.default_name("... ---"), "")
-        self.assertEqual(ob.default_name(None), "")
-
 
 class PermissionStateTests(unittest.TestCase):
     def test_screen(self):
@@ -194,13 +187,24 @@ class StateTests(unittest.TestCase):
 
 
 class FlowTests(Base):
-    def test_starts_on_welcome_with_the_macs_first_name(self):
+    def test_starts_on_welcome_with_an_empty_name(self):
         s = self.setup()
         self.assertEqual(s.step, "welcome")
-        self.assertEqual(s.state["name"], "Aditya")
+        self.assertEqual(s.state["name"], "")
         self.assertFalse(s.view()["back"])                                  # S1: nothing before the first screen
 
-    def test_a_name_already_typed_is_not_overwritten_by_the_default(self):
+    def test_the_name_field_starts_empty_whatever_the_mac_account_is_called(self):
+        system = FakeSystem()
+        system.name = "Aditya Khuntia"
+        s = self.setup(system)
+        self.assertEqual(s.state["name"], "")
+        s.next()
+        v = s.view()
+        self.assertEqual(v["name"]["value"], "")
+        self.assertEqual(v["name"]["placeholder"], "First name")
+        self.assertFalse(v["primary"]["enabled"])
+
+    def test_a_name_already_typed_is_kept(self):
         ob.save_state(self.path, {**ob.fresh_state(), "name": "Ada"})
         self.assertEqual(self.setup().state["name"], "Ada")
 
@@ -313,7 +317,7 @@ class FlowTests(Base):
         v = s.view()
         self.assertEqual(v["primary"]["label"], "Continue")
         self.assertIsNone(v["secondary"])
-        self.assertIn("how a note works", v["notes"][0]["text"])
+        self.assertEqual(v["notes"][0]["lead"], "That’s a note.")
 
     def test_try_can_always_be_skipped(self):
         v = self.to(self.setup(), "try").view()
@@ -521,7 +525,6 @@ class SystemFailureTests(Base):
     def test_a_system_that_throws_everywhere_still_gives_a_working_setup(self):
         system = FakeSystem()
         system.fail = {"facts"}
-        system.full_name = lambda: 1 / 0
         system.language = lambda: 1 / 0
         s = self.setup(system)
         s.state["name"] = "Ada"
@@ -550,6 +553,9 @@ class EveryRoadEndsTests(Base):
                     if s.completed:
                         break
                     action = view["primary"]["action"]
+                    if s.step == "you" and not view["primary"]["enabled"]:
+                        self.assertTrue(s.set_name("Ada"))                 # a person has to type a name
+                        continue
                     if action == "show_note":                              # the window's job; Skip is always there
                         self.assertEqual(view["secondary"]["action"], "next")
                         self.assertTrue(s.next())

@@ -19,7 +19,7 @@ LMemM - the one command.
     lmemm.py delete-session ID (--dry-run | --confirm ID)
     lmemm.py delete-all (--dry-run | --confirm)
                                       remove everything LMemM has kept, on this Mac
-    lmemm.py setup [--again]          first-run setup (it also runs once before `start`)
+    lmemm.py setup [--again]          first-run setup, then LMemM starts (also runs once before `start`)
 
 Any of these also works by number from the menu (`lmemm.py`), which prompts for the
 same arguments shown above when an action takes them.
@@ -49,7 +49,7 @@ USAGE = ("usage: lmemm.py [menu] | start [--every N] [--input-events --input-app
          " | notes [--all] [PROJECT] | notes done|reopen ID…"
          " | context [SESSION] [--days N]"
          " | status | pause | resume | pin | note | delete-session ID (--dry-run | --confirm ID)"
-         " | delete-all (--dry-run | --confirm) | setup [--again]")
+         " | delete-all (--dry-run | --confirm) | setup [--again] [--no-start]")
 
 
 # ---------------------------------------------------------------- memory
@@ -170,11 +170,14 @@ def first_run_setup(again=False):
 
 
 def cmd_setup(args):
-    if not set(args) <= {"--again"}:
-        sys.exit("usage: lmemm.py setup [--again]")
+    if not set(args) <= {"--again", "--no-start"}:
+        sys.exit("usage: lmemm.py setup [--again] [--no-start]")
     if not first_run_setup(again="--again" in args):
         sys.exit("Setup isn't finished. Run  python3 lmemm.py setup  to pick up where you left off.")
-    print("Setup is done.")
+    if "--no-start" in args:
+        print("Setup is done.")
+        return
+    cmd_start(["--no-setup"])                      # setup ends with the pill on screen, not a closed app
 
 
 def cmd_delete_all(args):

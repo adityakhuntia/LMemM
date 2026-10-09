@@ -169,20 +169,6 @@ class MacSystem:
 
     # -- the Mac's account
 
-    def full_name(self):
-        try:
-            import Foundation
-            name = str(Foundation.NSFullUserName() or "")
-            if name:
-                return name
-        except Exception:
-            pass
-        try:
-            import pwd
-            return pwd.getpwuid(os.getuid()).pw_gecos.split(",")[0]
-        except Exception:
-            return ""
-
     def language(self):
         try:
             import Foundation

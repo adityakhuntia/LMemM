@@ -34,7 +34,7 @@ case "${1:-status}" in
     fi
     # first run: finish setup in this terminal (so the permissions go to it), then detach
     if ! grep -q '"completed": true' data/onboarding.json 2>/dev/null; then
-      "$PY" lmemm.py setup || exit 1
+      "$PY" lmemm.py setup --no-start || exit 1
     fi
     nohup "$PY" lmemm.py --every "${2:-5}" >> "$LOGFILE" 2>&1 &
     echo $! > "$PIDFILE"

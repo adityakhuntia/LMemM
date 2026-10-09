@@ -14,7 +14,7 @@ failure has a calm recovery.
 | # | Screen | One idea | Main button |
 |---|---|---|---|
 | 1 | welcome | what LMemM is, in one line; everything stays on this Mac | Get started |
-| 2 | you | first name (required, pre-filled from the Mac), what you mostly work on (optional) | Continue (needs a name) |
+| 2 | you | first name (required, starts empty), what you mostly work on (optional) | Continue (needs a name) |
 | 3 | access | Voice notes, Accessibility (optional), Screen Recording (needed, last) | Continue (always works) |
 | 4 | try | press ⌃⌥N, see the note card (a rehearsal; nothing stored) | Show me / Skip for now |
 | 5 | done | the pill appears | Done (or Restart LMemM / Not now) |
@@ -81,3 +81,12 @@ The hotkey is Carbon `RegisterEventHotKey` and needs no permission.
   after Done).
 - A packaged, signed .app. Permissions still attach to the terminal that launched LMemM.
 - A menu-bar "Check access" entry (setup can be reopened with `setup --again`).
+
+## Look and type (rev. 2)
+
+- Type is Figtree (`assets/fonts`, SIL OFL), registered for the process; the system font is the fallback.
+- Highlight is blue (`setup_kit.ACCENT`), not the pill's orange. Selected chips are blue with white text.
+- The name field starts empty (placeholder "First name"); Continue stays off until there is a name.
+- All text is drawn by `setup_kit` (centred on both axes in buttons); headings and notes are centred.
+- Role chips carry an SF Symbol each; the "That's a note." confirmation sits in a soft green box.
+- `lmemm.py setup` ends by starting LMemM, so the pill is on screen after Done.

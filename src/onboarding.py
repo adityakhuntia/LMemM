@@ -69,12 +69,6 @@ def valid_name(name):
     return bool(clean) and any(ch.isalnum() for ch in clean)
 
 
-def default_name(full_name):
-    """The first word of the Mac account's full name, to pre-fill the field; '' if unusable."""
-    first = sanitize_name(full_name).split(" ")[0]
-    return first if valid_name(first) else ""
-
-
 # ---------------------------------------------------------------- permission states (S3)
 
 def _status(value):
@@ -224,7 +218,7 @@ class Setup:
         ask_voice()               have macOS ask for Microphone and Speech Recognition
         open_settings(perm)       open that permission's pane in System Settings
         relaunch()                start LMemM again (it resumes where this left off)
-        full_name() / language() / time_zone()
+        language() / time_zone()
         save_user(record)         write the "user" block of memory.json
 
     Every press returns True when something changed. Every change is written to
@@ -236,10 +230,6 @@ class Setup:
         self.state = load_state(path)
         self.facts = {}
         self.error = None                                  # a calm one-line message, or None
-        if not self.state["name"]:
-            self.state["name"] = default_name(self._safe(system.full_name, ""))
-            if self.state["name"]:
-                self._commit()
         self.refresh()
 
     # -- reading the world (never prompts, never raises)
@@ -386,8 +376,7 @@ class Setup:
             ok = valid_name(state["name"])
             v.update(title="What should we call you?", trust=NAME_TRUST, saved=list(SAVED_LINES),
                      name={"value": state["name"], "placeholder": "First name",
-                           "hint": "Taken from your Mac’s account. Change it if you like." if ok
-                           else "Just a first name is fine."},
+                           "hint": "Just a first name is fine."},
                      roles=[{"name": r, "on": r in state["roles"]} for r in ROLES],
                      primary=self._btn("Continue", "next", enabled=ok))
         elif step == "access":
@@ -399,7 +388,8 @@ class Setup:
             v.update(title="Try it. Press this, then say a thought.", keys=list(HOTKEY_KEYS),
                      sub="Hold Control and Option, tap N. A small card opens. Talk, or type, then press Return.")
             if done:
-                v["notes"] = [{"tone": "good", "text": "That’s how a note works. In your own work it waits for you, in any app."}]
+                v["notes"] = [{"tone": "good", "lead": "That’s a note.",
+                               "text": "It will be waiting when you come back to this window, in any app."}]
                 v["primary"] = self._btn("Continue", "next")
             else:
                 v["primary"] = self._btn("Show me", "show_note", quiet=True)

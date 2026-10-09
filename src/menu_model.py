@@ -19,7 +19,8 @@ you can do. menubar.py only draws this and forwards clicks; it decides nothing.
         restart, the menu says so and offers "Restart LMemM" first. "Reopen setup…" and
         "Delete all my data…" ask once, in words, before they do anything. Delete tells you
         what it will remove; nothing is deleted while LMemM is running, it stops first.
-    A row that cannot do its job yet is not shown (no "Open project page" until there is one).
+    M6  "Open LMemM" is the first row and opens the window (window_model.py). A row that cannot
+        do its job yet is not shown (no "Open project page" until there is one).
 """
 
 from datetime import datetime
@@ -99,7 +100,8 @@ def rows_for(status, now, hotkey="⌃⌥N"):
     rows = []
     if not status.get("screen", True) and status.get("restart"):
         rows += [{"id": "restart", "title": "Restart LMemM"}, DIVIDER]
-    rows += [{"id": "add_note", "title": "Add a note", "detail": hotkey}, DIVIDER]
+    rows += [{"id": "open", "title": "Open LMemM"},
+             {"id": "add_note", "title": "Add a note", "detail": hotkey}, DIVIDER]
     if kind == "manual":
         rows += [{"id": "resume", "title": "Resume LMemM"}, DIVIDER]
     elif not kind:

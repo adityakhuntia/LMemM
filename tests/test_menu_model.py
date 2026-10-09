@@ -67,11 +67,11 @@ class ViewTests(unittest.TestCase):
 
     def test_the_rows_in_order_with_no_dead_rows(self):
         self.assertEqual(ids(menu_model.view(FINE, now=NOW)["rows"]),
-                         ["add_note", "-", "pause", "-", "access", "setup", "-", "delete", "quit"])
+                         ["open", "add_note", "-", "pause", "-", "access", "setup", "-", "delete", "quit"])
         titles = [r["title"] for r in menu_model.view(FINE, now=NOW)["rows"] if r["id"] != "-"]
-        self.assertEqual(titles, ["Add a note", "Pause LMemM", "Check access…", "Reopen setup…",
+        self.assertEqual(titles, ["Open LMemM", "Add a note", "Pause LMemM", "Check access…", "Reopen setup…",
                                   "Delete all my data…", "Quit LMemM"])
-        self.assertNotIn("Open project page", titles)              # there is no project page yet
+        self.assertNotIn("Open project page", titles)              # the window is "Open LMemM"; no project page yet
 
     def test_dividers_never_start_end_or_double_up(self):
         for s in (FINE, status(paused="manual"), status(paused="away"), status(screen=False),
@@ -83,7 +83,7 @@ class ViewTests(unittest.TestCase):
             self.assertFalse(any(a == b == "-" for a, b in zip(rows, rows[1:])), rows)
 
     def test_add_a_note_shows_the_hotkey(self):
-        row = menu_model.view(FINE, now=NOW, hotkey="⌃⌥N")["rows"][0]
+        row = menu_model.view(FINE, now=NOW, hotkey="⌃⌥N")["rows"][1]
         self.assertEqual((row["id"], row["detail"]), ("add_note", "⌃⌥N"))
 
     def test_check_access_says_how_many_are_off_and_where_it_goes(self):
@@ -101,7 +101,7 @@ class ViewTests(unittest.TestCase):
     def test_when_macos_only_needs_a_restart_the_menu_says_so_first(self):
         v = menu_model.view(status(screen=False, restart=True), now=NOW)
         self.assertEqual((v["title"], v["line"], v["mark"]), ("Screen access is on", "Restart LMemM to finish.", "screen_off"))
-        self.assertEqual(ids(v["rows"])[:2], ["restart", "-"])
+        self.assertEqual(ids(v["rows"])[:3], ["restart", "-", "open"])
         plain = menu_model.view(status(screen=False), now=NOW)
         self.assertEqual(plain["title"], "Screen access is off")
         self.assertNotIn("restart", ids(plain["rows"]))
@@ -124,12 +124,12 @@ class ViewTests(unittest.TestCase):
 
     def test_a_pause_you_chose_has_resume_and_an_automatic_one_has_nothing_to_do(self):
         mine = menu_model.view(status(paused="manual"), now=NOW)["rows"]
-        self.assertEqual(ids(mine), ["add_note", "-", "resume", "-", "access", "setup", "-", "delete", "quit"])
+        self.assertEqual(ids(mine), ["open", "add_note", "-", "resume", "-", "access", "setup", "-", "delete", "quit"])
         away = menu_model.view(status(paused="away"), now=NOW)["rows"]
-        self.assertEqual(ids(away), ["add_note", "-", "access", "setup", "-", "delete", "quit"])
+        self.assertEqual(ids(away), ["open", "add_note", "-", "access", "setup", "-", "delete", "quit"])
 
     def test_every_clickable_row_id_is_one_the_tracker_understands(self):
-        known = {"resume", "quit", "add_note", "access", "setup", "delete", "restart"} | {"pause:" + k for k in rules.PAUSE_CHOICES}
+        known = {"resume", "quit", "add_note", "access", "setup", "delete", "restart", "open"} | {"pause:" + k for k in rules.PAUSE_CHOICES}
         for s in (FINE, status(paused="manual"), status(paused="away"), status(screen=False)):
             for row in menu_model.view(s, now=NOW)["rows"]:
                 for r in [row] + row.get("children", []):
@@ -160,7 +160,7 @@ class TrackerWiringTests(unittest.TestCase):
         called = {n.func.attr for n in ast.walk(fn) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)}
         self.assertTrue({"pause_kind", "widget_pause", "widget_resume", "check_access", "confirm_leaving"} <= called)
         text = ast.unparse(fn)
-        for row in ("resume", "quit", "add_note", "access", "restart", "setup", "delete"):
+        for row in ("resume", "quit", "add_note", "access", "restart", "setup", "delete", "open"):
             self.assertIn(repr(row), text, row)
         self.assertIn("quit_requested", text)
 

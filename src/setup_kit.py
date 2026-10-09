@@ -1,6 +1,6 @@
 """LMemM - drawing pieces for the first-run window: the Figtree type, text that is truly centred,
 buttons, chips, keys and note boxes. Layout lives in onboarding_ui.py; the words and the rules live
-in onboarding.py. This file is only paint, and it is used by nothing else.
+in onboarding.py. This file is only paint, and it is used by the setup window and the main window.
 
 All text is drawn by `_KitText`, not by NSTextField, so alignment and vertical centring are exact
 (a label inside a button is centred on both axes, always).
@@ -269,14 +269,16 @@ class _KitNote(_Flipped):
         return self
 
     def drawRect_(self, rect):
-        base = {"good": NSColor.systemGreenColor(), "warn": NSColor.systemOrangeColor()}.get(self.tone)
+        base = {"good": NSColor.systemGreenColor(), "warn": NSColor.systemOrangeColor(),
+                "red": NSColor.systemRedColor()}.get(self.tone)
         (base.colorWithAlphaComponent_(0.13) if base is not None else faint(0.06)).setFill()
         NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(self.bounds(), 12, 12).fill()
 
 
 def note(parent, tone, text, x, y, w, lead=None):
     """A note box. `lead` is a bold first phrase. Returns its height."""
-    symbol = {"good": "checkmark.circle.fill", "warn": "exclamationmark.triangle.fill"}.get(tone)
+    symbol = {"good": "checkmark.circle.fill", "warn": "exclamationmark.triangle.fill",
+              "red": "exclamationmark.circle.fill"}.get(tone)
     left = 14 + (26 if symbol else 0)
     inner = w - left - 14
     body = (lead + " " if lead else "") + text
@@ -285,7 +287,7 @@ def note(parent, tone, text, x, y, w, lead=None):
     box.setFrame_(NSMakeRect(x, y, w, h))
     parent.addSubview_(box)
     if symbol:
-        color = NSColor.systemGreenColor() if tone == "good" else NSColor.systemOrangeColor()
+        color = {"good": NSColor.systemGreenColor(), "red": NSColor.systemRedColor()}.get(tone, NSColor.systemOrangeColor())
         holder = icon(symbol, 18, color, (14, 12, 18, 18))
         if holder is not None:
             box.addSubview_(holder)

@@ -84,6 +84,7 @@ PROJECT_EXPLAINER = ("A project keeps related things and your notes together, so
 MARKS = {"paused": ("pause.fill", False, "Paused"),
          "screen_off": ("eye.slash", True, "Screen access is off"),
          "private": ("lock", False, "Private window"),
+         "unwatched": ("circle.slash", False, "Not watching this app"),
          "mic_off": ("mic.slash", True, "Mic is off"),
          "fresh": ("square.and.pencil", False, "No notes yet"),
          "caught": ("checkmark", False, "All caught up"),
@@ -714,7 +715,7 @@ class Widget:
             y = self._done(body, y)
         elif self.mode == "finished":
             y = self._finished(body, y)
-        elif self.mode == "here" and self._mark() in ("screen_off", "private"):
+        elif self.mode == "here" and self._mark() in ("screen_off", "private", "unwatched"):
             y = self._problem(body, y)
         elif view.get("empty"):
             y = self._empty(body, y)
@@ -843,6 +844,10 @@ class Widget:
         if not self.card_open:
             self.toggle_card()
 
+    def show_unwatched(self):
+        """⌃⌥N in an app you did not choose: open the card that says so (rules.py R11)."""
+        self.show_paused()
+
     def _done_row(self, body, y, count):
         """"Done  3  ›": this thing's finished notes."""
         tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(6, y + 2, CARD_W - 12, 28), lambda: self._go("finished"))
@@ -968,6 +973,9 @@ class Widget:
                             "LMemM can’t see what you’re working on.")
             self._button(body, (8, y, CARD_W - 16, 33), "Open System Settings", self._open_settings, primary=True)
             return y + 41
+        if self._mark() == "unwatched":
+            return self._state(body, y, "circle.slash", "soft", "Not watching this app",
+                               "You chose where LMemM looks, and this isn’t one of those apps.")
         return self._state(body, y, "lock", "soft", "Private window", "Nothing is remembered from here.")
 
     def _open_settings(self):

@@ -56,6 +56,26 @@ class WordsTests(unittest.TestCase):
         self.assertEqual(pm.fold("Café PLAN"), pm.fold("cafe plan"))
 
 
+class IconTests(unittest.TestCase):
+    def test_a_projects_colour_is_stable_and_one_of_eight(self):
+        self.assertEqual({pm.hue(f"p{n}") for n in range(200)}, set(range(pm.HUES)))
+        self.assertEqual(pm.hue("p7"), pm.hue("p7"))
+
+    def test_every_place_a_project_is_drawn_carries_its_colour(self):
+        v, reg, items, ids = view()
+        self.assertTrue(all("hue" in r for r in v["side"]["tree"] if r["id"]))
+        self.assertTrue(all("hue" in c for c in v["main"]["cards"]))
+        page = pm.view(reg, items, pm.press(reg, pm.new_state(), "go", ids["work"]), NOW)["main"]
+        self.assertEqual(page["hue"], pm.hue(ids["work"]))
+        self.assertTrue(all("hue" in s for s in page["subs"]))
+        found = pm.view(reg, items, pm.press(reg, pm.new_state(), "search", "plan"), NOW)["main"]
+        self.assertTrue(all("hue" in p for p in found["projects"]))
+
+    def test_cards_and_sub_projects_say_how_many_sub_projects_they_hold(self):
+        v, reg, items, ids = view()
+        self.assertEqual(v["main"]["cards"][0]["line"], "3 things · 1 sub-project · 1 open")
+
+
 class TreeTests(unittest.TestCase):
     def test_the_tree_opens_and_closes_on_its_own(self):
         reg, items, ids = world()

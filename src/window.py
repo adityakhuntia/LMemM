@@ -8,8 +8,10 @@ interrupted by a redraw; the two scrolling areas keep their place when the data 
 """
 
 from Foundation import NSObject
-from AppKit import NSApplication, NSMakeRect, NSMakePoint, NSScrollView, NSTextField, NSWindow
+from AppKit import (NSApplication, NSColor, NSImageView, NSMakePoint, NSMakeRect, NSScrollView, NSTextField,
+                    NSWindow, NSWorkspace)
 
+import apps
 import page_model
 import setup_kit as kit
 import window_model
@@ -22,6 +24,13 @@ PAD = 32
 MAIN_W = W - SIDE_W - 2 * PAD
 TOP = 32                                               # below the title bar
 TONES = {"red": "red", "grey": None, "calm": None}      # the banner box's tone (red is only for what is off)
+
+
+def hue_color(hue):
+    """The eight calm colours projects wear. Never red: red is only for a permission that is off."""
+    names = ("systemBlue", "systemPurple", "systemPink", "systemOrange", "systemTeal", "systemGreen",
+             "systemIndigo", "systemBrown")
+    return getattr(NSColor, names[hue % len(names)] + "Color")()
 
 
 class _MainWindow(NSWindow):
@@ -56,6 +65,9 @@ class MainWindow:
         self.banner = None                                         # the last window_model.view
         self.nav = page_model.new_state()
         self.shown = None
+        self.where = None                                          # (view, project, search) the page was last showing
+        self.app_icons = {}
+        self.app_paths = None
         style = 1 | 2 | (1 << 15)                                  # titled, closable, content under the title bar
         self.window = _MainWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             NSMakeRect(0, 0, W, H), style, 2, False)
@@ -122,13 +134,16 @@ class MainWindow:
         self.search.setFrame_(NSMakeRect(14, top + 8, SIDE_W - 28, 28))
         self.side_scroll.setFrame_(NSMakeRect(0, top + 44, SIDE_W, H - top - 44))
         self.main_scroll.setFrame_(NSMakeRect(SIDE_W, top, W - SIDE_W, H - top))
+        here = (self.nav["view"], self.nav["pid"], self.nav["q"])
+        moved, self.where = here != self.where, here
         self._fill(self.side_scroll, SIDE_W, lambda doc: self._side(doc, page["side"]))
-        self._fill(self.main_scroll, W - SIDE_W, lambda doc: self._main(doc, page["main"]))
+        self._fill(self.main_scroll, W - SIDE_W, lambda doc: self._main(doc, page["main"]), top=moved)
 
-    def _fill(self, scroll, width, build):
-        """Swap the scrolling area's contents, keeping the place the person had scrolled to."""
+    def _fill(self, scroll, width, build, top=False):
+        """Swap the scrolling area's contents, keeping the place the person had scrolled to (or
+        going to the top when they have moved to another page)."""
         clip = scroll.contentView()
-        keep = clip.bounds().origin.y
+        keep = 0 if top else clip.bounds().origin.y
         doc = _Flipped.alloc().initWithFrame_(NSMakeRect(0, 0, width, 10))
         height = build(doc)
         view_h = scroll.frame().size.height
@@ -153,6 +168,37 @@ class MainWindow:
             height += 10 + 36
         self.banner_host.setFrame_(NSMakeRect(0, TOP, W, height))
         return TOP + height + 8
+
+    # ------------------------------------------------------------ icons
+
+    def _project_icon(self, parent, hue, x, y, size=26):
+        kit.tile(parent, "folder.fill", hue_color(hue), x, y, size)
+
+    def _app_icon(self, parent, app, x, y, size=30):
+        """The app's own icon; a plain square when this Mac cannot find it."""
+        image = self._app_image(app)
+        if image is None:
+            kit.tile(parent, ("doc.fill", "app.fill"), kit.mute(), x, y, size)
+            return
+        holder = NSImageView.alloc().initWithFrame_(NSMakeRect(x, y, size, size))
+        holder.setImage_(image)
+        holder.setImageScaling_(3)
+        parent.addSubview_(holder)
+
+    def _app_image(self, app):
+        if app not in self.app_icons:
+            image = None
+            try:
+                path = NSWorkspace.sharedWorkspace().fullPathForApplication_(app)
+                if not path:
+                    if self.app_paths is None:
+                        self.app_paths = {a["name"]: a["path"] for a in apps.installed()}
+                    path = self.app_paths.get(app)
+                image = NSWorkspace.sharedWorkspace().iconForFile_(path) if path else None
+            except Exception:
+                image = None
+            self.app_icons[app] = image
+        return self.app_icons[app]
 
     # ------------------------------------------------------------ small pieces
 
@@ -190,10 +236,11 @@ class MainWindow:
             self._link(doc, f"See all {needs['count']}", SIDE_W - 96, y - 6, lambda: self.press("needs"), size=12)
         y += 24
         for row in needs["rows"]:
-            tap = self._tap(doc, 8, y, SIDE_W - 16, 30, (lambda r=row: self.press("go", r["pid"]) if r["pid"] else self.press("needs")))
-            kit.put_text(tap, row["title"], 8, 0, SIDE_W - 16 - 44, 13, 500, wrap=False, height=30, middle=True)
-            kit.put_text(tap, str(row["open"]), SIDE_W - 16 - 34, 0, 26, 12, 500, kit.mute(), align=RIGHT, wrap=False, height=30, middle=True)
-            y += 30
+            tap = self._tap(doc, 8, y, SIDE_W - 16, 34, (lambda r=row: self.press("go", r["pid"]) if r["pid"] else self.press("needs")))
+            self._app_icon(tap, row["app"], 8, 5, 24)
+            kit.put_text(tap, row["title"], 40, 0, SIDE_W - 16 - 40 - 40, 13, 500, wrap=False, height=34, middle=True)
+            kit.put_text(tap, str(row["open"]), SIDE_W - 16 - 34, 0, 26, 12, 500, kit.mute(), align=RIGHT, wrap=False, height=34, middle=True)
+            y += 34
         if not needs["count"]:
             self._label(doc, "Nothing waiting.", 16, y, SIDE_W - 32, size=13, weight=400)
             y += 26
@@ -213,7 +260,8 @@ class MainWindow:
                 caret = self._tap(tap, x - 8, 0, 22, 28, (lambda r=row: self.press("toggle", r["id"])))
                 kit.put_text(caret, "▾" if row["expanded"] else "▸", 0, 0, 22, 11, 600, kit.mute(), align=kit.CENTER,
                              wrap=False, height=28, middle=True)
-            kit.put_text(tap, row["name"], x + 16, 0, SIDE_W - 16 - x - 16 - 40, 13, 500, wrap=False, height=28, middle=True)
+            self._project_icon(tap, row["hue"], x + 16, 4, 20)
+            kit.put_text(tap, row["name"], x + 42, 0, SIDE_W - 16 - x - 42 - 40, 13, 500, wrap=False, height=28, middle=True)
             if row["count"]:
                 kit.put_text(tap, str(row["count"]), SIDE_W - 16 - 38, 0, 30, 12, 400, kit.mute(), align=RIGHT,
                              wrap=False, height=28, middle=True)
@@ -234,11 +282,19 @@ class MainWindow:
             y += 24
         if kind == "project":
             y = self._crumbs(doc, page["crumbs"], x, y)
-        kit.put_text(doc, page["title"], x, y, w, 26, 700, wrap=False, height=34)
+        tx = x
+        if kind == "project":
+            self._project_icon(doc, page["hue"], x, y - 2, 40)
+            tx = x + 54
+        elif kind in ("home", "needs"):
+            kit.tile(doc, ("square.stack.3d.up.fill", "folder.fill") if kind == "home" else ("bell.badge.fill", "bell.fill"),
+                     kit.ink(), x, y - 2, 40)
+            tx = x + 54
+        kit.put_text(doc, page["title"], tx, y, w - (tx - x), 26, 700, wrap=False, height=34)
         y += 36
         if page.get("meta"):
-            self._label(doc, page["meta"], x, y, w, size=13, weight=400)
-            y += 30
+            self._label(doc, page["meta"], tx, y, w - (tx - x), size=13, weight=400)
+            y += 34
         build = {"home": self._home, "project": self._project, "needs": self._needs, "search": self._search}[kind]
         return build(doc, page, x, y + 6, w)
 
@@ -259,26 +315,29 @@ class MainWindow:
         kit.put_text(doc, text, x, y, w, 15, 700, wrap=False, height=22)
         return y + 30
 
-    def _empty(self, doc, empty, x, y, w):
-        kit.put_text(doc, empty["title"], x, y + 20, w, 18, 600, wrap=False, height=26)
-        h = kit.put_text(doc, empty["line"], x, y + 52, min(w, 460), 14, 400, kit.mute())
-        return y + 52 + h
+    def _empty(self, doc, empty, x, y, w, symbol=("tray.fill", "folder.fill")):
+        kit.tile(doc, symbol, kit.mute(), x, y + 10, 56)
+        kit.put_text(doc, empty["title"], x, y + 80, w, 18, 600, wrap=False, height=26)
+        h = kit.put_text(doc, empty["line"], x, y + 112, min(w, 460), 14, 400, kit.mute())
+        return y + 112 + h
 
     def _thing(self, doc, t, x, y, w, notes=False):
         """A thing: its title, where it is, when. With notes: the open ones underneath. Returns the new y."""
         box = _Flipped.alloc().initWithFrame_(NSMakeRect(x, y, w, 10))
-        kit.put_text(box, t["title"], 0, 6, w - 130, 14, 600, wrap=False, height=20)
+        self._app_icon(box, t["app"], 0, 8, 34)
+        tx = 46
+        kit.put_text(box, t["title"], tx, 6, w - tx - 130, 14, 600, wrap=False, height=20)
         if t["ago"]:
             kit.put_text(box, t["ago"], w - 120, 6, 120, 12, 400, kit.mute(), align=RIGHT, wrap=False, height=20)
-        kit.put_text(box, t["sub"], 0, 27, w - (96 if t["open"] else 0), 12, 400, kit.mute(), wrap=False, height=18)
+        kit.put_text(box, t["sub"], tx, 27, w - tx - (96 if t["open"] else 0), 12, 400, kit.mute(), wrap=False, height=18)
         if t["open"]:
             kit.put_text(box, f"{t['open']} open", w - 90, 27, 90, 12, 600, kit.ink(), align=RIGHT, wrap=False, height=18)
         h = 52
         if notes:
             for text in t.get("notes", []):
-                h += kit.put_text(box, "○  " + text, 0, h - 2, w, 13, 400, height=None) + 4
+                h += kit.put_text(box, "○  " + text, tx, h - 2, w - tx, 13, 400, height=None) + 4
             if t.get("more_notes"):
-                self._label(box, f"+{t['more_notes']} more", 0, h, w, size=12, weight=400)
+                self._label(box, f"+{t['more_notes']} more", tx, h, w - tx, size=12, weight=400)
                 h += 20
             h += 6
         box.setFrame_(NSMakeRect(x, y, w, h))
@@ -294,10 +353,11 @@ class MainWindow:
 
     def _rows_of_projects(self, doc, rows, x, y, w):
         for r in rows:
-            tap = self._tap(doc, x, y, w, 46, (lambda p=r["id"]: self.press("go", p)), fill=True)
-            kit.put_text(tap, r["name"], 14, 6, w - 28, 14, 600, wrap=False, height=20)
-            kit.put_text(tap, r["line"], 14, 25, w - 28, 12, 400, kit.mute(), wrap=False, height=16)
-            y += 54
+            tap = self._tap(doc, x, y, w, 56, (lambda p=r["id"]: self.press("go", p)), fill=True)
+            self._project_icon(tap, r["hue"], 12, 12, 32)
+            kit.put_text(tap, r["name"], 56, 9, w - 70, 14, 600, wrap=False, height=20)
+            kit.put_text(tap, r["line"], 56, 30, w - 70, 12, 400, kit.mute(), wrap=False, height=16)
+            y += 64
         return y
 
     def _home(self, doc, page, x, y, w):
@@ -324,7 +384,8 @@ class MainWindow:
         for t in page["things"]:
             y = self._card(doc, t, x, y, w)
         if not page["things"]:
-            y = self._empty(doc, {"title": "All caught up", "line": "No open notes anywhere."}, x, y, w)
+            y = self._empty(doc, {"title": "All caught up", "line": "No open notes anywhere."}, x, y, w,
+                                 symbol=("checkmark.circle.fill", "checkmark.circle"))
         return y
 
     def _project(self, doc, page, x, y, w):
@@ -374,15 +435,17 @@ class MainWindow:
 
     def _search(self, doc, page, x, y, w):
         if page["none"]:
-            return self._empty(doc, {"title": "Nothing matches", "line": "Try part of a name, a note or a project."}, x, y, w)
+            return self._empty(doc, {"title": "Nothing matches", "line": "Try part of a name, a note or a project."}, x, y, w,
+                                symbol=("magnifyingglass",))
         if page["projects"]:
             y = self._section(doc, "Projects", x, y, w)
             y = self._rows_of_projects(doc, [{"id": p["id"], "name": p["name"], "line": p["path"]} for p in page["projects"]], x, y, w)
         if page["notes"]:
             y = self._section(doc, "Notes", x, y + 8, w)
             for n in page["notes"]:
-                kit.put_text(doc, "○  " + n["text"], x, y, w, 14, 500, wrap=False, height=20)
-                kit.put_text(doc, n["thing"], x + 22, y + 20, w - 22, 12, 400, kit.mute(), wrap=False, height=16)
+                kit.tile(doc, ("note.text", "doc.text.fill"), kit.mute(), x, y, 30)
+                kit.put_text(doc, n["text"], x + 42, y, w - 42, 14, 500, wrap=False, height=20)
+                kit.put_text(doc, n["thing"], x + 42, y + 18, w - 42, 12, 400, kit.mute(), wrap=False, height=16)
                 y += 46
         if page["things"]:
             y = self._section(doc, "Things", x, y + 8, w)

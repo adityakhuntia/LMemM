@@ -88,6 +88,14 @@ def title_of(item):
     return item.get("title") or item.get("doing") or item.get("app") or "Untitled"
 
 
+HUES = 8                              # the window has eight calm colours (never red: red is for a permission that is off)
+
+
+def hue(pid):
+    """A project's colour, 0 to 7. Stable: the same project always has the same one."""
+    return sum(ord(c) * (i + 1) for i, c in enumerate(str(pid))) % HUES
+
+
 def plural(n, one, many=None):
     return f"{n:,} {one if n == 1 else many or one + 's'}"
 
@@ -166,6 +174,11 @@ def _thing(reg, item, now, here=None, with_notes=False):
     return row
 
 
+def _subs(reg, pid):
+    """How many sub-projects a project has directly (archived ones do not count)."""
+    return sum(1 for k in projects.children(reg, pid) if not reg["projects"][k]["archived"])
+
+
 def _by_recent(things):
     return sorted(things, key=lambda i: i.get("last_seen", ""), reverse=True)
 
@@ -174,8 +187,10 @@ def needs_you(items):
     return _by_recent(i for i in items.values() if notes.open_notes(i))
 
 
-def _count_line(c):
+def _count_line(c, subs=0):
     parts = [plural(c["things"], "thing")]
+    if subs:
+        parts.append(plural(subs, "sub-project"))
     if c["open"]:
         parts.append(f"{c['open']} open")
     return " · ".join(parts)
@@ -200,7 +215,7 @@ def tree_rows(reg, state, counts):
         limit = state["lim"].get(parent or "top", SIDE_LIMIT)
         for pid in kids[:limit]:
             has = any(not reg["projects"][k]["archived"] for k in projects.children(reg, pid))
-            row = {"id": pid, "name": reg["projects"][pid]["name"], "level": level, "expandable": has,
+            row = {"id": pid, "name": reg["projects"][pid]["name"], "hue": hue(pid), "level": level, "expandable": has,
                    "expanded": has and pid in openset, "selected": state["view"] == "project" and state["pid"] == pid,
                    "count": counts[pid]["things"], "open": counts[pid]["open"]}
             out.append(row)
@@ -242,7 +257,8 @@ def main(reg, items, state, counts, now):
 def home(reg, items, counts, now):
     top = [p for p in projects.children(reg) if not reg["projects"][p]["archived"]]
     needs = needs_you(items)
-    cards = [{"id": p, "name": reg["projects"][p]["name"], "line": _count_line(counts[p])} for p in top]
+    cards = [{"id": p, "name": reg["projects"][p]["name"], "hue": hue(p), "line": _count_line(counts[p], _subs(reg, p))}
+             for p in top]
     if not top and not items:
         empty = {"title": "Nothing here yet", "line": "LMemM is learning what you work on. Things appear here by themselves."}
     elif not top:
@@ -262,7 +278,7 @@ def project_page(reg, items, state, counts, now):
     everything = projects.members(reg, items, pid, deep=True)
     here = projects.members(reg, items, pid, deep=deep)
     pick = [i for i in everything if notes.open_notes(i)][:PICK_UP]
-    page = {"kind": "project", "pid": pid, "title": reg["projects"][pid]["name"], "crumbs": crumbs(reg, pid),
+    page = {"kind": "project", "pid": pid, "hue": hue(pid), "title": reg["projects"][pid]["name"], "crumbs": crumbs(reg, pid),
             "meta": " · ".join(([plural(len(kids), "sub-project")] if kids else []) + [_count_line(c)])}
     if not everything and not kids:
         page["empty"] = {"title": "Nothing here yet",
@@ -273,7 +289,7 @@ def project_page(reg, items, state, counts, now):
         last = everything[0] if everything else None
         page["caught_up"] = {"title": "All caught up", "line": "No open notes in this project." + (
             f" Last worked on: {title_of(last)}, {ago(last.get('last_seen'), now).lower()}." if last else "")}
-    page["subs"] = [{"id": k, "name": reg["projects"][k]["name"], "line": _count_line(counts[k])}
+    page["subs"] = [{"id": k, "name": reg["projects"][k]["name"], "hue": hue(k), "line": _count_line(counts[k], _subs(reg, k))}
                     for k in kids[:state["subs"]]]
     page["subs_more"] = max(0, len(kids) - state["subs"])
     apps = {}
@@ -308,7 +324,7 @@ def search(reg, items, q, now):
     lim = SEARCH_LIMITS
     return {"kind": "search", "title": f"Results for “{q}”", "back": True,
             "meta": f"{plural(len(found_projects), 'project')} · {plural(len(things), 'thing')} · {plural(len(hits), 'note')}",
-            "projects": [{"id": p, "name": reg["projects"][p]["name"], "path": " › ".join(projects.path_names(reg, p))}
+            "projects": [{"id": p, "name": reg["projects"][p]["name"], "hue": hue(p), "path": " › ".join(projects.path_names(reg, p))}
                          for p in found_projects[:lim["projects"]]],
             "notes": [{"text": n["text"], "thing": title_of(i), "id": i["id"]} for i, n in hits[:lim["notes"]]],
             "things": [_thing(reg, i, now) for i in things[:lim["things"]]],

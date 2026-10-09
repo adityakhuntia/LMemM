@@ -390,6 +390,32 @@ class _KitTile(_Flipped):
         NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(self.bounds(), 10, 10).fill()
 
 
+class _KitColorTile(_Flipped):
+    """A soft rounded square in one colour with an SF Symbol in it: a project's icon."""
+
+    def initWithColor_symbol_size_(self, color, symbol, size):
+        self = objc.super(_KitColorTile, self).initWithFrame_(NSMakeRect(0, 0, size, size))
+        self.color = color
+        self.size = size
+        holder = icon(first_symbol(symbol if isinstance(symbol, (list, tuple)) else [symbol]),
+                      size * 0.52, color, (size * 0.24, size * 0.24, size * 0.52, size * 0.52))
+        if holder is not None:
+            self.addSubview_(holder)
+        return self
+
+    def drawRect_(self, rect):
+        self.color.colorWithAlphaComponent_(0.16).setFill()
+        NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(self.bounds(), self.size * 0.28, self.size * 0.28).fill()
+
+
+def tile(parent, symbol, color, x, y, size=28):
+    """A coloured icon square at (x, y). `symbol` is an SF Symbol name or a list to try in order."""
+    view = _KitColorTile.alloc().initWithColor_symbol_size_(color, symbol, size)
+    view.setFrame_(NSMakeRect(x, y, size, size))
+    parent.addSubview_(view)
+    return view
+
+
 class _KitCanvas(_Flipped):
     """A view that paints the card's colour (the app picker covers the screen with one)."""
 

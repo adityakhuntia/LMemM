@@ -135,6 +135,8 @@ class Tracker:
         self.widget = None                   # the on-screen pill (widget.py), made in run()
         self.menubar = None                  # the menu-bar item (menubar.py), made in run()
         self.menu_refreshed = 0.0
+        self.menu_reported = False
+        self.started_at = time.time()
         self.quit_requested = False          # "Quit LMemM" in the menu: ends the main loop
         self.after_exit = None               # what to do once stopped: "restart", "setup" or "delete" (hand_over)
         self.screen_restart, self.restart_checked = False, 0.0   # screen access is on for a new run, not this one
@@ -364,6 +366,9 @@ class Tracker:
             self.widget.refresh()
         if self.menubar and time.time() - self.menu_refreshed >= 1:
             self.menu_refreshed = time.time()
+            if not self.menu_reported and time.time() - self.started_at > 4:
+                self.menu_reported = True               # after the run loop has laid the bar out
+                say(f"Menu-bar item, 4s later: {self.menubar.where()}")
             self.menubar.update(menu_model.view(self.widget_status(), self.watch_apps, hotkey=dictation.HOTKEY_LABEL))
         if self.widget:
             self.widget.pulse(self.widget_heard())      # waveform + words while the note window is open

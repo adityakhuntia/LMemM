@@ -74,3 +74,8 @@ Rules A1-A6 are in `src/project_actions.py` (tests in `tests/test_project_action
 - **Every change says what it did and offers Undo for 8 seconds** ("Merged “Q3 plan” into “Work” · 12 things · Undo").
   Undo puts the tree and each thing's project back; a thing you filed elsewhere since stays where you put it.
 - **Deleting a project never deletes remembered things:** they stay, without a project. Forgetting things is not offered here.
+
+### Step 7 follow-up: typing and the Archived folder
+
+- The name field was added to the overlay before the dimmed backdrop and card, so both covered it and clicks never reached it. It is now moved above them every time a dialog is drawn.
+- Archiving no longer makes a project vanish. The tree ends with an **Archived** folder (count beside it). Opening it lists the archived projects with Bring back; each can be opened, read, and brought back from its own page. The separate "Archived · n" link under the tree is gone.

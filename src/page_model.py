@@ -38,6 +38,7 @@ import notes
 import projects
 import store
 
+ARCHIVE_ID = "archived"            # the tree's folder of archived projects (not a real project id: those are p1, p2...)
 SIDE_LIMIT = 8                        # rows per level in the sidebar before "Show more"
 PICK_UP = 3
 NOTES_SHOWN = 3
@@ -163,6 +164,8 @@ def press(reg, state, action, arg=None, items=None):
         s.update(view="needs", pid=None, q="")
     elif action == "archived":
         s.update(view="archived", pid=None, q="")
+        if ARCHIVE_ID not in s["open"]:
+            s["open"].append(ARCHIVE_ID)
     elif action == "search":
         q = (arg or "").strip()
         if q:
@@ -260,6 +263,20 @@ def tree_rows(reg, state, counts):
                         "name": f"Show {min(left, SIDE_LIMIT)} more of {left}"})
 
     walk(None, 0)
+    roots = archived_roots(reg)
+    if roots:                                                  # archived projects live in a folder at the end of the tree
+        expanded = ARCHIVE_ID in openset
+        out.append({"id": ARCHIVE_ID, "name": "Archived", "level": 0, "expandable": True, "expanded": expanded,
+                    "selected": state["view"] == "archived", "count": len(roots), "open": 0, "folder": True})
+        if expanded:
+            for pid in roots[:state["lim"].get(ARCHIVE_ID, SIDE_LIMIT)]:
+                out.append({"id": pid, "name": reg["projects"][pid]["name"], "hue": hue(pid), "level": 1,
+                            "expandable": False, "expanded": False, "archived": True,
+                            "selected": state["view"] == "project" and state["pid"] == pid,
+                            "count": counts[pid]["things"], "open": counts[pid]["open"]})
+            if len(roots) > state["lim"].get(ARCHIVE_ID, SIDE_LIMIT):
+                left = len(roots) - state["lim"].get(ARCHIVE_ID, SIDE_LIMIT)
+                out.append({"id": None, "more": ARCHIVE_ID, "level": 1, "name": f"Show {min(left, SIDE_LIMIT)} more of {left}"})
     return out
 
 
@@ -291,7 +308,7 @@ def main(reg, items, state, counts, now, fading=()):
         rows = [_thing(reg, i, now, with_notes=True) for i in needs_you(items)]
         return {"kind": "needs", "title": "Needs you", "meta": plural(len(rows), "thing") + " with open notes",
                 "things": rows, "back": True}
-    if view == "project" and _live(reg, state["pid"]):
+    if view == "project" and projects.exists(reg, state["pid"]):
         return project_page(reg, items, state, counts, now)
     return home(reg, items, counts, now)
 
@@ -320,7 +337,7 @@ def project_page(reg, items, state, counts, now):
     everything = projects.members(reg, items, pid, deep=True)
     here = projects.members(reg, items, pid, deep=deep)
     pick = [i for i in everything if notes.open_notes(i)][:PICK_UP]
-    page = {"kind": "project", "pid": pid, "hue": hue(pid), "title": reg["projects"][pid]["name"], "crumbs": crumbs(reg, pid),
+    page = {"kind": "project", "pid": pid, "hue": hue(pid), "archived": projects.hidden(reg, pid), "title": reg["projects"][pid]["name"], "crumbs": crumbs(reg, pid),
             "meta": " · ".join(([plural(len(kids), "sub-project")] if kids else []) + [_count_line(c)])}
     if not everything and not kids:
         page["empty"] = {"title": "Nothing here yet",

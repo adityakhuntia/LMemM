@@ -491,6 +491,9 @@ class MainWindow:
             action = lambda: self.project_action(d["action"], pid=d["pid"], target=d["target"])
             y = self._dialog_buttons(card, cw, y, "Cancel", plan["button"], action if plan["button"] else None)
         card.setFrame_(NSMakeRect(cx, cy, cw, y + 22))
+        if not self.dlg_field.isHidden():                          # the field was added first: bring it above the backdrop and card
+            self.dlg_field.removeFromSuperview()
+            self.overlay.addSubview_(self.dlg_field)
         if focus:
             self.window.makeFirstResponder_(self.dlg_field)
 
@@ -601,13 +604,18 @@ class MainWindow:
                 self._link(doc, row["name"], x + 18, y, (lambda m=more: self.press("more_side", m)), size=12)
                 y += 26
                 continue
-            tap = self._tap(doc, 8, y, SIDE_W - 16, 28, (lambda r=row: self.press("go", r["id"])), fill=row["selected"])
+            call = (lambda: self.press("archived")) if row.get("folder") else (lambda r=row: self.press("go", r["id"]))
+            tap = self._tap(doc, 8, y, SIDE_W - 16, 28, call, fill=row["selected"])
             if row["expandable"]:
                 caret = self._tap(tap, x - 8, 0, 22, 28, (lambda r=row: self.press("toggle", r["id"])))
                 kit.put_text(caret, "▾" if row["expanded"] else "▸", 0, 0, 22, 11, 600, kit.mute(), align=kit.CENTER,
                              wrap=False, height=28, middle=True)
-            self._project_icon(tap, row["hue"], x + 16, 4, 20)
-            kit.put_text(tap, row["name"], x + 42, 0, SIDE_W - 16 - x - 42 - 40, 13, 500, wrap=False, height=28, middle=True)
+            if row.get("folder"):
+                kit.tile(tap, ("archivebox.fill", "tray.fill"), kit.mute(), x + 16, 4, 20)
+            else:
+                self._project_icon(tap, row["hue"], x + 16, 4, 20)
+            kit.put_text(tap, row["name"], x + 42, 0, SIDE_W - 16 - x - 42 - 40, 13, 500,
+                         kit.mute() if row.get("archived") else None, wrap=False, height=28, middle=True)
             if row["count"]:
                 kit.put_text(tap, str(row["count"]), SIDE_W - 16 - 38, 0, 30, 12, 400, kit.mute(), align=RIGHT,
                              wrap=False, height=28, middle=True)
@@ -755,22 +763,19 @@ class MainWindow:
                    kind="quiet", size=13, weight=600)
 
     def _side_foot(self, side):
-        """Pinned under the tree: make a project, and the way to the archived ones."""
+        """Pinned under the tree: make a project."""
         for sub in list(self.side_foot.subviews()):
             sub.removeFromSuperview()
         self.side_foot.setFrame_(NSMakeRect(0, H - 48, SIDE_W, 48))
         tap = self._tap(self.side_foot, 8, 8, SIDE_W - 16, 34, lambda: self.open_name("new"))
         kit.tile(tap, ("plus.circle.fill", "plus"), kit.ink(), 6, 5, 24)
         kit.put_text(tap, "New project", 40, 0, 110, 13, 500, wrap=False, height=34, middle=True)
-        if side["archived"]:
-            width = kit.text_width(f"Archived · {side['archived']}", 12, 500) + 12
-            self._link(self.side_foot, f"Archived · {side['archived']}", SIDE_W - 8 - width, 15, lambda: self.press("archived"), size=12)
 
     def _archived(self, doc, page, x, y, w):
         if page["empty"]:
             return self._empty(doc, page["empty"], x, y, w, symbol=("archivebox.fill", "tray.fill"))
         for r in page["rows"]:
-            tap = self._tap(doc, x, y, w, 56, lambda: None, fill=True)
+            tap = self._tap(doc, x, y, w, 56, (lambda i=r["id"]: self.press("go", i)), fill=True)
             self._project_icon(tap, r["hue"], 12, 12, 32)
             kit.put_text(tap, r["name"], 56, 9, w - 56 - 110, 14, 600, wrap=False, height=20)
             kit.put_text(tap, (r["where"] + " · " if r["where"] else "") + r["line"], 56, 30, w - 56 - 110, 12, 400, kit.mute(), wrap=False, height=16)
@@ -794,7 +799,11 @@ class MainWindow:
         x, w = PAD, MAIN_W
         y = self._crumbs(host, page["crumbs"], x, 26)
         self._project_icon(host, page["hue"], x, y - 2, 40)
-        self._project_actions(host, x + w, y - 4, page["pid"])
+        if page["archived"]:
+            kit.button(host, "Bring back", x + w - 110, y - 4, 110, 32, lambda: self.project_action("restore", pid=page["pid"]),
+                       kind="outline", size=13, weight=600)
+        else:
+            self._project_actions(host, x + w, y - 4, page["pid"])
         kit.put_text(host, page["title"], x + 54, y, w - 54 - 170, 26, 700, wrap=False, height=32)
         self._label(host, page["meta"], x + 54, y + 33, w - 54, size=13, weight=400)
         y += 62

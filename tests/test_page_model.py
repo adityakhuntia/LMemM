@@ -105,7 +105,7 @@ class TreeTests(unittest.TestCase):
         reg, items, ids = world()
         projects.archive(reg, ids["q3"])
         state = pm.press(reg, pm.new_state(), "toggle", ids["work"])
-        self.assertEqual([r["name"] for r in pm.view(reg, items, state, NOW)["side"]["tree"]], ["Work", "Home"])
+        self.assertEqual([r["name"] for r in pm.view(reg, items, state, NOW)["side"]["tree"]], ["Work", "Home", "Archived"])
 
     def test_each_level_pages_itself_and_nothing_is_dropped(self):
         reg = projects.empty()
@@ -390,6 +390,26 @@ class ArchivedTests(unittest.TestCase):
         again = pm.view(reg, items, pm.press(reg, pm.new_state(), "archived"), NOW)
         self.assertEqual(again["side"]["archived"], 1)                         # Budget was archived on its own
         self.assertEqual(again["main"]["rows"][0]["name"], "Budget")
+
+    def test_the_tree_keeps_an_archived_folder_that_opens_to_the_projects(self):
+        reg, items, ids = world()
+        self.assertFalse([r for r in pm.view(reg, items, pm.new_state(), NOW)["side"]["tree"] if r.get("folder")])
+        projects.archive(reg, ids["q3"])
+        closed = pm.view(reg, items, pm.new_state(), NOW)["side"]["tree"]
+        self.assertEqual([(r["name"], r["expanded"], r["count"]) for r in closed if r.get("folder")], [("Archived", False, 1)])
+        state = pm.press(reg, pm.new_state(), "archived")                      # opening the folder also expands it
+        tree = pm.view(reg, items, state, NOW)["side"]["tree"]
+        folder = [r for r in tree if r.get("folder")][0]
+        self.assertEqual((folder["expanded"], folder["selected"]), (True, True))
+        self.assertEqual([r["name"] for r in tree if r.get("archived")], ["Q3 plan"])
+
+    def test_an_archived_project_opens_and_says_it_is_archived(self):
+        reg, items, ids = world()
+        projects.archive(reg, ids["q3"])
+        page = pm.view(reg, items, pm.press(reg, pm.new_state(), "go", ids["q3"]), NOW)["main"]
+        self.assertEqual((page["kind"], page["title"], page["archived"]), ("project", "Q3 plan", True))
+        live = pm.view(reg, items, pm.press(reg, pm.new_state(), "go", ids["work"]), NOW)["main"]
+        self.assertFalse(live["archived"])
 
     def test_nothing_archived_says_so(self):
         reg, items, ids = world()

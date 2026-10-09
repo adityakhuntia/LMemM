@@ -376,6 +376,27 @@ class NotesInTheWindowTests(unittest.TestCase):
         self.assertIn("main_window.tick()", ast.unparse(fns["tick"]))
 
 
+class ArchivedTests(unittest.TestCase):
+    def test_archived_projects_wait_on_their_own_page_and_come_back_whole(self):
+        reg, items, ids = world()
+        projects.archive(reg, ids["q3"])
+        projects.archive(reg, ids["budget"])                                   # already hidden by Q3 plan
+        v = pm.view(reg, items, pm.press(reg, pm.new_state(), "archived"), NOW)
+        self.assertEqual(v["side"]["archived"], 1)                             # one thing to bring back, not two
+        page = v["main"]
+        self.assertEqual((page["kind"], [(r["name"], r["where"]) for r in page["rows"]]), ("archived", [("Q3 plan", "Work")]))
+        self.assertIsNone(page["empty"])
+        projects.restore(reg, ids["q3"])
+        again = pm.view(reg, items, pm.press(reg, pm.new_state(), "archived"), NOW)
+        self.assertEqual(again["side"]["archived"], 1)                         # Budget was archived on its own
+        self.assertEqual(again["main"]["rows"][0]["name"], "Budget")
+
+    def test_nothing_archived_says_so(self):
+        reg, items, ids = world()
+        page = pm.view(reg, items, pm.press(reg, pm.new_state(), "archived"), NOW)["main"]
+        self.assertEqual(page["empty"]["title"], "Nothing archived")
+
+
 class SearchTests(unittest.TestCase):
     def results(self, q):
         reg, items, ids = world()

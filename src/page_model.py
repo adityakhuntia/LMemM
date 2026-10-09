@@ -161,6 +161,8 @@ def press(reg, state, action, arg=None, items=None):
         s["lim"][key] = s["lim"].get(key, SIDE_LIMIT) + SIDE_LIMIT
     elif action == "needs":
         s.update(view="needs", pid=None, q="")
+    elif action == "archived":
+        s.update(view="archived", pid=None, q="")
     elif action == "search":
         q = (arg or "").strip()
         if q:
@@ -207,6 +209,13 @@ def _by_recent(things):
     return sorted(things, key=lambda i: i.get("last_seen", ""), reverse=True)
 
 
+def archived_roots(reg):
+    """The archived projects you archived yourself: not the ones that are only hidden because
+    something above them is archived. Bringing one back brings everything inside it back."""
+    return [p for p, row in reg["projects"].items()
+            if row["archived"] and not any(reg["projects"][a]["archived"] for a in projects.ancestors(reg, p))]
+
+
 def needs_you(items):
     return _by_recent(i for i in items.values() if notes.open_notes(i))
 
@@ -226,7 +235,7 @@ def side(reg, items, state, counts, now):
     needs = needs_you(items)
     return {"needs": {"count": len(needs), "rows": [_thing(reg, i, now) for i in needs[:NEEDS_SIDE]]},
             "tree": tree_rows(reg, state, counts),
-            "unplaced": len(projects.unassigned(items))}
+            "unplaced": len(projects.unassigned(items)), "archived": len(archived_roots(reg))}
 
 
 def tree_rows(reg, state, counts):
@@ -271,6 +280,13 @@ def main(reg, items, state, counts, now, fading=()):
         return thing_page(reg, items[state["tid"]], now, state.get("ex_open", ()), fading)
     if view == "search":
         return search(reg, items, state["q"], now)
+    if view == "archived":
+        rows = [{"id": p, "name": reg["projects"][p]["name"], "hue": hue(p),
+                 "line": _count_line(counts[p], _subs(reg, p)),
+                 "where": " › ".join(projects.path_names(reg, p)[:-1])} for p in archived_roots(reg)]
+        return {"kind": "archived", "title": "Archived", "back": True,
+                "meta": "Hidden from the tree, Pick up and search. Nothing is deleted.", "rows": rows,
+                "empty": None if rows else {"title": "Nothing archived", "line": "Projects you archive wait here until you bring them back."}}
     if view == "needs":
         rows = [_thing(reg, i, now, with_notes=True) for i in needs_you(items)]
         return {"kind": "needs", "title": "Needs you", "meta": plural(len(rows), "thing") + " with open notes",

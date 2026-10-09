@@ -62,3 +62,15 @@ the bar under the page and press Return to add a note. Ticking follows the pill'
 note stays crossed out for 1.2 s, then moves to Finished; "Marked done · Undo" shows for 6 s and Undo reverts the batch.
 The window and the pill read and write the same notes (`notes.set_done`, `notes.record`), so a tick in either shows in
 both within a second. Not yet: ticking from the Pick up cards or the Needs you list (open the thing first).
+
+# Step 7: changing projects from the window
+
+Rules A1-A6 are in `src/project_actions.py` (tests in `tests/test_project_actions.py`).
+
+- **Make:** "New project" at the foot of the sidebar and on All projects; "+ Sub-project" on a project.
+- **The ⋯ menu on a project:** Rename, Move to… (a search over places it can go, plus the top level), Merge into…, Archive,
+  Delete…. Archived projects wait under "Archived · n" at the foot of the sidebar, each with Bring back.
+- **Only Merge and Delete ask**, and they say how many things and sub-projects move. Everything else happens at once.
+- **Every change says what it did and offers Undo for 8 seconds** ("Merged “Q3 plan” into “Work” · 12 things · Undo").
+  Undo puts the tree and each thing's project back; a thing you filed elsewhere since stays where you put it.
+- **Deleting a project never deletes remembered things:** they stay, without a project. Forgetting things is not offered here.

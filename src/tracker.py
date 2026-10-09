@@ -624,10 +624,18 @@ class Tracker:
 
     def menu_pick(self, row):
         """A row of the menu-bar item was clicked (menu_model.view lists the ids)."""
-        if row == "quit":
+        kind = menu_model.pause_kind(row)
+        if kind:
+            self.widget_pause(kind)                     # the same Pause as the pill's (R9)
+        elif row == "resume":
+            self.widget_resume()
+        elif row == "quit":
             self.quit_requested = True
-            if self.nsapp is not None:
-                macos.wake(self.nsapp)                  # leave the loop now, not at the next 0.25 s boundary
+        else:
+            return
+        self.menu_refreshed = 0.0                       # show the new state at the next tick
+        if self.nsapp is not None:
+            macos.wake(self.nsapp)                      # act now, not at the next 0.25 s boundary
 
     def widget_pause(self, kind):
         """The pill's Pause row: kind is one of rules.PAUSE_CHOICES."""

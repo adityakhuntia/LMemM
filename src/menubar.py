@@ -10,7 +10,7 @@ import objc
 from Foundation import NSObject
 from AppKit import (NSAttributedString, NSBezierPath, NSColor, NSFont, NSFontAttributeName,
                     NSForegroundColorAttributeName, NSImage, NSMakeRect, NSMakeSize, NSMenu, NSMenuItem,
-                    NSStatusBar)
+                    NSMutableAttributedString, NSStatusBar)
 
 import menu_model
 
@@ -56,6 +56,33 @@ def _draw_icon(spec):
     return image
 
 
+def _row_item(row, target):
+    """One clickable row. A row with "children" opens a submenu; "detail" is the quiet second
+    half of a title ("1 hour  Back on at 4:00 PM")."""
+    title = row["title"]
+    item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+        title, None if row.get("children") else "picked:", row.get("key", ""))
+    if row.get("detail"):
+        quiet = NSAttributedString.alloc().initWithString_attributes_(
+            "   " + row["detail"], {NSFontAttributeName: NSFont.systemFontOfSize_(12),
+                                    NSForegroundColorAttributeName: NSColor.secondaryLabelColor()})
+        text = NSMutableAttributedString.alloc().initWithString_attributes_(
+            title, {NSFontAttributeName: NSFont.systemFontOfSize_(13)})
+        text.appendAttributedString_(quiet)
+        item.setAttributedTitle_(text)
+    if row.get("children"):
+        sub = NSMenu.alloc().init()
+        sub.setAutoenablesItems_(False)
+        for child in row["children"]:
+            sub.addItem_(_row_item(child, target))
+        item.setSubmenu_(sub)
+    else:
+        item.setTarget_(target)
+        item.setRepresentedObject_(row["id"])
+        item.setEnabled_(row.get("enabled", True))
+    return item
+
+
 def _title_item(text, bold, dot=None):
     item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(text, None, "")
     font = NSFont.boldSystemFontOfSize_(13) if bold else NSFont.systemFontOfSize_(12)
@@ -94,11 +121,7 @@ class MenuBar:
             if row["id"] == "-":
                 menu.addItem_(NSMenuItem.separatorItem())
                 continue
-            entry = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(row["title"], "picked:", row.get("key", ""))
-            entry.setTarget_(self.target)
-            entry.setRepresentedObject_(row["id"])
-            entry.setEnabled_(row.get("enabled", True))
-            menu.addItem_(entry)
+            menu.addItem_(_row_item(row, self.target))
         self.item.setMenu_(menu)
 
     def remove(self):

@@ -616,13 +616,17 @@ class Tracker:
         if self.screen_ok:
             self.screen_restart = False
         elif time.time() - self.restart_checked > 15:           # on in System Settings, but only for a new run?
-            self.screen_restart, self.restart_checked = permissions.screen_allowed_fresh(), time.time()
+            self.restart_checked = time.time()
+            threading.Thread(target=self.check_restart, daemon=True).start()   # a child process: never on the UI thread
         now = datetime.now()
         end = datetime.fromtimestamp(self.pause_until) if self.pause_until else None
         return {"screen": self.screen_ok, "restart": self.screen_restart, "mic_off": dictation.mic_off(),
                 "private": self.skip_kind == "private" and self.skipped_place == self.front_sig(),
                 "unwatched": self.skip_kind == "unwatched" and self.skipped_place == self.front_sig(),
                 "paused": kind, "pause_view": rules.paused_view(kind, end, now) if kind else None}
+
+    def check_restart(self):
+        self.screen_restart = permissions.screen_allowed_fresh()
 
     def menu_pick(self, row):
         """A row of the menu-bar item was clicked (menu_model.view lists the ids)."""
@@ -1256,7 +1260,12 @@ class Tracker:
                                         on_decline=self.widget_decline, picker=self.widget_picker,
                                         on_unfile=self.widget_unfile, busy=lambda: self.panel.open, status=self.widget_status,
                                         on_pause=self.widget_pause, on_resume=self.widget_resume)
-            self.menubar = menubar.MenuBar(self.menu_pick)
+            try:
+                self.menubar = menubar.MenuBar(self.menu_pick)
+                say(f"Menu-bar item: {self.menubar.where()}")
+            except Exception as e:                      # the pill still works; say why the menu is missing
+                self.menubar = None
+                say(f"Menu-bar item could not be made: {e!r}")
         if self.input_monitor:
             self.input_monitor.start(request_permission=True)
             say(f"Input monitoring: {self.input_monitor.status()['state']} · allowed app: VS Code · no key values recorded")

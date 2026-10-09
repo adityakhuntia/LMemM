@@ -128,6 +128,12 @@ follows light/dark, and shows over every app, Space and full-screen window.
 - Notes waiting on the thing you're on: it shows a number. Hover to see the first one.
 - While you dictate a note (⌃⌥N): the note card shows the waveform and the words; the pill stays quiet.
 - Right after a note is saved: a check and "Saved to <thing>".
+- Something wrong, as a mark on the pill (hover for its name; click for the card): a slashed eye,
+  **Screen access is off** (red; the card opens System Settings); a lock, **Private window**
+  (nothing is remembered from there); a slashed microphone, **Mic is off** (red; shown when
+  there are no notes to count).
+- Nothing to show, on hover or with the card open: a pencil, **No notes yet**; a check,
+  **All caught up** (with "Show done"); a folder, **Start a project**, when you have none yet.
 
 Click it for a small card about what you're on. It lists that thing's open notes: click
 one to tick it off (it fades out). "Add a note…" opens the dictation window. If the

@@ -81,6 +81,15 @@ class ProjectTests(unittest.TestCase):
         self.assertIsNone(notes.suggestion_view({"name": "X", "ids": ["a", "gone"]}, self.items))
 
 
+class PickerTests(unittest.TestCase):
+    def test_total_counts_projects_not_the_filtered_rows(self):
+        items = {"a": item("a", "Q3 plan")}
+        self.assertEqual(notes.picker_view(items, "a", "zzz")["total"], 0)
+        notes.set_project(items, ["a"], "Pricing")
+        view = notes.picker_view(items, "a", "zzz")
+        self.assertEqual((view["total"], view["rows"]), (1, []))
+
+
 class NoteTargetTests(unittest.TestCase):
     def test_a_filed_thing_shows_its_project(self):
         data = {"title": "Q3 plan", "filed": "Pricing"}

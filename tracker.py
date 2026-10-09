@@ -99,6 +99,8 @@ class Tracker:
         self.pin = False
         self.note_request = False
         self.waiting = []                    # saved notes whose screen is still being read
+        self.skipped_place = None            # (app, window) of the last window we chose not to read
+        self.screen_ok, self.screen_checked = True, 0.0
         self.cur_place = None                # (app, window) of the newest timeline event
         self.pill_place = None               # (app, window) the pill last refreshed for
         self.paused = None                   # automatic pause reason (idle, locked, ...)
@@ -458,6 +460,7 @@ class Tracker:
                 else "private window" if private or config.SKIP_TITLES.search(title or "")
                 else "sensitive site" if url and config.SKIP_SITES.search(url)
                 else None)
+        self.skipped_place = (f["app"], f["window"]) if skip else None     # the pill wears a lock here
         if skip:
             self.close_interval()
             self.stats["skipped"] += 1
@@ -478,6 +481,7 @@ class Tracker:
         capture_end_ns = time.monotonic_ns()
         if shot is None:
             say("  ! screenshot failed (Screen Recording permission?)")
+            self.screen_ok, self.screen_checked = False, time.time()
             return None
         after = macos.front()
         if after and (after["pid"], after["win_id"]) != (f["pid"], f["win_id"]):
@@ -563,6 +567,13 @@ class Tracker:
         self.last_widget_refresh = 0.0
 
     # ------------------------------------------------------------ the on-screen pill
+
+    def widget_status(self):
+        """What is wrong right now, for the pill's marks: screen access, a private window, the mic."""
+        if time.time() - self.screen_checked > 5:
+            self.screen_ok, self.screen_checked = macos.screen_recording_allowed(request=False), time.time()
+        return {"screen": self.screen_ok, "mic_off": dictation.mic_off(),
+                "private": self.skipped_place is not None and self.skipped_place == self.front_sig()}
 
     def front_sig(self):
         """Where you are right now (app, window), read live so the pill never trails a switch."""
@@ -1115,7 +1126,7 @@ class Tracker:
                                         heard=self.widget_heard, hotkey=dictation.HOTKEY_LABEL,
                                         suggestion=self.widget_suggestion, on_project=self.widget_project,
                                         on_decline=self.widget_decline, picker=self.widget_picker,
-                                        on_unfile=self.widget_unfile, busy=lambda: self.panel.open)
+                                        on_unfile=self.widget_unfile, busy=lambda: self.panel.open, status=self.widget_status)
         if self.input_monitor:
             self.input_monitor.start(request_permission=True)
             say(f"Input monitoring: {self.input_monitor.status()['state']} · allowed app: VS Code · no key values recorded")

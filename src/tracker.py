@@ -52,6 +52,7 @@ import resolver
 import retention
 import rules
 import store
+import thing_actions
 import understand
 import widget
 from input_events import Aggregator
@@ -1032,6 +1033,20 @@ class Tracker:
             self.suggestion = {"name": name or "Project", "ids": ids, "reason": reason or "Opened together"}
         line(now_hms(), "", f"suggesting project {self.suggestion['name']} ({len(ids)} things)")
 
+    def in_tree(self, change):
+        """Run change(reg) on the project tree and save it, so what the pill does and what the window
+        shows agree (thing_actions T6). Called under the memory lock. Returns what change returned,
+        or None when the tree could not be read."""
+        import projects
+        try:
+            reg = projects.load()
+            result = change(reg)
+            projects.save(reg)
+            return result
+        except ValueError as error:
+            say(str(error))
+            return None
+
     def widget_suggestion(self):
         with self.lock:
             return notes.suggestion_view(self.suggestion, self.items, self.suggest_answers)
@@ -1040,6 +1055,7 @@ class Tracker:
         """Put things in a project: by accepting a suggestion, or from the picker."""
         with self.lock:
             found = notes.set_project(self.items, ids, name)
+            found = self.in_tree(lambda reg: thing_actions.file_by_name(reg, self.items, ids, name)) or found
             if found:
                 self.save(force=True)
             if self.suggestion and set(self.suggestion["ids"]) & set(found):
@@ -1051,6 +1067,7 @@ class Tracker:
         with self.lock:
             if self.suggestion and forever:
                 notes.decline_project(self.items, self.suggestion["ids"], self.suggestion["name"])
+                self.in_tree(lambda reg: thing_actions.decline_by_name(reg, self.items, self.suggestion["ids"], self.suggestion["name"]))
                 self.save(force=True)
             self.suggestion = None
             self.count_answer()
@@ -1061,7 +1078,8 @@ class Tracker:
 
     def widget_unfile(self, item_id):
         with self.lock:
-            found = notes.clear_project(self.items, [item_id])
+            found = self.in_tree(lambda reg: thing_actions.unfile_main(reg, self.items, [item_id])) \
+                or notes.clear_project(self.items, [item_id])
             if found:
                 self.save(force=True)
 
@@ -1319,7 +1337,8 @@ class Tracker:
 
     def extend(self, ev, now, t):
         secs = int(now - ev["_start"])
-        self.items[ev["item"]]["seconds"] += secs - ev["seconds"]
+        if ev["item"] in self.items:                 # a thing you forgot from the window is no longer there to add time to
+            self.items[ev["item"]]["seconds"] += secs - ev["seconds"]
         ev["seconds"], ev["to"] = secs, t
 
     def drop_frame(self, image):
@@ -1505,6 +1524,8 @@ class Tracker:
             + (f"  ·  {plural(len(self.notes), 'note')}" if self.notes else "")
             + (f"  ·  {s['skipped']} skipped (sensitive)" if s["skipped"] else "") + "\n")
         for iid, secs in spent.most_common():
+            if iid not in self.items:                    # forgotten from the window during the session
+                continue
             i = self.items[iid]
             extra = "  ·  ".join(x for x in [f"{visits[iid]} visits" if visits[iid] > 1 else "",
                                              i.get("mostly") or "",

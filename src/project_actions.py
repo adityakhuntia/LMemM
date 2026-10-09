@@ -25,9 +25,10 @@ import copy
 
 import page_model
 import projects
+import thing_actions
 
 FIELDS = ("project", "project_id", "also_in", "not_in")           # what a project change can touch on a thing
-ACTIONS = ("new", "rename", "move", "archive", "restore", "merge", "delete")
+ACTIONS = ("new", "rename", "move", "archive", "restore", "merge", "delete") + thing_actions.ACTIONS
 
 
 # ---------------------------------------------------------------- undo (A1)
@@ -46,8 +47,11 @@ def do(reg, items, action, **args):
     """run(), plus what Undo needs: the state before, and the things' fields right after, so Undo
     only puts back what this action changed and leaves anything filed since."""
     before = snapshot(reg, items)
+    gone = ({i: copy.deepcopy(items[i]) for i in args.get("ids", ()) if i in items}   # Forget removes things: keep them for Undo
+            if action == "forget" else {})
     result = run(reg, items, action, **args)
-    return {**result, "undo": {"before": before, "after": _fields(items)}}
+    gone = {i: item for i, item in gone.items() if i not in items}
+    return {**result, "undo": {"before": before, "after": _fields(items), "gone": gone}}
 
 
 def undo(reg, items, undo):
@@ -55,6 +59,8 @@ def undo(reg, items, undo):
     again since the action (you filed it somewhere) is left as you left it."""
     reg.clear()
     reg.update(copy.deepcopy(undo["before"]["reg"]))
+    for iid, item in undo.get("gone", {}).items():                           # forgotten things come back whole
+        items.setdefault(iid, copy.deepcopy(item))
     for iid, item in items.items():
         now = {k: item[k] for k in FIELDS if k in item}
         if now != undo["after"].get(iid, {}):
@@ -73,9 +79,12 @@ def _name(reg, pid):
     return projects.get(reg, pid)["name"]
 
 
-def run(reg, items, action, pid=None, name=None, parent=None, target=None):
+def run(reg, items, action, pid=None, name=None, parent=None, target=None, ids=(), here=None):
     """Do one action. Returns {"message", "go"}: the sentence for the toast and the project to
-    show next (None: all projects). ValueError says why not, in words (A5)."""
+    show next (None: all projects). ValueError says why not, in words (A5). Actions on things
+    (thing_actions.py) also say "stay": the page does not change."""
+    if action in thing_actions.ACTIONS:
+        return thing_actions.run(reg, items, action, ids, pid, here)
     if action == "new":
         new = projects.create(reg, name, parent)
         return {"message": f"Made “{_name(reg, new)}”" + (f" in “{_name(reg, parent)}”" if parent else ""), "go": new}

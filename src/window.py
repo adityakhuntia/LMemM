@@ -21,6 +21,7 @@ import page_model
 import project_actions
 import rules
 import setup_kit as kit
+import thing_actions
 import window_model
 from setup_kit import LEFT, RIGHT
 from widget import _Fields, _Flipped, _Ring, _Tap
@@ -95,6 +96,7 @@ class MainWindow:
         self.on_project_undo = on_project_undo or (lambda undo: None)
         self.dialog = None                                             # the question or form on screen, if any
         self.done = None                                               # {"message", "undo", "until"}: the last project change
+        self.sel = None                                                # None, or the ids of the things ticked in Select mode
         self.flow = rules.FinishFlow()                                 # hold, fold, Undo: the pill's rules (R10)
         self.flow_sig = None
         self.item_here = None
@@ -179,6 +181,8 @@ class MainWindow:
         reg, items = self.data()
         if action in {"go", "home", "needs"}:
             self.search.setStringValue_("")                        # leaving a search clears its words
+        if action not in {"more", "more_subs", "more_side", "toggle"}:
+            self.sel = None                                        # a selection belongs to the page it was made on
         self.nav = page_model.press(reg, self.nav, action, arg, items)
         self.render()
 
@@ -256,7 +260,7 @@ class MainWindow:
         now = time.time()
         page = page_model.view(reg, items, self.nav, fading=self.flow.holding(now))
         self.flow_sig = self.flow_signature()
-        sig = repr((window_model.signature(self.banner), page, self.flow_sig))
+        sig = repr((window_model.signature(self.banner), page, self.flow_sig, self.sel))
         if sig == self.shown:
             return
         self.shown = sig
@@ -357,6 +361,10 @@ class MainWindow:
             return False
         self.close_dialog()
         self.done = {"message": result["message"], "undo": result["undo"], "until": time.time() + 8}
+        if result.get("stay"):                                     # a change to things: the page stays where it is
+            self.sel = None
+            self.render_now()
+            return True
         self.press("go", result["go"]) if result["go"] else self.press("home")
         self.render_now()
         return True
@@ -401,12 +409,47 @@ class MainWindow:
             self.dialog = {"kind": "ask", "action": action, "pid": pid, "target": target, "error": "", "plan": asking}
         self._dialog()
 
+    def thing_action(self, action, ids, pid=None):
+        """Do something to things (thing_actions.py); the page they are on stays."""
+        return self.project_action(action, ids=list(ids), pid=pid, here=self.nav["pid"])
+
+    def open_thing_menu(self, ids):
+        self.dialog = {"kind": "tmenu", "ids": list(ids)}
+        self._dialog()
+
+    def open_thing_pick(self, action, ids):
+        self.dialog = {"kind": "tpick", "action": action, "ids": list(ids), "query": "", "error": ""}
+        self._dialog(focus=True)
+
+    def open_thing_forget(self, ids):
+        reg, items = self.data()
+        try:
+            asking = thing_actions.plan_forget(items, ids)
+        except ValueError as error:
+            asking = {"title": "That can't be done", "text": str(error), "button": None}
+        self.dialog = {"kind": "task", "ids": list(ids), "plan": asking}
+        self._dialog()
+
+    def start_select(self):
+        self.sel = []
+        self.render_now()
+
+    def stop_select(self):
+        self.sel = None
+        self.render_now()
+
+    def pick_thing(self, tid):
+        if self.sel is None:
+            return
+        self.sel = [i for i in self.sel if i != tid] if tid in self.sel else self.sel + [tid]
+        self.render_now()
+
     def close_dialog(self):
         self.dialog = None
         self._dialog()
 
     def _dialog_typed(self, text):
-        if self.dialog and self.dialog["kind"] == "pick":
+        if self.dialog and self.dialog["kind"] in ("pick", "tpick"):
             self.dialog["query"] = text
             self._dialog()
 
@@ -467,23 +510,46 @@ class MainWindow:
             self._field_at(cx + 24, cy + y, cw - 48, "" if focus else None, "Search projects")
             y += 44
             found = project_actions.targets(reg, d["pid"], d["action"], d["query"])
-            for r in found["rows"][:7]:
-                row = self._tap(card, 12, y, cw - 24, 44, (lambda t=r["id"]: self._picked(t)))
-                if r["id"] is None:
-                    kit.tile(row, ("arrow.up.to.line", "tray.fill"), kit.ink(), 8, 7, 30)
-                else:
-                    self._project_icon(row, page_model.hue(r["id"]), 8, 7, 30)
-                kit.put_text(row, r["name"], 48, 4, cw - 24 - 60, 14, 600, wrap=False, height=20)
-                kit.put_text(row, r["path"], 48, 23, cw - 24 - 60, 12, 400, kit.mute(), wrap=False, height=16)
-                y += 46
-            left = found["more"] + max(0, len(found["rows"]) - 7)
-            if left:
-                kit.put_text(card, f"{left} more. Keep typing to narrow it.", 24, y + 2, cw - 48, 12, 400, kit.mute(), wrap=False, height=18)
-                y += 26
-            if not found["rows"]:
-                kit.put_text(card, "No place to put it there.", 24, y + 2, cw - 48, 13, 400, kit.mute(), wrap=False, height=20)
-                y += 28
+            y = self._place_rows(card, cw, y, found, self._picked)
             y = self._dialog_buttons(card, cw, y + 10, "Cancel", None, None)
+        elif d["kind"] == "tmenu":
+            reg, items = self.data()
+            found = [items[i] for i in d["ids"] if i in items]
+            one = found[0] if len(found) == 1 else None
+            title = f"“{page_model.title_of(one)}”" if one else page_model.plural(len(found), "thing")
+            kit.put_text(card, title, 24, y, cw - 48, 18, 700, wrap=False, height=26)
+            y += 40
+            rows = [("Move to…", "arrow.turn.down.right", lambda: self.open_thing_pick("assign", d["ids"])),
+                    ("Also in…", "plus.circle", lambda: self.open_thing_pick("also", d["ids"]))]
+            if one:
+                for p in thing_actions.homes(reg, one)[:4]:
+                    rows.append((f"Not in “{p['name']}”", "minus.circle",
+                                 (lambda i=p["id"]: (self.close_dialog(), self.thing_action("not_this", d["ids"], i)))))
+            rows.append(("Forget this…", "trash", lambda: self.open_thing_forget(d["ids"])))
+            for label, symbol, call in rows:
+                row = self._tap(card, 12, y, cw - 24, 40, call)
+                kit.tile(row, (symbol, "circle"), kit.ink(), 8, 7, 26)
+                kit.put_text(row, label, 46, 0, cw - 24 - 60, 14, 500, wrap=False, height=40, middle=True)
+                y += 42
+            y += 12
+        elif d["kind"] == "tpick":
+            reg, items = self.data()
+            many = len(d["ids"]) > 1
+            what = page_model.plural(len(d["ids"]), "thing") if many else "this"
+            kit.put_text(card, (f"Move {what} to…" if d["action"] == "assign" else f"Also put {what} in…"), 24, y, cw - 48, 18, 700,
+                         wrap=False, height=26)
+            y += 42
+            self._field_at(cx + 24, cy + y, cw - 48, "" if focus else None, "Search projects")
+            y += 44
+            found = thing_actions.places(reg, items, d["ids"], d["action"], d["query"])
+            y = self._place_rows(card, cw, y, found, (lambda t: self.thing_action(d["action"], d["ids"], t)))
+            y = self._dialog_buttons(card, cw, y + 10, "Cancel", None, None)
+        elif d["kind"] == "task":
+            plan = d["plan"]
+            y += kit.put_text(card, plan["title"], 24, y, cw - 48, 17, 700) + 10
+            y += kit.put_text(card, plan["text"], 24, y, cw - 48, 13, 400, kit.mute()) + 18
+            action = lambda: self.thing_action("forget", d["ids"])
+            y = self._dialog_buttons(card, cw, y, "Cancel", plan["button"], action if plan["button"] else None)
         elif d["kind"] == "ask":
             plan = d["plan"]
             y += kit.put_text(card, plan["title"], 24, y, cw - 48, 17, 700) + 10
@@ -496,6 +562,26 @@ class MainWindow:
             self.overlay.addSubview_(self.dlg_field)
         if focus:
             self.window.makeFirstResponder_(self.dlg_field)
+
+    def _place_rows(self, card, cw, y, found, call):
+        """The list of places in a picker (rows of {"id", "name", "path"}), then "n more". Returns y."""
+        for r in found["rows"][:7]:
+            row = self._tap(card, 12, y, cw - 24, 44, (lambda t=r["id"]: call(t)))
+            if r["id"] is None:
+                kit.tile(row, ("arrow.up.to.line", "tray.fill"), kit.ink(), 8, 7, 30)
+            else:
+                self._project_icon(row, page_model.hue(r["id"]), 8, 7, 30)
+            kit.put_text(row, r["name"], 48, 4, cw - 24 - 60, 14, 600, wrap=False, height=20)
+            kit.put_text(row, r["path"], 48, 23, cw - 24 - 60, 12, 400, kit.mute(), wrap=False, height=16)
+            y += 46
+        left = found["more"] + max(0, len(found["rows"]) - 7)
+        if left:
+            kit.put_text(card, f"{left} more. Keep typing to narrow it.", 24, y + 2, cw - 48, 12, 400, kit.mute(), wrap=False, height=18)
+            y += 26
+        if not found["rows"]:
+            kit.put_text(card, "No place to put it there.", 24, y + 2, cw - 48, 13, 400, kit.mute(), wrap=False, height=20)
+            y += 28
+        return y
 
     def _field_at(self, x, y, w, value, placeholder):
         """Move the one text field into the dialog. `value` replaces its text; None leaves what was typed."""
@@ -649,7 +735,7 @@ class MainWindow:
             kit.tile(doc, {"home": ("square.stack.3d.up.fill", "folder.fill"), "needs": ("bell.badge.fill", "bell.fill"),
                            "archived": ("archivebox.fill", "tray.fill")}[kind], kit.ink(), x, y - 2, 40)
             tx = x + 54
-        kit.put_text(doc, page["title"], tx, y, w - (tx - x), 26, 700, wrap=False, height=34)
+        kit.put_text(doc, page["title"], tx, y, w - (tx - x) - (170 if kind in ("project", "thing") else 0), 26, 700, wrap=False, height=34)
         y += 36
         if page.get("meta"):
             self._label(doc, page["meta"], tx, y, w - (tx - x), size=13, weight=400)
@@ -658,6 +744,8 @@ class MainWindow:
             kit.button(doc, "+ New project", x + w - 150, 30, 150, 34, lambda: self.open_name("new"), kind="quiet", size=13, weight=600)
         if kind == "project":
             self._project_actions(doc, x + w, 28, page["pid"])
+        if kind == "thing":
+            self._thing_buttons(doc, x + w, 28, page["item"])
         build = {"home": self._home, "project": self._project, "needs": self._needs, "search": self._search,
                  "thing": self._thing_page, "archived": self._archived}[kind]
         return build(doc, page, x, y + 6, w)
@@ -685,11 +773,19 @@ class MainWindow:
         h = kit.put_text(doc, empty["line"], x, y + 112, min(w, 460), 14, 400, kit.mute())
         return y + 112 + h
 
-    def _thing(self, doc, t, x, y, w, notes=False):
-        """A thing: its title, where it is, when. With notes: the open ones underneath. Returns the new y."""
-        box = _Tap.alloc().initWithFrame_callback_(NSMakeRect(x, y, w, 10), (lambda i=t["id"]: self.press("thing", i)))
-        self._app_icon(box, t["app"], 0, 8, 34)
-        tx = 46
+    def _thing(self, doc, t, x, y, w, notes=False, select=False):
+        """A thing: its title, where it is, when. With notes: the open ones underneath. While selecting,
+        a tap ticks it instead of opening it. Returns the new y."""
+        call = (lambda i=t["id"]: self.pick_thing(i)) if select else (lambda i=t["id"]: self.press("thing", i))
+        box = _Tap.alloc().initWithFrame_callback_(NSMakeRect(x, y, w, 10), call)
+        lead = 0
+        if select:
+            on = t["id"] in self.sel
+            kit.tile(box, ("checkmark.circle.fill", "checkmark.circle") if on else ("circle", "circle"),
+                     kit.ink() if on else kit.mute(), 0, 12, 22)
+            lead = 32
+        self._app_icon(box, t["app"], lead, 8, 34)
+        tx = 46 + lead
         kit.put_text(box, t["title"], tx, 6, w - tx - 130, 14, 600, wrap=False, height=20)
         if t["ago"]:
             kit.put_text(box, t["ago"], w - 120, 6, 120, 12, 400, kit.mute(), align=RIGHT, wrap=False, height=20)
@@ -762,6 +858,12 @@ class MainWindow:
         kit.button(parent, "+ Sub-project", right - 40 - 8 - 120, y, 120, 32, lambda: self.open_name("new", parent=pid),
                    kind="quiet", size=13, weight=600)
 
+    def _thing_buttons(self, parent, right, y, tid):
+        """"Move to…" and "⋯" at the right of a thing's title."""
+        kit.button(parent, "⋯", right - 40, y, 40, 32, lambda: self.open_thing_menu([tid]), kind="quiet", size=16, weight=700)
+        kit.button(parent, "Move to…", right - 40 - 8 - 100, y, 100, 32, lambda: self.open_thing_pick("assign", [tid]),
+                   kind="quiet", size=13, weight=600)
+
     def _side_foot(self, side):
         """Pinned under the tree: make a project."""
         for sub in list(self.side_foot.subviews()):
@@ -828,7 +930,11 @@ class MainWindow:
             y = self._sub_chips(host, page, x, y, w) + 8
         total = f"Things · {page['total']}"
         kit.put_text(host, total, x, y, w, 15, 700, wrap=False, height=22)
+        if self.sel is None and page["total"]:
+            self._link(host, "Select", x + w - kit.text_width("Select", 13, 500) - 12, y - 4, self.start_select)
         y += 30
+        if self.sel is not None:
+            y += self._select_bar(host, page, x, y, w) + 10
         chips = []
         if page["deep"]["show"]:
             chips += [("Only here", not page["deep"]["on"], lambda: self.press("deep", False)),
@@ -839,6 +945,26 @@ class MainWindow:
         if chips:
             y += self._chips(host, x, y, chips) + 10
         return y
+
+    def _select_bar(self, parent, page, x, y, w):
+        """While selecting: how many, and what to do with them. Returns the height."""
+        n = len(self.sel)
+        tap = self._tap(parent, x, y, w, 44, lambda: None, fill=True)
+        text = f"{n} selected" if n else "Tap things to select them"
+        kit.put_text(tap, text, 14, 0, 200, 13, 600, None if n else kit.mute(), wrap=False, height=44, middle=True)
+        right = w - 8
+        for label, kind, call, width in (
+                ("Done", "primary", self.stop_select, 70),
+                ("Forget…", "quiet", lambda: self.open_thing_forget(self.sel), 84),
+                ("Not in here", "quiet", lambda: self.thing_action("not_this", self.sel, page["pid"]), 104),
+                ("Also in…", "quiet", lambda: self.open_thing_pick("also", self.sel), 90),
+                ("Move to…", "quiet", lambda: self.open_thing_pick("assign", self.sel), 96)):
+            if label != "Done" and not n:
+                continue
+            right -= width
+            kit.button(tap, label, right, 6, width, 32, call, kind=kind, size=13, weight=600)
+            right -= 6
+        return 44
 
     def _mini_card(self, parent, t, x, y, w, h):
         """A small Pick up card: the app, the thing, and its first open notes. Opens the thing."""
@@ -878,7 +1004,7 @@ class MainWindow:
             self._label(doc, group["title"].upper(), x, y + 4, w)
             y += 28
             for t in group["things"]:
-                y = self._thing(doc, t, x, y, w)
+                y = self._thing(doc, t, x, y, w, select=self.sel is not None)
             y += 6
         if not page["groups"]:
             self._label(doc, "Nothing matches this filter.", x, y + 8, w, size=13, weight=400)
@@ -911,6 +1037,12 @@ class MainWindow:
                 kit.put_text(tap, label, 34, 0, width - 40, 13, 500, wrap=False, height=32, middle=True)
                 px += width + 8
             y += 48
+        reg, items = self.data()
+        if page["item"] in items:                                 # why it is here: only what is stored
+            y = self._section(doc, "Why it is here", x, y, w)
+            for text in thing_actions.why(reg, items[page["item"]]):
+                y += kit.put_text(doc, text, x, y, w, 13, 400) + 6
+            y += 14
         if page["stats"]:                                         # four quiet tiles, not a table
             gap = 10
             tw = (w - gap * (len(page["stats"]) - 1)) / len(page["stats"])

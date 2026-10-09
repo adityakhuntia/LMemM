@@ -200,13 +200,6 @@ class _KitButton(_Flipped):
             self.border.setStroke()
             path.stroke()
 
-    def restyle(self, fill, border, label_color=None):
-        self.fill, self.border = fill, border
-        if label_color is not None and self.label is not None:
-            self.label.color = label_color
-            self.label.setNeedsDisplay_(True)
-        self.setNeedsDisplay_(True)
-
     def mouseDown_(self, event):
         self.callback()
 

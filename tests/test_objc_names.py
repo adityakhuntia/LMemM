@@ -23,3 +23,30 @@ class ObjcClassNames(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ObjcMethodNames(unittest.TestCase):
+    """PyObjC turns a method on an Objective-C subclass into a selector: its argument count must match
+    its name's colons. `def restyle(self, fill, border)` crashes at import on a Mac ("expects 0
+    arguments"), so any method that takes arguments must be named with underscores (`restyle_border_`)."""
+
+    OBJC_BASES = {"NSView", "NSObject", "NSWindow", "NSPanel", "NSTextField", "_Flipped", "_Tap", "_KeyPanel"}
+
+    def test_methods_with_arguments_have_underscored_names(self):
+        problems = []
+        for path in glob.glob(os.path.join(SRC, "*.py")):
+            tree = ast.parse(open(path).read())
+            objc_classes = set(self.OBJC_BASES)
+            for node in tree.body:
+                if isinstance(node, ast.ClassDef):
+                    bases = {b.id for b in node.bases if isinstance(b, ast.Name)}
+                    if bases & objc_classes:
+                        objc_classes.add(node.name)
+                        for fn in node.body:
+                            if not isinstance(fn, ast.FunctionDef) or fn.name.startswith("__"):
+                                continue
+                            decorated = any("python_method" in ast.dump(d) for d in fn.decorator_list)
+                            extra = len(fn.args.args) - 1
+                            if extra > 0 and "_" not in fn.name and not decorated:
+                                problems.append(f"{os.path.basename(path)}:{node.name}.{fn.name}")
+        self.assertEqual(problems, [])

@@ -47,7 +47,7 @@ behaviour lost, then add the next feature on top.
 | `notes.py` | Notes as pending edits: ids, status, attach, resurface, project view |
 | `store.py` | Persistence: load/save `.index.json`, readable `memory.json`, session timelines |
 | `tracker.py` | Orchestration only: schedule captures, run the resolver thread, keep the timeline, apply controls |
-| `dictation.py` + `listen/` | ⌃⌥N hotkey, note window, on-device speech helper |
+| `dictation.py` + `native/listen/` | ⌃⌥N hotkey, note window, on-device speech helper |
 | `input_events.py`, `input_monitor.py`, `input_store.py` | Opt-in input timeline, privacy gate, provenance/deletion |
 | `lmemm.py` | CLI |
 

@@ -29,7 +29,7 @@ One process, two threads, plain files.
 | `notes.py` | notes: record/attach, ids, done-state, resurfacing rule, project view | no |
 | `store.py` | load/save `.index.json`, readable `memory.json` / `pending.json`, sessions | no |
 | `context.py` | distills memory into a clean export for an AI: notes + real content, no operational detail | no |
-| `dictation.py` + `listen/` | ⌃⌥N hotkey (Carbon), note window, on-device speech helper app | **yes** |
+| `dictation.py` + `native/listen/` | ⌃⌥N hotkey (Carbon), note window, on-device speech helper app | **yes** |
 | `widget.py` | the on-screen pill and its Left / Plan card (non-activating panels) | **yes** |
 | `input_monitor.py` | opt-in listen-only event tap + privacy gate | **yes** |
 | `input_events.py` | input summaries, ordering, context boundaries | no |
@@ -167,7 +167,7 @@ parameters (default `input`/`print`) so tests drive it without a real terminal.
 
 ## Testing
 
-`python3 -m unittest discover -s tests` runs 159 tests: real Vision OCR on generated
+`./scripts/test.sh` runs 159 tests: real Vision OCR on generated
 images, identity, content, migration, notes/resurfacing/project view, the CLI, input
 events with fake native data, retention and deletion recovery. No test uses the real
 microphone, input tap or your data.

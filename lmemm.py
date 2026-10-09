@@ -21,22 +21,25 @@ LMemM - the one command.
 Any of these also works by number from the menu (`lmemm.py`), which prompts for the
 same arguments shown above when an action takes them.
 
-How it fits together: see ARCHITECTURE.md.
+How it fits together: see docs/architecture.md.
 """
 
 import argparse
 import json
+import os
 import shlex
 import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import config
-import context as context_mod
-import notes
-import store
-import tracker
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src"))
+
+import config  # noqa: E402
+import context as context_mod  # noqa: E402
+import notes  # noqa: E402
+import store  # noqa: E402
+import tracker  # noqa: E402
 
 USAGE = ("usage: lmemm.py [menu] | start [--every N] [--input-events --input-app APP]"
          " | memory [N] [--content] [--events]"

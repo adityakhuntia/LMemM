@@ -76,8 +76,8 @@ not proof of a shared project.
 .venv/bin/python lmemm.py notes done NOTE_ID
 .venv/bin/python lmemm.py notes reopen NOTE_ID
 .venv/bin/python lmemm.py memory 100 --events --content
-.venv/bin/python -m unittest discover -s tests -v
+PYTHON=.venv/bin/python ./scripts/test.sh -v
 ```
 
 One tracker at a time; restart after code/permission changes. README is the user
-guide and ARCHITECTURE.md describes the integrated modules.
+guide and docs/architecture.md describes the integrated modules.

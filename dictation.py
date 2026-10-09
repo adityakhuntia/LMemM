@@ -184,6 +184,13 @@ class Listener:
                 self.process = None
 
 
+MIC = {"off": False}                 # True once the mic or speech helper failed; cleared by the next words heard
+
+
+def mic_off():
+    return MIC["off"]
+
+
 class NotePanel:
     """The note card (notecard.py) plus the speech helper: your words fill in as you speak."""
 
@@ -205,6 +212,7 @@ class NotePanel:
         self.shown = ""
         listening = self.listener.start()
         self.card.show(context_label, listening)
+        MIC["off"] = not listening                  # cleared here; a permission error sets it again in poll()
         if not listening:
             self.card.status_is(False, "Speech helper unavailable. Type your note instead.")
 
@@ -215,10 +223,13 @@ class NotePanel:
             return
         err = self.listener.error()
         if err:
+            MIC["off"] = True
             self.card.status_is(False, err[:80])
             self.listener.stop(wait=0)
             return
         said = self.listener.text()
+        if said:
+            MIC["off"] = False
         if said != self.shown and self.card.string() == self.shown:   # don't overwrite your typing
             self.card.set_text(said)
             self.shown = said

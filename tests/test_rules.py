@@ -34,6 +34,42 @@ class OwnershipTests(unittest.TestCase):
         self.assertEqual(rules.pill_click_action(False), "toggle_card")
 
 
+class MarkTests(unittest.TestCase):
+    def test_marks_strongest_first(self):                           # R8
+        ok = {"screen": True, "private": False, "mic_off": False}
+        self.assertIsNone(rules.pill_mark(ok))
+        self.assertEqual(rules.pill_mark({**ok, "screen": False, "private": True, "mic_off": True}), "screen_off")
+        self.assertEqual(rules.pill_mark({**ok, "private": True, "mic_off": True}), "private")
+        self.assertEqual(rules.pill_mark({**ok, "mic_off": True}), "mic_off")
+
+    def test_mic_off_gives_way_to_notes_and_suggestions(self):
+        mic = {"screen": True, "mic_off": True}
+        self.assertIsNone(rules.pill_mark(mic, count=2))
+        self.assertIsNone(rules.pill_mark(mic, has_suggestion=True))
+
+    def test_empty_kinds(self):
+        fresh = notes.card_view(notes.blank_card("Q3 plan", "Docs"))
+        self.assertEqual(rules.empty_kind(fresh), "fresh")
+        done = {"title": "Q3", "app": "Docs", "project": "Q3", "left": [], "history": [], "things": 1,
+                "visits": 1, "seconds": 1, "plan": [{"id": "a", "text": "x", "at": "t", "on": "Q3", "here": True, "done": "t2"}]}
+        self.assertEqual(rules.empty_kind(notes.card_view(done)), "caught")
+        done["plan"][0]["done"] = None
+        self.assertIsNone(rules.empty_kind(notes.card_view(done)))
+        self.assertIsNone(rules.empty_kind(None))
+        self.assertIsNone(rules.empty_kind(notes.card_view(None)))
+
+    def test_the_pill_wears_the_mark_but_notes_dictating_and_saving_come_first(self):
+        base = dict(note_open=False, saved=False, hover=False, card_open=False, count=0, has_suggestion=False)
+        st = lambda **kw: rules.pill_state(**{**base, **kw})
+        self.assertEqual(st(mark="private"), "private")
+        self.assertEqual(st(mark="private", saved=True), "saved")
+        self.assertEqual(st(mark="private", note_open=True), "rest")
+        self.assertEqual(st(empty="fresh"), "rest")                 # quiet until you look
+        self.assertEqual(st(empty="fresh", hover=True), "fresh")
+        self.assertEqual(st(empty="caught", card_open=True), "caught")
+        self.assertEqual(st(mark="screen_off", empty="fresh", hover=True), "screen_off")
+
+
 class PendingTests(unittest.TestCase):
     blank = staticmethod(lambda: notes.blank_card("Safari", "Safari"))
 

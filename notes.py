@@ -230,6 +230,7 @@ def card_view(data, mode="here", show_done=False, fading=()):
     return {"mode": "here", "title": data["title"], "caption": data["app"],
             "rows": [row(n) for n in shown if n["here"]],
             "more": sum(1 for n in data["left"] if not n["here"]), "project": data["project"],
+            "done_count": sum(1 for n in data["plan"] if n["done"]),
             "item": data.get("item"), "filed": data.get("filed")}
 
 
@@ -323,6 +324,7 @@ def picker_view(items, item_id, query="", now_iso=None):
             for p in project_names(items) if not q or q in p["name"].lower()]
     exact = any(r["name"].lower() == q for r in rows)
     return {"title": f"Add {item.get('title') or item['doing']} to a project",
+            "total": len(project_names(items)), "kind": item.get("kind", ""),
             "current": item.get("project"), "rows": rows, "new": "" if (not query or exact) else query,
             "also": open_now(items, item_id, now_iso or datetime.now().isoformat(timespec="seconds"))}
 

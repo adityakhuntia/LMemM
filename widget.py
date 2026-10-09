@@ -19,6 +19,10 @@
               It opens a picker: your projects, search, "+ New project", and a tick to file the
               other things open lately along with this one.
 
+    marks     the pill wears an icon when something is wrong (screen access off, a private window,
+              the mic off) or, on hover, when there is nothing to show (no notes yet, all done,
+              no projects yet). The rules are in rules.py (R8).
+
 Everything is a non-activating panel: it never takes focus from the app you're in,
 and it shows on every Space and over full-screen apps. It follows the system light/dark
 setting. What the card shows is decided in notes.card_view() (plain data, tested);
@@ -26,6 +30,7 @@ this file only draws it. Ticking a box calls back into the tracker, which saves 
 """
 
 import math
+import subprocess
 import time
 
 import objc
@@ -63,6 +68,14 @@ SUGGEST_WORDS = "Group these?"
 SAVED_SECONDS = 1.8                 # "Saved to Q3 plan" stays on the pill this long
 PROJECT_EXPLAINER = ("A project keeps related things and your notes together, so you can pick up "
                      "where you left off. You can change this any time.")
+# the marks: an SF Symbol, and whether it is neutral or red (a permission that is off)
+MARKS = {"screen_off": ("eye.slash", True, "Screen access is off"),
+         "private": ("lock", False, "Private window"),
+         "mic_off": ("mic.slash", True, "Mic is off"),
+         "fresh": ("square.and.pencil", False, "No notes yet"),
+         "caught": ("checkmark", False, "All caught up"),
+         "noproj": ("folder.badge.plus", False, "Start a project")}
+SCREEN_SETTINGS = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
 EMPTY_HINT = "Nothing left here. Hold {key} and say what to remember for this page."
 
 
@@ -204,6 +217,48 @@ class _Tile(_Flipped):
         NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(self.bounds(), self.size * .27, self.size * .27).fill()
 
 
+def _symbol(name):
+    return NSImage.imageWithSystemSymbolName_accessibilityDescription_(name, None)
+
+
+class _Badge(_Flipped):
+    """The big icon on a state card: a soft rounded square with a symbol. tone: soft, accent, bad."""
+
+    def initWithSymbol_tone_(self, symbol, tone):
+        self = objc.super(_Badge, self).initWithFrame_(NSMakeRect(0, 0, 46, 46))
+        self.tone = tone
+        image = _symbol(symbol)
+        if image is not None:
+            holder = NSImageView.alloc().initWithFrame_(NSMakeRect(11, 11, 24, 24))
+            holder.setImage_(image)
+            holder.setContentTintColor_(NSColor.whiteColor() if tone == "accent" else
+                                        NSColor.systemRedColor() if tone == "bad" else NSColor.secondaryLabelColor())
+            self.addSubview_(holder)
+        return self
+
+    def drawRect_(self, rect):
+        if self.tone == "accent":
+            NSColor.systemOrangeColor().setFill()
+        elif self.tone == "bad":
+            NSColor.systemRedColor().colorWithAlphaComponent_(0.14).setFill()
+        else:
+            NSColor.labelColor().colorWithAlphaComponent_(0.07).setFill()
+        NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(self.bounds(), 14, 14).fill()
+
+
+class _Dashed(_Flipped):
+    """A dashed rounded outline: where a new project will gather its things."""
+
+    def drawRect_(self, rect):
+        NSColor.tertiaryLabelColor().setStroke()
+        size = self.bounds().size
+        path = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+            NSMakeRect(0.75, 0.75, size.width - 1.5, size.height - 1.5), 14, 14)
+        path.setLineWidth_(1.5)
+        path.setLineDash_count_phase_([5.0, 4.0], 2, 0)
+        path.stroke()
+
+
 class _Ring(_Flipped):
     """The round tick box: an outline, filled orange with a tick once done."""
 
@@ -242,6 +297,9 @@ class _PillView(NSView):
         self.hover = False
         self.addTrackingArea_(NSTrackingArea.alloc().initWithRect_options_owner_userInfo_(
             self.bounds(), TRACK, self, None))
+        self.icon = NSImageView.alloc().initWithFrame_(NSMakeRect(0, 0, 16, 16))
+        self.icon.setHidden_(True)
+        self.addSubview_(self.icon)
         return self
 
     def drawRect_(self, rect):
@@ -354,7 +412,10 @@ class Widget:
 
     def __init__(self, provider, on_tick, on_add=None, heard=None, hotkey="⌃⌥N",
                  suggestion=None, on_project=None, on_decline=None, picker=None, on_unfile=None,
-                 busy=None):
+                 busy=None, status=None):
+        self.status_fn = status or (lambda: {})
+        self.status = {}                            # what is wrong right now (see rules.pill_mark)
+        self.pick_empty = False                     # the picker is showing "Start a project"
         self.busy = busy or (lambda: False)         # True while the note card is up (see rules.py)
         self.provider = provider
         self.on_tick = on_tick
@@ -399,7 +460,17 @@ class Widget:
         if self.listening is not None:
             return "listening"
         return rules.pill_state(self.busy(), bool(self.saved), self.pill_view.hover, self.card_open,
-                                self.count, bool(self.sug))
+                                self.count, bool(self.sug), self._mark(), self._empty_kind())
+
+    def _mark(self):
+        return rules.pill_mark(self.status, self.count, bool(self.sug))
+
+    def _empty_kind(self):
+        if self.card_open and self.mode == "pick":
+            return "noproj" if self.pick_empty else None
+        if self.count or self.sug or self.data is None:
+            return None
+        return rules.empty_kind(notes.card_view(self.data, "here", self.show_done, self.fading))
 
     def peek_text(self):
         if not self.count:
@@ -418,6 +489,8 @@ class Widget:
         state = self.mode_of_pill()
         if state == "peek":
             return _text_width(self.peek_text(), NSFont.systemFontOfSize_(13)) + 44 + (4 if not self.count and self.sug else 0), 28
+        if state in MARKS:
+            return 28, 28
         if state == "saved":
             return _text_width(self.saved, NSFont.systemFontOfSize_(13)) + 48, 28
         if state == "listening":
@@ -439,8 +512,30 @@ class Widget:
         if frame != self.pill.frame():
             self.pill.setFrame_display_(frame, True)
         self.pill_view.setNeedsDisplay_(True)
+        self._mark_icon(cw, ch)
         if self.card_open:
             self._place_card()
+
+    def _mark_icon(self, cw, ch):
+        """Put the state's symbol on the pill (or hide it)."""
+        state = self.mode_of_pill()
+        icon = self.pill_view.icon
+        if state not in MARKS:
+            icon.setHidden_(True)
+            self.pill_view.setToolTip_(None)
+            return
+        symbol, bad, tip = MARKS[state]
+        image = _symbol(symbol)
+        icon.setImage_(image)
+        icon.setFrame_(NSMakeRect(PILL_MARGIN[0] + (cw - 16) / 2, PILL_MARGIN[1] + (ch - 16) / 2, 16, 16))
+        dark = _dark()                              # the pill is light in dark mode, dark in light mode
+        if bad:
+            icon.setContentTintColor_(NSColor.colorWithRed_green_blue_alpha_(0.84, 0.34, 0.24, 1.0) if dark
+                                      else NSColor.colorWithRed_green_blue_alpha_(1.0, 0.54, 0.44, 1.0))
+        else:
+            icon.setContentTintColor_(NSColor.colorWithWhite_alpha_(0.09 if dark else 1.0, 1.0))
+        icon.setHidden_(image is None)
+        self.pill_view.setToolTip_(tip)
 
     def pulse(self, heard):
         """Called on every tick of the tracker's loop: moves the waveform and follows the
@@ -470,8 +565,9 @@ class Widget:
         self.data = self.provider()
         count, first = notes.pill_summary(self.data)
         sug = self.suggestion()
-        if (count, first, sug) != (self.count, self.first, self.sug):
-            self.count, self.first, self.sug = count, first, sug
+        status = self.status_fn()
+        if (count, first, sug, status) != (self.count, self.first, self.sug, self.status):
+            self.count, self.first, self.sug, self.status = count, first, sug, status
             self.layout()
         if self.mode == "done" and self.card_open and time.time() >= self.close_at:
             self.toggle_card()
@@ -525,6 +621,7 @@ class Widget:
         if show_done is not None:
             self.show_done = show_done
         self.scroll = None                  # a different view starts at the top
+        self.pick_empty = False
         self.render()
 
     def _add(self):
@@ -536,7 +633,7 @@ class Widget:
     def _key(self):
         if self.mode in ("pick", "suggest"):          # fields in use: don't rebuild under the typing
             return repr((self.mode, self.sug))
-        return repr((self.data, self.mode, self.show_done, sorted(self.fading), self.sug, self.done_text))
+        return repr((self.data, self.mode, self.show_done, sorted(self.fading), self.sug, self.done_text, self.status))
 
     def render(self):
         self.shown = self._key()
@@ -552,6 +649,8 @@ class Widget:
             y = self._pick(body, y)
         elif self.mode == "done":
             y = self._done(body, y)
+        elif self.mode == "here" and self._mark() in ("screen_off", "private"):
+            y = self._problem(body, y)
         elif view.get("empty"):
             y = self._empty(body, y)
         elif view["mode"] == "project":
@@ -584,6 +683,7 @@ class Widget:
         self._place_card()
         if self.mode == "pick":
             self._focus(self.search)
+        self.layout()                           # the pill's mark follows what the card shows
 
     def _place_card(self):
         pill = self.pill.frame()
@@ -646,7 +746,43 @@ class Widget:
         body.addSubview_(field)
         return y + h + 6
 
+    def _state(self, body, y, symbol, tone, title, line):
+        """An empty or error card: a big icon, a title, one line. Returns the next y."""
+        y += 6
+        badge = _Badge.alloc().initWithSymbol_tone_(symbol, tone)
+        badge.setFrame_(NSMakeRect((CARD_W - 46) / 2, y, 46, 46))
+        body.addSubview_(badge)
+        y += 56
+        head, _ = _label(title, 16, bold=True, frame=(PAD, y, CARD_W - 2 * PAD, 20))
+        head.setAlignment_(1)
+        body.addSubview_(head)
+        y += 23
+        small, h = _label(line, 13, color=NSColor.secondaryLabelColor(), frame=(PAD, y, CARD_W - 2 * PAD, 18), wrap=True)
+        small.setAlignment_(1)
+        body.addSubview_(small)
+        return y + h + 10
+
+    def _problem(self, body, y):
+        """Screen access is off, or this window is private."""
+        if self._mark() == "screen_off":
+            y = self._state(body, y, "eye.slash", "bad", "Screen access is off",
+                            "LMemM can’t see what you’re working on.")
+            self._button(body, (8, y, CARD_W - 16, 33), "Open System Settings", self._open_settings, primary=True)
+            return y + 41
+        return self._state(body, y, "lock", "soft", "Private window", "Nothing is remembered from here.")
+
+    def _open_settings(self):
+        subprocess.Popen(["open", SCREEN_SETTINGS], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
     def _here(self, body, view, y):
+        kind = rules.empty_kind(view)
+        if kind == "fresh":
+            return self._state(body, y, "square.and.pencil", "soft", "No notes yet",
+                               f"Press {self.hotkey} and say what to remember.")
+        if kind == "caught":
+            n = view["done_count"]
+            y = self._state(body, y, "checkmark", "accent", "All caught up", f"{n} note{'s' * (n != 1)} done.")
+            return self._link(body, y, "Show done", "›", lambda: self._go("project", show_done=True))
         y = self._header(body, y, view["title"], view["caption"])
         if view["rows"]:
             for row in view["rows"]:
@@ -730,6 +866,7 @@ class Widget:
         label.setAlignment_(1)                      # centre
         tap.addSubview_(label)
         body.addSubview_(tap)
+        return tap
 
     def _suggest(self, body, y):
         sug = self.sug
@@ -766,10 +903,50 @@ class Widget:
         self._button(body, (164, y, CARD_W - 164 - 8, 33), "Not these", self._refuse)
         return y + 41
 
+    def _first_project(self, body, y, view):
+        """The picker before you have any project: what one is, and a name to give it."""
+        thing = view["title"].replace("Add ", "", 1).replace(" to a project", "")
+        back = _Tap.alloc().initWithFrame_callback_(NSMakeRect(PAD - 4, y - 4, 120, 16), lambda: self._go("here"))
+        back.addSubview_(_label("‹ Back", 12, color=NSColor.secondaryLabelColor(), frame=(4, 0, 110, 16))[0])
+        body.addSubview_(back)
+        y += 20
+        head, _ = _label("Start a project", 16, bold=True, frame=(PAD, y, CARD_W - 2 * PAD, 20))
+        head.setAlignment_(1)
+        body.addSubview_(head)
+        y += 23
+        small, h = _label("Keep related things and their notes together.", 13, color=NSColor.secondaryLabelColor(),
+                          frame=(PAD, y, CARD_W - 2 * PAD, 18), wrap=True)
+        small.setAlignment_(1)
+        body.addSubview_(small)
+        y += h + 12
+        box = _Dashed.alloc().initWithFrame_(NSMakeRect(PAD, y, CARD_W - 2 * PAD, 62))
+        tile = _Tile.alloc().initWithKind_size_(view.get("kind", ""), 34)
+        tile.setFrame_(NSMakeRect(14, 14, 34, 34))
+        box.addSubview_(tile)
+        box.addSubview_(_label(thing, 14, bold=True, frame=(58, 12, CARD_W - 2 * PAD - 70, 18))[0])
+        box.addSubview_(_label("will be the first thing in it", 12, color=NSColor.secondaryLabelColor(),
+                               frame=(58, 31, CARD_W - 2 * PAD - 70, 16))[0])
+        body.addSubview_(box)
+        y += 72
+        field = _Tap.alloc().initWithFrame_callback_(NSMakeRect(8, y, CARD_W - 16, 34), lambda: None)
+        field.fill = True
+        self.search = _field(self.query, "Name it, like Pricing", 13, False, (12, 8, CARD_W - 16 - 24, 18), self.fields)
+        field.addSubview_(self.search)
+        body.addSubview_(field)
+        y += 42
+        typed = " ".join(self.query.split())
+        button = self._button(body, (8, y, CARD_W - 16, 33), f"Create “{typed}”" if typed else "Create project",
+                              (lambda: self._file(typed)) if typed else (lambda: self._focus(self.search)), primary=True)
+        button.setAlphaValue_(1.0 if typed else 0.35)
+        return y + 41
+
     def _pick(self, body, y):
         view = self.picker(self._item_id(), self.query)
         if view is None:
             return self._empty(body, y)
+        self.pick_empty = view["total"] == 0
+        if self.pick_empty:
+            return self._first_project(body, y, view)
         y = self._header(body, y, "Add to a project", "", back=(view["title"].replace("Add ", "", 1).replace(" to a project", ""),
                                                                 lambda: self._go("here")))
         box = _Tap.alloc().initWithFrame_callback_(NSMakeRect(8, y - 6, CARD_W - 16, 34), lambda: None)

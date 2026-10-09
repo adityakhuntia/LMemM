@@ -18,15 +18,45 @@ What that means:
     R5  Opening the project card ends the saved confirmation. Opening anything closes the other.
     R6  Pausing, or a private window, closes the note card without saving.
     R7  Only the note card reacts to Return and Esc.
+    R8  Every state wears a mark on the pill you can read at a glance; the card only confirms it,
+        in a title and one line, with at most one thing to do. Red is for a permission that is
+        off. A private window and an empty place stay neutral.
+        Marks, strongest first: screen access off, private window, mic off (only when nothing
+        else is on the pill). On hover or with the card open an empty place, a finished one and
+        an empty project picker show their icon too.
 """
 
 
-def pill_state(note_open, saved, hover, card_open, count, has_suggestion):
+def pill_mark(status, count=0, has_suggestion=False):
+    """The mark for something wrong here, or None. status: {"screen": bool (allowed),
+    "private": bool (this window is not read), "mic_off": bool}."""
+    if not status.get("screen", True):
+        return "screen_off"
+    if status.get("private"):
+        return "private"
+    if status.get("mic_off") and not count and not has_suggestion:
+        return "mic_off"
+    return None
+
+
+def empty_kind(view):
+    """"fresh" (no notes at all here), "caught" (every note done), or None. `view` is
+    notes.card_view() in the "here" mode."""
+    if not view or view.get("empty") or view.get("mode") != "here" or view["rows"] or view["more"]:
+        return None
+    return "caught" if view.get("done_count") else "fresh"
+
+
+def pill_state(note_open, saved, hover, card_open, count, has_suggestion, mark=None, empty=None):
     """Which look the pill has. The first rule that applies wins."""
     if note_open:
         return "rest"
     if saved:
         return "saved"
+    if mark:
+        return mark
+    if empty and (hover or card_open):
+        return empty
     if hover and not card_open:
         return "peek"
     if count:

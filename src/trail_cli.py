@@ -201,7 +201,7 @@ def cover(delay=3.0):
     import trail_mac
     print(f"switch to the window you want to check; reading in {delay:.0f} s…")
     time.sleep(delay)
-    info = trail_mac.front()
+    info = macos.front()                      # the screenshot tracker's own view of the front window (has its bounds)
     trail = trail_mac.Trail()
     for _ in range(3 if trail.reader.warming(info["pid"]) else 1):
         trail.reader.app_element(info["pid"], info["bundle_id"])

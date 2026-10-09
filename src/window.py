@@ -19,6 +19,7 @@ from AppKit import (NSApplication, NSBezierPath, NSColor, NSImageView, NSMakePoi
 import apps
 import menu_model
 import notes
+import keynav
 import page_model
 import project_actions
 import rules
@@ -47,6 +48,13 @@ def hue_color(hue):
 class _MainWindow(NSWindow):
     def canBecomeKeyWindow(self):
         return True
+
+    def keyDown_(self, event):
+        """Arrow keys and Return walk the lists (when no text field has the keyboard)."""
+        handler = getattr(self, "on_key", None)
+        if handler and handler(int(event.keyCode())):
+            return
+        objc.super(_MainWindow, self).keyDown_(event)
 
     def cancelOperation_(self, sender):
         """Esc: close what is open on top (a card), else step back, else clear the search."""
@@ -142,6 +150,8 @@ class MainWindow:
         self.banner = None                                         # the last window_model.view
         self.nav = page_model.new_state()
         self.shown = None
+        self.cur = {"zone": "main", "id": None}                    # the row the arrow keys are on
+        self.krows = {"side": [], "main": []}                      # what the keys can walk: [(id, open it, its view)]
         self.where = None                                          # (view, project, search) the page was last showing
         self.app_icons = {}
         self.app_paths = None
@@ -163,6 +173,7 @@ class MainWindow:
         self.closing.on_close = lambda: self._regular(False)
         self.window.setDelegate_(self.closing)
         self.window.on_escape = self.escape
+        self.window.on_key = self.key
         self.root = _Flipped.alloc().initWithFrame_(NSMakeRect(0, 0, W, H))
         self.window.setContentView_(self.root)
         self.backdrop = _SideBackdrop.alloc().initWithFrame_(NSMakeRect(0, 0, SIDE_W, H))
@@ -178,6 +189,7 @@ class MainWindow:
         self.search.setBezeled_(True)
         self.search.setBezelStyle_(1)
         self.search.setDelegate_(self.typing)
+        self.typing.arrow = self._arrow_from_field
         self.root.addSubview_(self.search)
         self.side_scroll = _scroll(self.root)
         self.main_scroll = _scroll(self.root)
@@ -291,6 +303,33 @@ class MainWindow:
         self.menu_bar = bar
         NSApplication.sharedApplication().setMainMenu_(bar)
 
+    def _arrow_from_field(self, code):
+        self.window.makeFirstResponder_(None)
+        self.key(code)
+
+    def key(self, code):
+        """An arrow or Return. True when it was used."""
+        if self.dialog:
+            return False
+        rows = {z: [(i, cb) for i, cb, _v in r] for z, r in self.krows.items()}
+        state, call = keynav.press(self.cur, rows, code)
+        if state == self.cur and call is None:
+            return code in (keynav.UP, keynav.DOWN, keynav.LEFT, keynav.RIGHT)
+        self.cur = state
+        if call:
+            call()
+            return True
+        self.render()
+        view = dict((i, v) for i, _cb, v in self.krows[state["zone"]]).get(state["id"])
+        if view is not None:
+            view.scrollRectToVisible_(view.bounds())
+        return True
+
+    def _krow(self, zone, rid, call, view):
+        """Register a row the keys can reach; True when the keys are on it (so it is drawn lit)."""
+        self.krows[zone].append((rid, call, view))
+        return self.cur["zone"] == zone and self.cur["id"] == rid
+
     def escape(self):
         if self.dialog:
             self.close_dialog()
@@ -322,6 +361,7 @@ class MainWindow:
             self.window.deminiaturize_(None)
         self.update(banner)
         self.window.makeKeyAndOrderFront_(None)
+        self.window.makeFirstResponder_(None)                      # not in the search box: the arrow keys work at once
         NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
 
     def update(self, banner):
@@ -413,10 +453,11 @@ class MainWindow:
         page = page_model.view(reg, items, self.nav, fading=self.flow.holding(now), sugg=self.suggest(),
                                prefs=self.prefs(self.nav["sec"]) if self.nav["view"] == "settings" else None)
         self.flow_sig = self.flow_signature()
-        sig = repr((window_model.signature(self.banner), page, self.flow_sig, self.sel))
+        sig = repr((window_model.signature(self.banner), page, self.flow_sig, self.sel, self.cur))
         if sig == self.shown:
             return
         self.shown = sig
+        self.krows = {"side": [], "main": []}
         top = self._banner(self.banner["banner"])
         main = page["main"]
         split = main["kind"] == "project" and not main.get("empty")      # a project: its top stays put, Things scrolls
@@ -433,6 +474,8 @@ class MainWindow:
         self.main_scroll.setFrame_(NSMakeRect(SIDE_W, top + head, self.W - SIDE_W, self.H - top - head - bar))
         here = (self.nav["view"], self.nav["pid"], self.nav["q"], self.nav["tid"])
         moved, self.where = here != self.where, here
+        if moved:
+            self.cur = {"zone": self.cur["zone"], "id": None}
         self._fill(self.side_scroll, SIDE_W, lambda doc: self._side(doc, page["side"]))
         self._fill(self.main_scroll, self.W - SIDE_W, lambda doc: self._main(doc, main, split), top=moved)
 
@@ -875,7 +918,9 @@ class MainWindow:
             self._link(doc, f"See all {needs['count']}", SIDE_W - 96, y - 6, lambda: self.press("needs"), size=12)
         y += 24
         for row in needs["rows"]:
-            tap = self._tap(doc, 8, y, SIDE_W - 16, 34, (lambda r=row: self.press("thing", r["id"])))
+            call = lambda r=row: self.press("thing", r["id"])
+            tap = self._tap(doc, 8, y, SIDE_W - 16, 34, call)
+            tap.fill = self._krow("side", "n" + row["id"], call, tap)
             self._app_icon(tap, row["app"], 8, 5, 24)
             kit.put_text(tap, row["title"], 40, 0, SIDE_W - 16 - 40 - 40, 13, 500, wrap=False, height=34, middle=True)
             kit.put_text(tap, str(row["open"]), SIDE_W - 16 - 34, 0, 26, 12, 500, kit.mute(), align=RIGHT, wrap=False, height=34, middle=True)
@@ -896,6 +941,8 @@ class MainWindow:
                 continue
             call = (lambda: self.press("archived")) if row.get("folder") else (lambda r=row: self.press("go", r["id"]))
             tap = self._tap(doc, 8, y, SIDE_W - 16, 28, call, fill=row["selected"])
+            if self._krow("side", "p" + row["id"], call, tap):
+                tap.fill = True
             if row["expandable"]:
                 caret = self._tap(tap, x - 8, 0, 22, 28, (lambda r=row: self.press("toggle", r["id"])))
                 kit.put_text(caret, "▾" if row["expanded"] else "▸", 0, 0, 22, 11, 600, kit.mute(), align=kit.CENTER,
@@ -982,6 +1029,8 @@ class MainWindow:
         a tap ticks it instead of opening it. Returns the new y."""
         call = (lambda i=t["id"]: self.pick_thing(i)) if select else (lambda i=t["id"]: self.press("thing", i))
         box = _Tap.alloc().initWithFrame_callback_(NSMakeRect(x, y, w, 10), call)
+        if not notes:
+            box.fill = self._krow("main", "t" + t["id"], call, box)
         lead = 0
         if select:
             on = t["id"] in self.sel
@@ -1017,7 +1066,10 @@ class MainWindow:
 
     def _rows_of_projects(self, doc, rows, x, y, w):
         for r in rows:
-            tap = self._tap(doc, x, y, w, 56, (lambda p=r["id"]: self.press("go", p)), fill=True)
+            call = lambda p=r["id"]: self.press("go", p)
+            tap = self._tap(doc, x, y, w, 56, call, fill=True)
+            if self._krow("main", "p" + r["id"], call, tap):
+                tap.tint = NSColor.labelColor().colorWithAlphaComponent_(0.14)
             self._project_icon(tap, r["hue"], 12, 12, 32)
             kit.put_text(tap, r["name"], 56, 9, w - 70, 14, 600, wrap=False, height=20)
             kit.put_text(tap, r["line"], 56, 30, w - 70, 12, 400, kit.mute(), wrap=False, height=16)

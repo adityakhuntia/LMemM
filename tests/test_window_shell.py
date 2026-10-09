@@ -37,6 +37,13 @@ class ShellTests(unittest.TestCase):
         self.assertIn("cancelOperation_", WINDOW)
         self.assertIn("self.window.on_escape = self.escape", WINDOW)
 
+    def test_arrow_keys_reach_keynav(self):
+        self.assertIn("def keyDown_(self, event)", WINDOW)
+        self.assertIn("self.window.on_key = self.key", WINDOW)
+        self.assertIn("keynav.press(self.cur, rows, code)", WINDOW)
+        for rid in ('"n" + row["id"]', '"p" + row["id"]', '"t" + t["id"]'):
+            self.assertIn(rid, WINDOW)
+
     def test_voiceover(self):
         for name in ("isAccessibilityElement", "accessibilityRole", "accessibilityLabel", "accessibilityPerformPress"):
             self.assertIn(name, WIDGET)

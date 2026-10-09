@@ -271,23 +271,33 @@ class ThingPageTests(unittest.TestCase):
         page = pm.view(reg, items, pm.press(reg, pm.new_state(), "thing", "d", items), NOW)["main"]
         self.assertEqual(([x["text"] for x in page["open"]], [x["text"] for x in page["done"]]), (["call Lee"], ["buy soil"]))
 
-    def test_it_shows_what_lmemm_read_and_cuts_a_long_text(self):
+    def test_it_shows_what_lmemm_read_as_short_passages(self):
         reg, items, ids = world()
-        items["a"]["content"] = {"excerpts": [{"text": "x" * 2000}]}
+        text = "\n".join(f"Line {n} of the Q3 plan" for n in range(10)) + "\n\nLine 0 of the Q3 plan"
+        items["a"]["content"] = {"version": 1, "excerpts": [
+            {"id": "old", "text": "Older passage here", "last_seen": when(days=2), "source": {"app": "Docs"}},
+            {"id": "new", "text": text, "last_seen": when(hours=1), "source": {"window": "Q3 deck", "app": "Docs"},
+             "decision_quotes": ["We agreed on the Q3 numbers."]}]}
         items["a"]["state"] = {"to": "Sam", "subject": "Numbers"}
-        page = pm.view(reg, items, pm.press(reg, pm.new_state(), "thing", "a", items), NOW)["main"]
-        self.assertEqual(len(page["content"]), pm.EXCERPT + 1)
+        state = pm.press(reg, pm.new_state(), "thing", "a", items)
+        page = pm.view(reg, items, state, NOW)["main"]
         self.assertEqual(page["latest"], [("To", "Sam"), ("Subject", "Numbers")])
+        first, second = page["excerpts"]
+        self.assertEqual((first["id"], first["source"], first["when"]), ("new", "Q3 deck", "1 h ago"))     # newest first
+        self.assertEqual((len(first["lines"]), first["more"]), (pm.VISIBLE_LINES, 4))                      # repeats dropped
+        self.assertEqual(first["decisions"], ["We agreed on the Q3 numbers."])
+        self.assertEqual((second["id"], second["source"], second["more"]), ("old", "Docs", 0))
+        state = pm.press(reg, state, "expand", "new")
+        again = pm.view(reg, items, state, NOW)["main"]["excerpts"][0]
+        self.assertEqual((len(again["lines"]), again["more"], again["open"]), (10, 0, True))
+        self.assertFalse(pm.press(reg, state, "expand", "new")["ex_open"])                                 # toggles back
 
-    def test_the_text_it_read_comes_from_the_real_memory_shape(self):
-        self.assertEqual(pm.content_text({"version": 1, "excerpts": [{"text": "old"}, {"text": " newest "}]}), "newest")
-        self.assertEqual(pm.content_text("plain"), "plain")
-        for odd in (None, {}, {"excerpts": []}, {"excerpts": [None, {"text": 5}]}, 5, []):
-            self.assertEqual(pm.content_text(odd), "")
-        reg, items, ids = world()
-        items["a"]["content"] = {"version": 1, "excerpts": [{"text": "We agreed on the Q3 numbers."}]}
-        page = pm.view(reg, items, pm.press(reg, pm.new_state(), "thing", "a", items), NOW)["main"]
-        self.assertEqual(page["content"], "We agreed on the Q3 numbers.")
+    def test_the_text_it_read_survives_every_shape_memory_has_had(self):
+        now = NOW
+        self.assertEqual(pm.excerpts_of("plain words", now)[0]["lines"], ["plain words"])
+        for odd in (None, {}, {"excerpts": []}, {"excerpts": [None, {"text": 5}, {"text": "  "}]}, 5, []):
+            self.assertEqual(pm.excerpts_of(odd, now), [])
+        self.assertEqual(len(pm.excerpts_of({"excerpts": [{"id": str(n), "text": f"t{n}"} for n in range(9)]}, now)), pm.EXCERPTS_SHOWN)
 
     def test_odd_stored_values_never_break_a_page(self):
         reg, items, ids = world()
@@ -367,7 +377,7 @@ class WindowWiringTests(unittest.TestCase):
         with open(os.path.join(os.path.dirname(__file__), "..", "src", "window.py")) as fh:
             source = fh.read()
         sent = set(re.findall(r'self\.press\("([a-z_]+)"', source))
-        self.assertTrue({"go", "home", "toggle", "deep", "app", "more", "more_subs", "more_side", "needs", "search", "clear", "thing", "back"} <= sent, sent)
+        self.assertTrue({"go", "home", "toggle", "deep", "app", "more", "more_subs", "more_side", "needs", "search", "clear", "thing", "back", "expand"} <= sent, sent)
         reg, _items, ids = world()
         for action in sent:
             pm.press(reg, pm.new_state(), action, ids["work"] if action in {"go", "toggle"} else "x")      # none raises

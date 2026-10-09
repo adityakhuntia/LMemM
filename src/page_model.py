@@ -109,12 +109,12 @@ def plural(n, one, many=None):
 
 def new_state():
     return {"view": "home", "pid": None, "q": "", "open": [], "deep": True, "app": None,
-            "shown": THINGS_SHOWN, "subs": SUBS_SHOWN, "lim": {}, "needs_all": False, "tid": None, "back": None}
+            "shown": THINGS_SHOWN, "subs": SUBS_SHOWN, "lim": {}, "needs_all": False, "tid": None, "back": None, "ex_open": []}
 
 
 def press(reg, state, action, arg=None, items=None):
     """A new state after a press. Unknown projects (deleted since) fall back to home."""
-    s = {**state, "open": list(state["open"]), "lim": dict(state["lim"])}
+    s = {**state, "open": list(state["open"]), "lim": dict(state["lim"]), "ex_open": list(state.get("ex_open", []))}
     if action == "home":
         s.update(view="home", pid=None, q="", needs_all=False)
     elif action == "go":
@@ -129,12 +129,17 @@ def press(reg, state, action, arg=None, items=None):
             return state
         if state["view"] != "thing":
             s["back"] = {"view": state["view"], "pid": state["pid"], "q": state["q"]}
-        s.update(view="thing", tid=arg)
+        s.update(view="thing", tid=arg, ex_open=[])
     elif action == "back":
         before = state.get("back") or {"view": "home", "pid": None, "q": ""}
         if before["view"] == "project" and not projects.exists(reg, before["pid"]):
             before = {"view": "home", "pid": None, "q": ""}
         s.update(view=before["view"], pid=before["pid"], q=before["q"], tid=None, back=None)
+    elif action == "expand":
+        if arg in s["ex_open"]:
+            s["ex_open"].remove(arg)
+        else:
+            s["ex_open"].append(arg)
     elif action == "toggle":
         if arg in s["open"]:
             s["open"].remove(arg)
@@ -260,7 +265,7 @@ def crumbs(reg, pid):
 def main(reg, items, state, counts, now):
     view = state["view"]
     if view == "thing" and state.get("tid") in items:
-        return thing_page(reg, items[state["tid"]], now)
+        return thing_page(reg, items[state["tid"]], now, state.get("ex_open", ()))
     if view == "search":
         return search(reg, items, state["q"], now)
     if view == "needs":
@@ -327,25 +332,53 @@ def project_page(reg, items, state, counts, now):
 
 # ---------------------------------------------------------------- one thing
 
-EXCERPT = 700
 LATEST_SHOWN = 6
 
 
-def content_text(content):
-    """The latest text LMemM read from a thing. Older memory kept a plain string; now it is
-    {"excerpts": [{"text": ...}, ...]}, newest last (memory_content.py)."""
+VISIBLE_LINES = 6
+EXCERPTS_SHOWN = 3
+DECISIONS_SHOWN = 3
+
+
+def excerpts_of(content, now, expanded=()):
+    """What LMemM read from a thing, newest first, as short readable passages (P9). Older memory
+    kept one plain string; now it is {"excerpts": [{"id", "text", "source", "last_seen",
+    "decision_quotes"}, ...]}, newest last (memory_content.py). Anything odd becomes no passage."""
     if isinstance(content, str):
-        return content.strip()
-    if isinstance(content, dict):
-        excerpts = [e for e in content.get("excerpts") or [] if isinstance(e, dict) and isinstance(e.get("text"), str)]
-        if excerpts:
-            return excerpts[-1]["text"].strip()
-        if isinstance(content.get("text"), str):
-            return content["text"].strip()
-    return ""
+        raw = [{"id": "text", "text": content}]
+    elif isinstance(content, dict):
+        raw = [e for e in content.get("excerpts") or [] if isinstance(e, dict)]
+        if not raw and isinstance(content.get("text"), str):
+            raw = [{"id": "text", "text": content["text"]}]
+    else:
+        raw = []
+    out = []
+    for e in reversed(raw):
+        text = e.get("text")
+        if not isinstance(text, str):
+            continue
+        lines = []
+        for line in text.splitlines():
+            line = " ".join(line.split())
+            if line and line not in lines:
+                lines.append(line)
+        if not lines:
+            continue
+        eid = str(e.get("id") or len(out))
+        open_ = eid in expanded
+        source = e.get("source") if isinstance(e.get("source"), dict) else {}
+        quotes = [q for q in e.get("decision_quotes") or [] if isinstance(q, str)][:DECISIONS_SHOWN]
+        out.append({"id": eid, "when": ago(e.get("last_seen") or e.get("observed_at"), now),
+                    "source": source.get("window") or source.get("app") or "",
+                    "lines": lines if open_ else lines[:VISIBLE_LINES],
+                    "more": 0 if open_ else max(0, len(lines) - VISIBLE_LINES), "open": open_,
+                    "decisions": quotes})
+        if len(out) == EXCERPTS_SHOWN:
+            break
+    return out
 
 
-def thing_page(reg, item, now):
+def thing_page(reg, item, now, expanded=()):
     """Everything LMemM knows about one thing, read only (P9)."""
     main = projects._main(item)
     places = [{"id": p, "name": projects.get(reg, p)["name"], "hue": hue(p), "main": p == main,
@@ -354,7 +387,6 @@ def thing_page(reg, item, now):
     mine = item.get("notes", [])
     done = [n for n in mine if notes.is_done(item, n)]
     state = {k: v for k, v in (item.get("state") or {}).items() if v and str(v) != title_of(item)}
-    content = content_text(item.get("content"))
     stats = [("Last seen", ago(item.get("last_seen"), now)), ("First seen", ago(item.get("first_seen"), now)),
              ("Time spent", store.duration(item.get("seconds"))), ("Visits", f"{int(item.get('visits') or 0):,}")]
     return {"kind": "thing", "title": title_of(item), "app": item.get("app", ""), "back": True,
@@ -364,7 +396,7 @@ def thing_page(reg, item, now):
             "done": [{"text": n["text"], "when": ago(n.get("at"), now)} for n in done],
             "stats": [(k, v) for k, v in stats if v],
             "latest": [(str(k).replace("_", " ").capitalize(), str(v)[:200]) for k, v in list(state.items())[:LATEST_SHOWN]],
-            "content": content[:EXCERPT] + ("…" if len(content) > EXCERPT else "")}
+            "excerpts": excerpts_of(item.get("content"), now, expanded)}
 
 
 # ---------------------------------------------------------------- search

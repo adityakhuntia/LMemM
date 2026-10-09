@@ -11,7 +11,7 @@ import sys
 import traceback
 
 from Foundation import NSObject
-from AppKit import (NSApplication, NSColor, NSImageView, NSMakePoint, NSMakeRect, NSScrollView, NSTextField,
+from AppKit import (NSApplication, NSBezierPath, NSColor, NSImageView, NSMakePoint, NSMakeRect, NSScrollView, NSTextField,
                     NSWindow, NSWorkspace)
 
 import apps
@@ -21,7 +21,7 @@ import window_model
 from setup_kit import LEFT, RIGHT
 from widget import _Fields, _Flipped, _Tap
 
-W, H = 980, 680
+W, H = 1080, 720
 SIDE_W = 250
 PAD = 32
 MAIN_W = W - SIDE_W - 2 * PAD
@@ -49,12 +49,31 @@ class _MainClosing(NSObject):
         return False
 
 
+class _SideBackdrop(_Flipped):
+    """The sidebar's soft tint and the hairline between it and the page."""
+
+    def drawRect_(self, rect):
+        kit.faint(0.035).setFill()
+        NSBezierPath.fillRect_(self.bounds())
+        kit.faint(0.09).setFill()
+        NSBezierPath.fillRect_(NSMakeRect(self.bounds().size.width - 1, 0, 1, self.bounds().size.height))
+
+
+class _Bar(_Flipped):
+    """A thin accent bar beside a quoted decision."""
+
+    def drawRect_(self, rect):
+        kit.accent().setFill()
+        NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(self.bounds(), 1.5, 1.5).fill()
+
+
 def _scroll(parent):
     scroll = NSScrollView.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 10))
     scroll.setDrawsBackground_(False)
     scroll.setHasVerticalScroller_(True)
-    scroll.setAutohidesScrollers_(False)                          # a visible bar says "this scrolls"
-    scroll.setScrollerStyle_(0)                                   # legacy: always shown
+    scroll.setAutohidesScrollers_(True)
+    scroll.setScrollerStyle_(1)                                   # overlay: thin, over the content's empty edge, never beside it
+    scroll.setBorderType_(0)
     parent.addSubview_(scroll)
     return scroll
 
@@ -85,11 +104,15 @@ class MainWindow:
         self.window.setDelegate_(self.closing)
         self.root = _Flipped.alloc().initWithFrame_(NSMakeRect(0, 0, W, H))
         self.window.setContentView_(self.root)
+        backdrop = _SideBackdrop.alloc().initWithFrame_(NSMakeRect(0, 0, SIDE_W, H))
+        self.root.addSubview_(backdrop)
         self.banner_host = _Flipped.alloc().initWithFrame_(NSMakeRect(SIDE_W, TOP, W - SIDE_W, 0))
         self.root.addSubview_(self.banner_host)
+        self.head_host = _Flipped.alloc().initWithFrame_(NSMakeRect(SIDE_W, TOP, W - SIDE_W, 0))
+        self.root.addSubview_(self.head_host)
         self.typing = _Fields.alloc().initWithChange_submit_cancel_(
             lambda text: self.press("search", text), lambda text: self.press("search", text), self._cancel_search)
-        self.search = NSTextField.alloc().initWithFrame_(NSMakeRect(14, 0, SIDE_W - 28, 28))
+        self.search = NSTextField.alloc().initWithFrame_(NSMakeRect(16, 0, SIDE_W - 32, 28))
         self.search.setPlaceholderString_("Search")
         self.search.setBezeled_(True)
         self.search.setBezelStyle_(1)
@@ -153,13 +176,17 @@ class MainWindow:
             return
         self.shown = sig
         top = self._banner(self.banner["banner"])
-        self.search.setFrame_(NSMakeRect(14, TOP + 8, SIDE_W - 28, 28))
-        self.side_scroll.setFrame_(NSMakeRect(0, TOP + 44, SIDE_W, H - TOP - 44))
-        self.main_scroll.setFrame_(NSMakeRect(SIDE_W, top, W - SIDE_W, H - top))
+        main = page["main"]
+        split = main["kind"] == "project" and not main.get("empty")      # a project: its top stays put, Things scrolls
+        head = self._head(main) if split else self._no_head()
+        self.search.setFrame_(NSMakeRect(16, TOP + 10, SIDE_W - 32, 28))
+        self.side_scroll.setFrame_(NSMakeRect(0, TOP + 52, SIDE_W, H - TOP - 52))
+        self.head_host.setFrame_(NSMakeRect(SIDE_W, top, W - SIDE_W, head))
+        self.main_scroll.setFrame_(NSMakeRect(SIDE_W, top + head, W - SIDE_W, H - top - head))
         here = (self.nav["view"], self.nav["pid"], self.nav["q"], self.nav["tid"])
         moved, self.where = here != self.where, here
         self._fill(self.side_scroll, SIDE_W, lambda doc: self._side(doc, page["side"]))
-        self._fill(self.main_scroll, W - SIDE_W, lambda doc: self._main(doc, page["main"]), top=moved)
+        self._fill(self.main_scroll, W - SIDE_W, lambda doc: self._main(doc, main, split), top=moved)
 
     def _fill(self, scroll, width, build, top=False):
         """Swap the scrolling area's contents, keeping the place the person had scrolled to (or
@@ -303,8 +330,10 @@ class MainWindow:
 
     # ------------------------------------------------------------ the page
 
-    def _main(self, doc, page):
+    def _main(self, doc, page, split=False):
         x, w = PAD, MAIN_W
+        if split:
+            return self._things(doc, page, x, 6, w)
         y = 30
         kind = page["kind"]
         if kind in ("search", "needs", "thing"):
@@ -423,27 +452,49 @@ class MainWindow:
         return y
 
     def _project(self, doc, page, x, y, w):
-        if page.get("empty"):
-            return self._empty(doc, page["empty"], x, y, w)
-        y = self._section(doc, "Pick up where you left off", x, y, w)
+        """A project with nothing in it yet (one with things is split: _head above, _things below)."""
+        return self._empty(doc, page["empty"], x, y, w)
+
+    # The top of a project page stays where it is; only the list of things under it scrolls.
+
+    def _no_head(self):
+        for sub in list(self.head_host.subviews()):
+            sub.removeFromSuperview()
+        return 0
+
+    def _head(self, page):
+        """Breadcrumb, title, Pick up, sub-projects and the Things controls. Returns its height."""
+        host = self.head_host
+        for sub in list(host.subviews()):
+            sub.removeFromSuperview()
+        x, w = PAD, MAIN_W
+        y = self._crumbs(host, page["crumbs"], x, 26)
+        self._project_icon(host, page["hue"], x, y - 2, 40)
+        kit.put_text(host, page["title"], x + 54, y, w - 54, 26, 700, wrap=False, height=32)
+        self._label(host, page["meta"], x + 54, y + 33, w - 54, size=13, weight=400)
+        y += 62
+        self._label(host, "PICK UP WHERE YOU LEFT OFF", x, y, w)
+        y += 22
         if page["pick_up"]:
-            for t in page["pick_up"]:
-                y = self._card(doc, t, x, y, w)
+            gap = 12
+            cw = (w - gap * 2) / 3
+            for i, t in enumerate(page["pick_up"]):
+                self._mini_card(host, t, x + i * (cw + gap), y, cw, 88)
+            y += 88 + 18
         else:
             caught = page["caught_up"]
-            tap = self._tap(doc, x, y, w, 10, lambda: None, fill=True)
-            kit.put_text(tap, caught["title"], 14, 12, w - 28, 14, 600, wrap=False, height=20)
-            h = kit.put_text(tap, caught["line"], 14, 36, w - 28, 13, 400, kit.mute())
-            tap.setFrame_(NSMakeRect(x, y, w, 36 + h + 14))
-            y += 36 + h + 14 + 10
+            tap = self._tap(host, x, y, w, 52, lambda: None, fill=True)
+            kit.tile(tap, ("checkmark.circle.fill", "checkmark.circle"), kit.mute(), 12, 11, 30)
+            kit.put_text(tap, caught["title"], 52, 8, w - 64, 14, 600, wrap=False, height=20)
+            kit.put_text(tap, caught["line"], 52, 28, w - 64, 12, 400, kit.mute(), wrap=False, height=16)
+            y += 52 + 18
         if page["subs"]:
-            y = self._section(doc, f"Sub-projects · {len(page['subs']) + page['subs_more']}", x, y + 8, w)
-            y = self._rows_of_projects(doc, page["subs"], x, y, w)
-            if page["subs_more"]:
-                self._link(doc, f"Show {min(page['subs_more'], page_model.SUBS_SHOWN)} more sub-projects", x - 6, y - 4,
-                           lambda: self.press("more_subs"))
-                y += 30
-        y = self._section(doc, f"Things · {page['total']}", x, y + 8, w)
+            self._label(host, f"SUB-PROJECTS · {len(page['subs']) + page['subs_more']}", x, y, w)
+            y += 22
+            y = self._sub_chips(host, page, x, y, w) + 8
+        total = f"Things · {page['total']}"
+        kit.put_text(host, total, x, y, w, 15, 700, wrap=False, height=22)
+        y += 30
         chips = []
         if page["deep"]["show"]:
             chips += [("Only here", not page["deep"]["on"], lambda: self.press("deep", False)),
@@ -452,61 +503,141 @@ class MainWindow:
             chips += [("All apps", self.nav["app"] is None, lambda: self.press("app", None))]
             chips += [(f["app"], self.nav["app"] == f["app"], (lambda a=f["app"]: self.press("app", a))) for f in page["filters"]]
         if chips:
-            y += self._chips(doc, x, y, chips) + 12
-        for group in page["groups"]:
-            self._label(doc, group["title"].upper(), x, y, w)
-            y += 24
-            for t in group["things"]:
-                y = self._thing(doc, t, x, y, w)
-        if not page["groups"]:
-            self._label(doc, "Nothing matches this filter.", x, y, w, size=13, weight=400)
-            y += 26
-        if page["things_more"]:
-            kit.button(doc, f"Show {min(page['things_more'], page_model.THINGS_SHOWN)} more of {page['things_more']}",
-                       x, y + 8, 240, 36, lambda: self.press("more"), kind="quiet", size=13, weight=500)
-            y += 52
+            y += self._chips(host, x, y, chips) + 10
         return y
 
+    def _mini_card(self, parent, t, x, y, w, h):
+        """A small Pick up card: the app, the thing, and its first open notes. Opens the thing."""
+        tap = self._tap(parent, x, y, w, h, (lambda i=t["id"]: self.press("thing", i)), fill=True)
+        self._app_icon(tap, t["app"], 12, 11, 24)
+        kit.put_text(tap, t["title"], 44, 11, w - 56, 13, 600, wrap=False, height=24, middle=True)
+        shown = t.get("notes", [])[:2]
+        more = t["open"] - len(shown)
+        for i, text in enumerate(shown):
+            tail = f"   +{more}" if more > 0 and i == len(shown) - 1 else ""
+            kit.put_text(tap, "○  " + text + tail, 12, 44 + i * 18, w - 24, 12, 400, kit.mute(), wrap=False, height=18)
+        return tap
+
+    def _sub_chips(self, parent, page, x, y, w):
+        """Sub-projects as small chips, wrapping onto more rows only when they must. Returns the new y."""
+        cx = x
+        for sub in page["subs"]:
+            width = min(kit.text_width(sub["name"], 13, 500) + 52, w)
+            if cx + width > x + w:
+                cx, y = x, y + 38
+            tap = self._tap(parent, cx, y, width, 32, (lambda i=sub["id"]: self.press("go", i)), fill=True)
+            self._project_icon(tap, sub["hue"], 6, 5, 22)
+            kit.put_text(tap, sub["name"], 34, 0, width - 40, 13, 500, wrap=False, height=32, middle=True)
+            cx += width + 8
+        if page["subs_more"]:
+            label = f"+{page['subs_more']} more"
+            width = kit.text_width(label, 13, 500) + 24
+            if cx + width > x + w:
+                cx, y = x, y + 38
+            tap = self._tap(parent, cx, y, width, 32, lambda: self.press("more_subs"))
+            kit.put_text(tap, label, 12, 0, width - 24, 13, 500, kit.mute(), wrap=False, height=32, middle=True)
+        return y + 32
+
+    def _things(self, doc, page, x, y, w):
+        """The scrolling list: things grouped by when, newest first."""
+        for group in page["groups"]:
+            self._label(doc, group["title"].upper(), x, y + 4, w)
+            y += 28
+            for t in group["things"]:
+                y = self._thing(doc, t, x, y, w)
+            y += 6
+        if not page["groups"]:
+            self._label(doc, "Nothing matches this filter.", x, y + 8, w, size=13, weight=400)
+            y += 34
+        if page["things_more"]:
+            kit.button(doc, f"Show {min(page['things_more'], page_model.THINGS_SHOWN)} more of {page['things_more']}",
+                       x, y + 4, 240, 36, lambda: self.press("more"), kind="quiet", size=13, weight=500)
+            y += 48
+        return y
+
+    def _card_box(self, parent, x, y, w, build, tap=None):
+        """A soft box. `build(box, inner_width)` draws inside it from (14, 12) and returns the inner height."""
+        box = self._tap(parent, x, y, w, 10, tap or (lambda: None), fill=True)
+        inner = build(box, w - 28)
+        box.setFrame_(NSMakeRect(x, y, w, inner + 24))
+        return y + inner + 24
+
     def _thing_page(self, doc, page, x, y, w):
-        """One thing in full: where it lives, its notes, the numbers, what LMemM read from it."""
+        """One thing in full: where it lives, its notes, the numbers, then what LMemM read from it."""
         if page["places"]:
             y = self._section(doc, "In", x, y, w)
             px = x
             for p in page["places"]:
                 label = p["name"] + (" · main" if p["main"] else "")
                 width = kit.text_width(label, 13, 500) + 52
+                if px + width > x + w:
+                    px, y = x, y + 40
                 tap = self._tap(doc, px, y, width, 32, (lambda i=p["id"]: self.press("go", i)), fill=True)
                 self._project_icon(tap, p["hue"], 6, 5, 22)
                 kit.put_text(tap, label, 34, 0, width - 40, 13, 500, wrap=False, height=32, middle=True)
                 px += width + 8
             y += 48
+        if page["stats"]:                                         # four quiet tiles, not a table
+            gap = 10
+            tw = (w - gap * (len(page["stats"]) - 1)) / len(page["stats"])
+            for i, (k, v) in enumerate(page["stats"]):
+                tile = self._tap(doc, x + i * (tw + gap), y, tw, 62, lambda: None, fill=True)
+                kit.put_text(tile, k.upper(), 14, 11, tw - 28, 10, 600, kit.mute(), wrap=False, height=14)
+                kit.put_text(tile, v, 14, 28, tw - 28, 17, 700, wrap=False, height=26)
+            y += 62 + 22
         y = self._section(doc, f"Notes · {len(page['open'])} open", x, y, w)
         for n in page["open"]:
-            y += kit.put_text(doc, "○  " + n["text"], x, y, w, 14, 500) + 2
-            self._label(doc, n["when"], x + 22, y, w, size=12, weight=400)
-            y += 24
+            y = self._card_box(doc, x, y, w, lambda box, inner, n=n: self._note_body(box, inner, n)) + 8
         if not page["open"]:
             self._label(doc, "No open notes.", x, y, w, size=13, weight=400)
             y += 26
         if page["done"]:
-            y = self._section(doc, f"Finished · {len(page['done'])}", x, y + 8, w)
+            y = self._section(doc, f"Finished · {len(page['done'])}", x, y + 10, w)
             for n in page["done"]:
-                y += kit.put_text(doc, "✓  " + n["text"], x, y, w, 13, 400, kit.mute()) + 6
-        if page["stats"]:
-            y = self._section(doc, "About this", x, y + 8, w)
-            for k, v in page["stats"]:
-                self._label(doc, k, x, y, 140, size=13, weight=400)
-                kit.put_text(doc, v, x + 150, y, w - 150, 13, 500, wrap=False, height=20)
-                y += 24
+                y += kit.put_text(doc, "✓  " + n["text"], x, y, w, 13, 400, kit.mute()) + 8
         if page["latest"]:
-            y = self._section(doc, "What LMemM saw", x, y + 8, w)
-            for k, v in page["latest"]:
-                self._label(doc, k, x, y, 140, size=13, weight=400)
-                y += kit.put_text(doc, v, x + 150, y, w - 150, 13, 500) + 8
-        if page["content"]:
-            y = self._section(doc, "Its text", x, y + 8, w)
-            y += kit.put_text(doc, page["content"], x, y, w, 12, 400, kit.mute()) + 6
+            y = self._section(doc, "What LMemM noticed", x, y + 10, w)
+
+            def facts(box, inner):
+                top = 0
+                for k, v in page["latest"]:
+                    kit.put_text(box, k, 14, 12 + top, 130, 12, 400, kit.mute(), wrap=False, height=18)
+                    top += max(kit.put_text(box, v, 14 + 140, 12 + top, inner - 140, 13, 500), 18) + 8
+                return top - 8
+            y = self._card_box(doc, x, y, w, facts)
+        if page["excerpts"]:
+            y = self._section(doc, "What was on screen", x, y + 14, w)
+            for e in page["excerpts"]:
+                y = self._excerpt(doc, e, x, y, w) + 12
         return y
+
+    def _note_body(self, box, inner, n):
+        kit.put_text(box, "○", 14, 12, 16, 16, 400, kit.mute(), wrap=False, height=20)
+        h = kit.put_text(box, n["text"], 40, 12, inner - 26 - 86, 14, 500)
+        kit.put_text(box, n["when"], 14 + inner - 80, 12, 80, 12, 400, kit.mute(), align=RIGHT, wrap=False, height=20)
+        return max(h, 20)
+
+    def _excerpt(self, doc, e, x, y, w):
+        """One passage LMemM read: where and when, any decision it found, then its lines as short paragraphs."""
+        def body(box, inner):
+            top = 0
+            head = e["source"] or "Screen"
+            kit.put_text(box, head, 14, 12, inner - 100, 13, 600, wrap=False, height=20)
+            kit.put_text(box, e["when"], 14 + inner - 96, 12, 96, 12, 400, kit.mute(), align=RIGHT, wrap=False, height=20)
+            top = 30
+            for quote in e["decisions"]:
+                h = kit.put_text(box, "“" + quote + "”", 28, 12 + top, inner - 14, 13, 600, kit.accent())
+                bar = _Bar.alloc().initWithFrame_(NSMakeRect(14, 12 + top + 2, 3, max(h - 4, 14)))
+                box.addSubview_(bar)
+                top += h + 10
+            for line in e["lines"]:
+                top += kit.put_text(box, line, 14, 12 + top, inner, 13, 400) + 7
+            if e["more"] or e["open"]:
+                label = f"Show {e['more']} more lines" if e["more"] else "Show less"
+                self._link(box, label, 8, 12 + top - 2, (lambda i=e["id"]: self.press("expand", i)), size=12, color=kit.accent())
+                top += 24
+            return top - 7
+        return self._card_box(doc, x, y, w, body)
 
     def _search(self, doc, page, x, y, w):
         if page["none"]:

@@ -44,3 +44,13 @@ scanning); showing them is fast (50 ms for 10,000). The window is a fixed size.
 - The banner sits at the top of the page's own column, as a soft box with an icon, its words on the left and its one
   button on the right, in the same style as the cards.
 - Scroll bars are always shown, so it is clear what scrolls.
+
+## Step 5c: a project page that scrolls only where it should
+
+- On a project page the top stays put (breadcrumb, title, three small Pick up cards, sub-project chips, the Things
+  controls) and only the list of things under it scrolls. The window is 1080 by 720.
+- Scroll bars are the thin macOS overlay kind, over the empty edge of the content, never beside it.
+- The sidebar has its own soft tint and a hairline between it and the page.
+- A thing's page: where it lives, four quiet tiles (last seen, first seen, time spent, visits), each open note in
+  its own box, what LMemM noticed, then "What was on screen" as short passages (source and when, any decision found as
+  a quote, six lines each with "Show more").

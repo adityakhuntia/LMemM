@@ -541,6 +541,9 @@ class Tracker:
             "capture_start_offset_ns": capture_start_ns - self.origin_ns,
             "capture_end_offset_ns": capture_end_ns - self.origin_ns,
         }
+        place = self.trail.chat_place(f["bundle_id"]) if self.trail else None
+        if place:
+            meta["trail_chat"] = place["name"]       # understand.chat() uses it instead of the OCR'd header
         monitor = self.input_monitor
         if monitor and monitor.state == "recording" and not monitor.paused:
             permitted = monitor.context_provider(monitor.allowed_apps)
@@ -667,6 +670,14 @@ class Tracker:
     def set_now(self, raw, item):
         self.now = {"raw": raw, "item": item, "mono": time.monotonic_ns()}
 
+    def trail_state(self, bundle_id, app):
+        """The chat state the event trail read from the app (exact name), or None."""
+        place = self.trail.chat_place(bundle_id) if self.trail else None
+        if not place:
+            return None
+        host = (place.get("url") or "").split("/")[0]
+        return understand.chat_state(understand.SITES.get(host) or app, place["name"])
+
     def identify_now(self, f):
         """The pill must follow a switch at once, not after the next capture is OCR'd.
         Most places are known from metadata alone (URL, tab title, app: no pixels). When an
@@ -684,7 +695,12 @@ class Tracker:
                 "site": re.sub(r"^https?://", "", url or "").split("/")[0] or None, "tab_title": tab_title,
                 "ts": "quick", "image": "quick", "quick": True}
         st = identity.quick_state(meta)
-        if st is not None:
+        named = self.trail_state(f["bundle_id"], f["app"]) if st is None else None
+        if named is not None:                # the app named the chat: no screen read needed
+            self.ocr_apps.pop(f["app"], None)
+            with self.lock:
+                self.set_now((f["app"], f["window"]), identity.find_item(self.items, named))
+        elif st is not None:
             self.ocr_apps.pop(f["app"], None)
             with self.lock:
                 self.set_now((f["app"], f["window"]), identity.find_item(self.items, st))
@@ -770,6 +786,16 @@ class Tracker:
                 if app is None:
                     continue
                 pid, name = app.processIdentifier(), app.localizedName()
+                named = self.trail_state(app.bundleIdentifier(), name) if apps.watched(self.watch_apps, app.bundleIdentifier()) else None
+                if named is not None:               # the event trail read the chat's exact name from the app
+                    if (pid, named["target"]) != last:
+                        last = (pid, named["target"])
+                        with self.lock:
+                            self.ax_now = {"pid": pid, "key": None, "item": identity.find_item(self.items, named)}
+                        self.last_widget_refresh = 0.0
+                        if self.nsapp is not None:
+                            macos.wake(self.nsapp)
+                    continue
                 sig = ax.read(pid, name)
                 key = ax.key(name, sig)
                 page = (sig["doc"], sig["title"]) if sig and not key and sig["doc"] and name in config.BROWSERS else None

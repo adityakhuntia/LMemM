@@ -52,12 +52,26 @@ def front():
     return {"app": app.localizedName(), "bundle_id": app.bundleIdentifier(), "pid": app.processIdentifier()}
 
 
+AX_SYMBOLS = ("AXIsProcessTrusted", "AXUIElementCreateApplication", "AXUIElementCreateSystemWide", "AXUIElementSetMessagingTimeout",
+              "AXUIElementSetAttributeValue", "AXUIElementCopyAttributeValue", "AXUIElementCopyMultipleAttributeValues",
+              "AXUIElementCopyElementAtPosition", "AXValueGetType", "AXValueGetValue", "kAXValueAXErrorType", "kAXValueCGPointType",
+              "AXObserverCreate", "AXObserverAddNotification", "AXObserverGetRunLoopSource", "CFRunLoopAddSource",
+              "CFRunLoopRemoveSource", "CFRunLoopGetMain", "kCFRunLoopDefaultMode")
+QUARTZ_SYMBOLS = ("CGPreflightListenEventAccess", "CGRequestListenEventAccess", "CGEventTapCreate", "CGEventTapEnable",
+                  "CGEventGetFlags", "CGEventGetIntegerValueField", "CGEventGetLocation", "kCGKeyboardEventKeycode",
+                  "kCGEventKeyDown", "kCGEventLeftMouseDown", "kCGEventRightMouseDown", "kCGEventScrollWheel",
+                  "kCGEventTapDisabledByTimeout", "kCGEventTapDisabledByUserInput", "kCGAnnotatedSessionEventTap",
+                  "kCGHeadInsertEventTap", "kCGEventTapOptionListenOnly", "CFMachPortCreateRunLoopSource",
+                  "CFRunLoopAddSource", "CFRunLoopRemoveSource", "CFRunLoopGetMain", "kCFRunLoopCommonModes", "CFMachPortInvalidate")
+
+
 class AXReader:
     """Reads the front app. Nothing here polls: the engine calls it when told something changed."""
 
     def __init__(self):
         import ApplicationServices as AS
         self.AS = AS
+        trail_ax.warm(AS, AX_SYMBOLS)                 # resolve PyObjC's lazy names here, on the main thread (see warm())
         self.apps = {}                       # pid -> app element
         self.enabled = {}                    # pid -> element whose AXManualAccessibility we switched on
         self.enabled_at = {}                 # pid -> when; the app builds its tree for a few seconds after
@@ -163,6 +177,7 @@ class Tap:
 
     def start(self):
         import Quartz as q
+        trail_ax.warm(q, QUARTZ_SYMBOLS)
         if not q.CGPreflightListenEventAccess():
             q.CGRequestListenEventAccess()
             self.state = "no_input_monitoring"
@@ -280,7 +295,7 @@ class Trail:
         self.flags = set()
         self.last_status = 0.0
         self.last_sweep = 0.0
-        self.said = set()
+        self.said = {}
 
     # ---- notifications -> the scheduler (called on the main thread; they only record and wake)
 
@@ -304,6 +319,16 @@ class Trail:
     def set_flag(self, name, on):
         (self.flags.add if on else self.flags.discard)(name)
         self.poke("app")
+
+    def chat_place(self, bundle_id, min_conf=0.7):
+        """The chat the user is in right now, as the event trail read it from the app, or None
+        when it is not sure (low confidence, conflicting signals, a different app in front)."""
+        cur = self.engine.tracker.current
+        if (cur and cur.get("bundle_id") == bundle_id and cur.get("kind") == "chat"
+                and cur.get("confidence", 0) >= min_conf and not cur.get("conflict")
+                and not cur["key"].endswith(":?") and cur.get("name")):
+            return dict(cur)
+        return None
 
     def paused(self):
         return bool(self.flags & {"asleep", "display_off", "locked"}) or bool(self.external_pause()) or os.path.exists(
@@ -344,10 +369,10 @@ class Trail:
                 self.say(f"{type(e).__name__}: {e}")
 
     def say(self, msg):
-        """Print a message once, however often the same thing happens."""
-        if msg not in self.said:
-            self.said.add(msg)
-            print("trail: " + msg)
+        """Print a message the 1st, 10th, 100th... time it happens, not every time."""
+        n = self.said[msg] = self.said.get(msg, 0) + 1
+        if n in (1, 10, 100, 1000):
+            print("trail: " + msg + (f" (x{n})" if n > 1 else ""))
 
     def drain(self, now):
         while self.queue:

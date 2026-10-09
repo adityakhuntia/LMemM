@@ -230,6 +230,42 @@ class ChatTests(unittest.TestCase):
         self.assertEqual((p["kind"], p["name"], p["container"]), ("code", "tracker.py", "LMemM"))
 
 
+class StandardPipelineNameTests(unittest.TestCase):
+    def test_an_accessibility_name_replaces_the_ocr_header(self):
+        import understand
+        res = {"objects": [{"text": "Divya•n$h Stth", "kind": "heading", "box": [900, 120, 200, 20]}],
+               "image_size": {"w": 1600, "h": 900}}
+        meta = {"app": "Brave Browser", "site": "web.whatsapp.com", "window": "WhatsApp", "trail_chat": "Divyaansh Seth"}
+        st = understand.describe(res, meta)
+        self.assertEqual((st["app"], st["target"]), ("WhatsApp", "Divyaansh Seth"))
+        self.assertEqual(understand.ref(st), understand.ref(understand.chat_state("WhatsApp", "Divyaansh Seth")))
+
+    def test_without_it_the_ocr_header_is_still_used(self):
+        import understand
+        res = {"objects": [{"text": "Mum", "kind": "heading", "box": [900, 20, 200, 20]}], "image_size": {"w": 1600, "h": 900}}
+        st = understand.describe(res, {"app": "WhatsApp", "window": "WhatsApp"})
+        self.assertEqual(st["target"], "Mum")
+
+    def test_private_tabs_are_skipped(self):
+        self.assertTrue(config.SKIP_TITLES.search("New Private Tab - Brave"))
+        self.assertTrue(config.SKIP_TITLES.search("Reddit (Private)"))
+        self.assertFalse(config.SKIP_TITLES.search("Private equity fund model - Google Sheets"))
+
+
+class WarmTests(unittest.TestCase):
+    def test_warm_touches_every_name_once_and_ignores_missing_ones(self):
+        touched = []
+
+        class Mod:
+            def __getattr__(self, name):
+                touched.append(name)
+                if name == "missing":
+                    raise AttributeError(name)
+                return 1
+        trail_ax.warm(Mod(), ("a", "missing", "b"))
+        self.assertEqual(touched, ["a", "missing", "b"])
+
+
 class SettleTests(unittest.TestCase):
     def P(self, key, conf=0.5, app="A", kind="chat"):
         return {"key": key, "app": app, "kind": kind, "confidence": conf, "name": key, "signals": [], "conflict": False, "url": ""}

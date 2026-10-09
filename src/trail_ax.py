@@ -178,6 +178,17 @@ def collect(window, focus=None, app=None, clock=time.monotonic, max_nodes=MAX_NO
 
 # ---------------------------------------------------------------- macOS (not testable off a Mac)
 
+def warm(module, names):
+    """Touch each name once on the calling thread. PyObjC resolves framework names lazily and that is
+    not thread-safe: two threads using a name for the first time at once can raise KeyError. The
+    tracker has several threads reading accessibility, so everything the trail uses is resolved up front."""
+    for name in names:
+        try:
+            getattr(module, name)
+        except AttributeError:
+            pass
+
+
 class LiveNode:
     """An AXUIElement behind the node protocol. Reads attributes in one call."""
 

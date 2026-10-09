@@ -44,6 +44,8 @@ TRAIL_SETTLE_MS = 150           # a shaky place must hold this long before it co
 TRAIL_POLL = 1.0                # seconds: the cheap fallback check when an app sends no notifications
 TRAIL_IDLE = 60                 # no input for this long -> idle event, reads slow right down
 TRAIL_VISION = True             # fall back to a screenshot read when an app exposes too little text
+TRAIL_SKIP_OCR = True           # when the accessibility text explains the screen, do not OCR it (any app)
+TRAIL_GAP = 0.12                # share of the screen's ink the tree may leave unexplained and still count as explained
 TRAIL_VISION_EVERY = 20         # seconds: least time between screenshot reads of one place
 
 # ---------------------------------------------------------------- memory

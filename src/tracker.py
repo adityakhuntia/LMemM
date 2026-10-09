@@ -44,6 +44,7 @@ import macos
 import notes
 import onboarding
 import resolver
+import trail_cover
 import retention
 import rules
 import store
@@ -84,6 +85,8 @@ class Tracker:
         self.notes = []                      # this session's notes
         self.now = None                      # the quick answer to "what am I on?" (see identify_now)
         self.quick_q = queue.Queue()
+        self.declined = set()
+        self.snaps = {}                      # capture ts -> (accessibility snapshot, display bounds), until it is handled
         self.ocr_apps = {}                   # app -> metadata, for apps whose place can only be told by reading the screen
         self.last_read = 0.0
         self.nsapp = None
@@ -258,9 +261,11 @@ class Tracker:
             "memory_mb": self.resources.get("rss_mb"), "peak_memory_mb": self.resources.get("peak_rss_mb"),
             "cpu_pct_now": self.resources.get("cpu_pct_recent"), "cpu_pct_average": self.resources.get("cpu_pct_avg"),
             "captures": self.stats["captured"], "skipped_ocr_unchanged": self.stats["no_ocr"],
+            "from_accessibility": self.stats["trail_read"], "accessibility_declined": self.stats["trail_declined"],
             "ocr": {"fast": m["ocr_fast_n"], "accurate": m["ocr_accurate_n"], "redone_accurate": m["ocr_redo_n"]},
             "avg_ms": {"capture": avg("capture"), "ocr_fast": avg("ocr_fast"), "ocr_accurate": avg("ocr_accurate"),
-                       "handle": avg("handle"), "save": avg("save")},
+                       "handle": avg("handle"), "save": avg("save"),
+                       "trail_read": avg("trail_read"), "trail_judge": avg("trail_judge")},
             "capture_interval_s": round(self.current_interval(time.time(), quiet=True)),
         }
 
@@ -554,6 +559,14 @@ class Tracker:
                     meta["input_event_ids"] = self.input_store.link_capture(
                         ts, permitted["id"], meta["capture_start_offset_ns"], meta["capture_end_offset_ns"])
                     self.input_store.keep_capture(ts, shot)
+        if self.trail and config.TRAIL_SKIP_OCR:
+            started = time.perf_counter()
+            snap = self.trail.read_now(f)        # what the app says is on screen, read at the moment of the picture
+            if snap is not None:
+                if len(self.snaps) > 8:
+                    self.snaps.pop(next(iter(self.snaps)))
+                self.snaps[ts] = (snap, macos.display_bounds(display))
+            self.timed("trail_read", started)
         meta_path = os.path.join(data_dir, ts + ".json")    # written only if this frame is kept
         self.frames[ts] = shot
         self.stats["captured"] += 1
@@ -934,7 +947,7 @@ class Tracker:
                 self.idle_steps = min(self.idle_steps + 1, 8)     # nothing changed: slow the timer
             else:
                 self.idle_steps = 0
-                res = self.read(meta_path, meta, frame, last, change, pinned)
+                res = self.from_trail(meta, frame) or self.read(meta_path, meta, frame, last, change, pinned)
                 st = understand.describe(res, meta)
             self.interval_cap = (config.BACKOFF_CAP_CHAT if st["kind"] in CHATTY else config.BACKOFF_CAP)
             content = extract_content(res, meta)
@@ -945,7 +958,32 @@ class Tracker:
         finally:
             if frame is not None:
                 frame.release()
+            self.snaps.pop(meta["ts"], None)
             self.timed("handle", started)
+
+    def from_trail(self, meta, frame):
+        """The screen as the app describes it, when that explains what is drawn (trail_cover). Works the
+        same for every app: ink on screen that no accessibility node accounts for sends it to OCR."""
+        got = self.snaps.pop(meta["ts"], None)
+        if got is None or frame is None:
+            return None
+        snap, display = got
+        scale = frame.width / display["Width"]
+        started = time.perf_counter()
+        verdict = trail_cover.judge(snap, frame.gray, display, scale)
+        if not verdict["ok"]:
+            self.stats["trail_declined"] += 1
+            key = (meta.get("app"), verdict["why"])
+            if key not in self.declined:                  # say it once per app and reason, so a Mac run shows what OCR is still for
+                self.declined.add(key)
+                say(f"  reading {meta.get('app')} from the screen: {verdict['why']} "
+                    f"({verdict['gap']} of {verdict['ink']} ink cells unexplained)")
+            return None
+        self.stats["trail_read"] += 1
+        res = trail_cover.to_res(snap, meta, (frame.width, frame.height), display, scale,
+                                 time.perf_counter() - started)
+        self.timed("trail_judge", started)
+        return res
 
     def read(self, meta_path, meta, frame, last, change, pinned):
         """OCR a changed screen. Fast OCR (~9x cheaper) for a later frame of the same window;
@@ -1317,6 +1355,7 @@ class Tracker:
         say(f"\ncost: {c['running_for']} running, {c['cpu_pct_average']}% of a core on average, "
             f"memory {c['memory_mb']} MB (peak {c['peak_memory_mb']} MB)")
         say(f"      {c['captures']} captures: {c['skipped_ocr_unchanged']} unchanged (no OCR), "
+            f"{c['from_accessibility']} read from accessibility (no OCR), {c['accessibility_declined']} sent to OCR anyway, "
             f"{c['ocr']['fast']} fast OCR, {c['ocr']['accurate']} accurate OCR; "
             f"avg capture {ms['capture']} ms, fast OCR {ms['ocr_fast']} ms, accurate OCR {ms['ocr_accurate']} ms")
         say(f"\nsaved to {os.path.relpath(config.paths().items_file)}")

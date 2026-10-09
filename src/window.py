@@ -87,13 +87,14 @@ class MainWindow:
     """on_press(row id) is called when the banner's button is pressed (ids the menu already knows).
     data() returns (project registry, things by id) for the page."""
 
-    def __init__(self, on_press, data, on_tick=None, on_add_note=None, on_project=None, on_project_undo=None):
+    def __init__(self, on_press, data, on_tick=None, on_add_note=None, on_project=None, on_project_undo=None, suggest=None):
         self.on_press = on_press
         self.data = data
         self.on_tick = on_tick or (lambda ids, done: None)               # tick or reopen notes (the pill's own function)
         self.on_add_note = on_add_note or (lambda item_id, text: None)
         self.on_project = on_project                                   # (action, args) -> {"message", "go", "undo"}; raises ValueError
         self.on_project_undo = on_project_undo or (lambda undo: None)
+        self.suggest = suggest or (lambda: None)                        # the proposals waiting (suggestions.view)
         self.dialog = None                                             # the question or form on screen, if any
         self.done = None                                               # {"message", "undo", "until"}: the last project change
         self.sel = None                                                # None, or the ids of the things ticked in Select mode
@@ -258,7 +259,7 @@ class MainWindow:
     def _render(self):
         reg, items = self.data()
         now = time.time()
-        page = page_model.view(reg, items, self.nav, fading=self.flow.holding(now))
+        page = page_model.view(reg, items, self.nav, fading=self.flow.holding(now), sugg=self.suggest())
         self.flow_sig = self.flow_signature()
         sig = repr((window_model.signature(self.banner), page, self.flow_sig, self.sel))
         if sig == self.shown:
@@ -429,6 +430,10 @@ class MainWindow:
             asking = {"title": "That can't be done", "text": str(error), "button": None}
         self.dialog = {"kind": "task", "ids": list(ids), "plan": asking}
         self._dialog()
+
+    def answer(self, action, sid, ids=(), name=None):
+        """Answer a suggestion (suggestions.py): Create, Dismiss, Add, Not here."""
+        return self.project_action(action, sid=sid, ids=list(ids), name=name)
 
     def start_select(self):
         self.sel = []
@@ -821,6 +826,8 @@ class MainWindow:
         return y
 
     def _home(self, doc, page, x, y, w):
+        if page.get("suggest"):
+            y = self._suggest_home(doc, page["suggest"], x, y, w)
         if page["empty"]:
             return self._empty(doc, page["empty"], x, y, w)
         needs = page["needs"]
@@ -840,6 +847,65 @@ class MainWindow:
             y += 26
         return y
 
+    def _suggest_home(self, doc, sug, x, y, w):
+        """Proposals on the first page: projects to make (Create / Dismiss), and projects with things waiting."""
+        y = self._section(doc, f"Suggestions · {sug['count']}", x, y, w)
+        for e in sug["projects"]:
+            y = self._card_box(doc, x, y, w, lambda box, inner, e=e: self._suggest_project(box, inner, e)) + 8
+        for e in sug["items"]:
+            tap = self._tap(doc, x, y, w, 56, (lambda p=e["pid"]: self.press("go", p)), fill=True)
+            self._project_icon(tap, e["hue"], 12, 12, 32)
+            n = e["count"]
+            kit.put_text(tap, f"{n} thing{'s' * (n != 1)} may belong in “{e['name']}”", 56, 9, w - 56 - 110, 14, 600, wrap=False, height=20)
+            kit.put_text(tap, e["line"], 56, 30, w - 56 - 110, 12, 400, kit.mute(), wrap=False, height=16)
+            kit.button(tap, "Review", w - 94, 11, 82, 34, (lambda p=e["pid"]: self.press("go", p)), kind="outline", size=12, weight=600)
+            y += 64
+        return y + 14
+
+    def _suggest_project(self, box, inner, e):
+        """"Make “Trip” a project?" with the things that would go in it. Returns the inner height."""
+        w = inner + 28
+        kit.tile(box, ("sparkles", "wand.and.stars", "star.fill"), kit.ink(), 14, 12, 32)
+        kit.put_text(box, f"Make “{e['name']}” a project?", 58, 12, w - 58 - 190, 14, 600, wrap=False, height=20)
+        n = len(e["things"])
+        kit.put_text(box, f"{n} things · {e['reason']}", 58, 32, w - 58 - 190, 12, 400, kit.mute(), wrap=False, height=16)
+        kit.button(box, "Dismiss", w - 14 - 84 - 8 - 84, 14, 84, 32, (lambda: self.answer("dismiss_project", e["id"])), kind="quiet", size=13, weight=600)
+        kit.button(box, "Create", w - 14 - 84, 14, 84, 32, (lambda: self.answer("accept_project", e["id"])), kind="primary", size=13, weight=600)
+        top = 56
+        for t in e["things"][:3]:
+            kit.put_text(box, t["title"], 58, top, w - 58 - 14, 12, 500, wrap=False, height=18)
+            top += 20
+        if n > 3:
+            kit.put_text(box, f"+{n - 3} more", 58, top, w - 58 - 14, 12, 400, kit.mute(), wrap=False, height=18)
+            top += 20
+        return top - 12
+
+    def _suggested(self, doc, e, x, y, w):
+        """On a project: things that may belong here, each with Add and Not here. Returns the new y."""
+        n = len(e["things"])
+        kit.put_text(doc, f"Suggested for this project · {n}", x, y, w, 15, 700, wrap=False, height=22)
+        if n > 1:
+            label = f"Add all {n}"
+            self._link(doc, label, x + w - kit.text_width(label, 13, 500) - 12, y - 4, lambda: self.answer("accept_items", e["id"]))
+        y += 30
+
+        def rows(box, inner):
+            top = 12
+            for t in e["things"][:5]:
+                call = (lambda i=t["id"]: self.press("thing", i))
+                self._app_icon(box, t["app"], 14, top + 6, 30)
+                open_it = self._tap(box, 54, top, inner + 28 - 54 - 190, 44, call)
+                kit.put_text(open_it, t["title"], 0, 3, inner + 28 - 54 - 190, 14, 600, wrap=False, height=20)
+                kit.put_text(open_it, t["sub"], 0, 23, inner + 28 - 54 - 190, 12, 400, kit.mute(), wrap=False, height=16)
+                kit.button(box, "Not here", inner + 14 - 84, top + 6, 84, 32, (lambda i=t["id"]: self.answer("reject_items", e["id"], [i])), kind="quiet", size=13, weight=600)
+                kit.button(box, "Add", inner + 14 - 84 - 6 - 64, top + 6, 64, 32, (lambda i=t["id"]: self.answer("accept_items", e["id"], [i])), kind="primary", size=13, weight=600)
+                top += 44
+            if n > 5:
+                kit.put_text(box, f"+{n - 5} more after these", 14, top + 2, inner, 12, 400, kit.mute(), wrap=False, height=18)
+                top += 22
+            return top - 12
+        return self._card_box(doc, x, y, w, rows) + 20
+
     def _needs(self, doc, page, x, y, w):
         for t in page["things"]:
             y = self._card(doc, t, x, y, w)
@@ -850,6 +916,8 @@ class MainWindow:
 
     def _project(self, doc, page, x, y, w):
         """A project with nothing in it yet (one with things is split: _head above, _things below)."""
+        if page.get("suggested"):
+            y = self._suggested(doc, page["suggested"], x, y, w)
         return self._empty(doc, page["empty"], x, y, w)
 
     def _project_actions(self, parent, right, y, pid):
@@ -1000,6 +1068,8 @@ class MainWindow:
 
     def _things(self, doc, page, x, y, w):
         """The scrolling list: things grouped by when, newest first."""
+        if page.get("suggested"):
+            y = self._suggested(doc, page["suggested"], x, y, w)
         for group in page["groups"]:
             self._label(doc, group["title"].upper(), x, y + 4, w)
             y += 28

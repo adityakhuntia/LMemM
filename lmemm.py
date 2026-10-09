@@ -10,6 +10,8 @@ LMemM - the one command.
     lmemm.py notes [--all] [PROJECT]  pending edits (your ⌃⌥N notes) by project
     lmemm.py notes done ID… | notes reopen ID…
     lmemm.py suggest [NAME] [ID…]     offer things as one project (stands in for the model)
+    lmemm.py suggest-for PROJECT [ID…]
+                                      offer things for an existing project (the three latest not in it, or the ids)
     lmemm.py projects [--all] | projects new|rename|move|archive|restore|merge|delete …
                                       look at and shape the project tree (any depth)
     lmemm.py context [SESSION] [--days N]
@@ -226,6 +228,15 @@ def cmd_suggest(args):
     if not tracker.send_control("suggest", name=name, ids=args[1:], reason="Opened together"):
         sys.exit("LMemM isn't running.")
     print(f"offered '{name}' on the pill.")
+
+
+def cmd_suggest_for(args):
+    """Offer things for a project on the pill's window. With no ids, the three latest things not in it."""
+    if not args:
+        sys.exit("usage: lmemm.py suggest-for PROJECT [ID…]")
+    if not tracker.send_control("suggest_for", project=args[0], ids=args[1:], reason="Looks like it belongs here"):
+        sys.exit("LMemM isn't running.")
+    print(f"offered things for '{args[0]}' in the window.")
 
 
 def cmd_notes(args):
@@ -458,6 +469,8 @@ def main():
         cmd_notes(rest)
     elif cmd == "suggest":
         cmd_suggest(rest)
+    elif cmd == "suggest-for":
+        cmd_suggest_for(rest)
     elif cmd == "projects":
         cmd_projects(rest)
     elif cmd in {"status", "pause", "resume"}:

@@ -291,7 +291,7 @@ def crumbs(reg, pid):
     return chain
 
 
-def main(reg, items, state, counts, now, fading=()):
+def main(reg, items, state, counts, now, fading=(), sugg=None):
     view = state["view"]
     if view == "thing" and state.get("tid") in items:
         return thing_page(reg, items[state["tid"]], now, state.get("ex_open", ()), fading)
@@ -309,11 +309,11 @@ def main(reg, items, state, counts, now, fading=()):
         return {"kind": "needs", "title": "Needs you", "meta": plural(len(rows), "thing") + " with open notes",
                 "things": rows, "back": True}
     if view == "project" and projects.exists(reg, state["pid"]):
-        return project_page(reg, items, state, counts, now)
-    return home(reg, items, counts, now)
+        return project_page(reg, items, state, counts, now, sugg)
+    return home(reg, items, counts, now, sugg)
 
 
-def home(reg, items, counts, now):
+def home(reg, items, counts, now, sugg=None):
     top = [p for p in projects.children(reg) if not reg["projects"][p]["archived"]]
     needs = needs_you(items)
     cards = [{"id": p, "name": reg["projects"][p]["name"], "hue": hue(p), "line": _count_line(counts[p], _subs(reg, p))}
@@ -326,10 +326,27 @@ def home(reg, items, counts, now):
         empty = None
     return {"kind": "home", "title": "All projects", "meta": plural(len(top), "project"),
             "needs": {"count": len(needs), "rows": [_thing(reg, i, now, with_notes=True) for i in needs[:NEEDS_HOME]]},
-            "cards": cards, "unplaced": len(projects.unassigned(items)), "empty": empty}
+            "cards": cards, "unplaced": len(projects.unassigned(items)), "empty": empty,
+            "suggest": _suggest_home(sugg)}
 
 
-def project_page(reg, items, state, counts, now):
+def _suggest_home(sugg):
+    """The suggestions on the first page: projects to make, and which projects have things waiting (S1)."""
+    if not sugg or not sugg["count"]:
+        return None
+    return {"count": sugg["count"], "projects": sugg["projects"],
+            "items": [{"id": e["id"], "pid": e["pid"], "name": e["name"], "hue": e["hue"], "count": len(e["things"]),
+                       "line": e["reason"]} for e in sugg["items"]]}
+
+
+def _suggest_for(sugg, pid):
+    for e in (sugg or {}).get("items", []):
+        if e["pid"] == pid:
+            return e
+    return None
+
+
+def project_page(reg, items, state, counts, now, sugg=None):
     pid = state["pid"]
     c = counts[pid]
     kids = [k for k in projects.children(reg, pid) if not reg["projects"][k]["archived"]]
@@ -338,7 +355,8 @@ def project_page(reg, items, state, counts, now):
     here = projects.members(reg, items, pid, deep=deep)
     pick = [i for i in everything if notes.open_notes(i)][:PICK_UP]
     page = {"kind": "project", "pid": pid, "hue": hue(pid), "archived": projects.hidden(reg, pid), "title": reg["projects"][pid]["name"], "crumbs": crumbs(reg, pid),
-            "meta": " · ".join(([plural(len(kids), "sub-project")] if kids else []) + [_count_line(c)])}
+            "meta": " · ".join(([plural(len(kids), "sub-project")] if kids else []) + [_count_line(c)]),
+            "suggested": _suggest_for(sugg, pid)}
     if not everything and not kids:
         page["empty"] = {"title": "Nothing here yet",
                          "line": "Things you work on in this project show up by themselves."}
@@ -467,11 +485,11 @@ def search(reg, items, q, now):
 
 # ---------------------------------------------------------------- the whole page
 
-def view(reg, items, state, now=None, fading=()):
-    """fading: ids of notes ticked a moment ago, still on screen crossed out (P10)."""
+def view(reg, items, state, now=None, fading=(), sugg=None):
+    """fading: ids of notes ticked a moment ago, still on screen crossed out (P10). sugg: suggestions.view()."""
     now = now or datetime.now()
     counts = projects.counts(reg, items)
-    return {"side": side(reg, items, state, counts, now), "main": main(reg, items, state, counts, now, fading)}
+    return {"side": side(reg, items, state, counts, now), "main": main(reg, items, state, counts, now, fading, sugg)}
 
 
 def signature(v):

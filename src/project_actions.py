@@ -25,10 +25,11 @@ import copy
 
 import page_model
 import projects
+import suggestions
 import thing_actions
 
-FIELDS = ("project", "project_id", "also_in", "not_in")           # what a project change can touch on a thing
-ACTIONS = ("new", "rename", "move", "archive", "restore", "merge", "delete") + thing_actions.ACTIONS
+FIELDS = ("project", "project_id", "also_in", "not_in", "declined_projects")           # what a project change can touch on a thing
+ACTIONS = ("new", "rename", "move", "archive", "restore", "merge", "delete") + thing_actions.ACTIONS + suggestions.ACTIONS
 
 
 # ---------------------------------------------------------------- undo (A1)
@@ -49,16 +50,21 @@ def do(reg, items, action, **args):
     before = snapshot(reg, items)
     gone = ({i: copy.deepcopy(items[i]) for i in args.get("ids", ()) if i in items}   # Forget removes things: keep them for Undo
             if action == "forget" else {})
+    sug = args.get("sug")
+    asked = copy.deepcopy(sug) if sug is not None else None                  # suggestions waiting, for Undo
     result = run(reg, items, action, **args)
     gone = {i: item for i, item in gone.items() if i not in items}
-    return {**result, "undo": {"before": before, "after": _fields(items), "gone": gone}}
+    return {**result, "undo": {"before": before, "after": _fields(items), "gone": gone, "sug": asked}}
 
 
-def undo(reg, items, undo):
+def undo(reg, items, undo, sug=None):
     """Put the tree back and each thing's project fields, in place. A thing whose fields changed
     again since the action (you filed it somewhere) is left as you left it."""
     reg.clear()
     reg.update(copy.deepcopy(undo["before"]["reg"]))
+    if undo.get("sug") is not None and sug is not None:                      # the proposals come back too
+        sug.clear()
+        sug.update(copy.deepcopy(undo["sug"]))
     for iid, item in undo.get("gone", {}).items():                           # forgotten things come back whole
         items.setdefault(iid, copy.deepcopy(item))
     for iid, item in items.items():
@@ -79,10 +85,12 @@ def _name(reg, pid):
     return projects.get(reg, pid)["name"]
 
 
-def run(reg, items, action, pid=None, name=None, parent=None, target=None, ids=(), here=None):
+def run(reg, items, action, pid=None, name=None, parent=None, target=None, ids=(), here=None, sug=None, sid=None):
     """Do one action. Returns {"message", "go"}: the sentence for the toast and the project to
     show next (None: all projects). ValueError says why not, in words (A5). Actions on things
     (thing_actions.py) also say "stay": the page does not change."""
+    if action in suggestions.ACTIONS:
+        return suggestions.run(reg, items, sug, action, sid, ids, name)
     if action in thing_actions.ACTIONS:
         return thing_actions.run(reg, items, action, ids, pid, here)
     if action == "new":

@@ -184,7 +184,7 @@ class WiringTests(unittest.TestCase):
         for needle in ("with self.lock", "projects.load()", "projects.save(reg)", "self.save(force=True)"):
             self.assertIn(needle, do)
             self.assertIn(needle, m["window_project_undo"])
-        self.assertIn("project_actions.undo(reg, self.items, undo)", m["window_project_undo"])
+        self.assertIn("project_actions.undo(reg, self.items, undo, self.sug)", m["window_project_undo"])
         self.assertIn("self.window_project, self.window_project_undo", m["open_window"])
 
     def test_every_action_the_window_asks_for_is_one_this_module_does(self):

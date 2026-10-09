@@ -417,6 +417,30 @@ class ArchivedTests(unittest.TestCase):
         self.assertEqual(page["empty"]["title"], "Nothing archived")
 
 
+class SuggestionPageTests(unittest.TestCase):
+    def sugg(self):
+        import suggestions as sg
+        reg, items, ids = world()
+        sug = sg.empty()
+        sg.offer_project(sug, items, "Trip", ["a", "e"])
+        sg.offer_items(sug, reg, items, ids["home"], ["c", "e"])
+        return reg, items, ids, sg.view(sug, reg, items, NOW)
+
+    def test_the_first_page_lists_projects_to_make_and_projects_with_things_waiting(self):
+        reg, items, ids, sugg = self.sugg()
+        home = pm.view(reg, items, pm.new_state(), NOW, sugg=sugg)["main"]["suggest"]
+        self.assertEqual((home["count"], [p["name"] for p in home["projects"]], [(i["name"], i["count"]) for i in home["items"]]),
+                         (2, ["Trip"], [("Home", 2)]))
+        self.assertIsNone(pm.view(reg, items, pm.new_state(), NOW)["main"]["suggest"])
+
+    def test_a_project_page_carries_only_its_own_suggestions(self):
+        reg, items, ids, sugg = self.sugg()
+        page = pm.view(reg, items, pm.press(reg, pm.new_state(), "go", ids["home"]), NOW, sugg=sugg)["main"]
+        self.assertEqual([t["id"] for t in page["suggested"]["things"]], ["c", "e"])
+        other = pm.view(reg, items, pm.press(reg, pm.new_state(), "go", ids["work"]), NOW, sugg=sugg)["main"]
+        self.assertIsNone(other["suggested"])
+
+
 class SearchTests(unittest.TestCase):
     def results(self, q):
         reg, items, ids = world()

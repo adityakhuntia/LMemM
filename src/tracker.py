@@ -52,6 +52,7 @@ import resolver
 import retention
 import rules
 import store
+import suggestions
 import thing_actions
 import understand
 import widget
@@ -149,6 +150,7 @@ class Tracker:
         self.screen_restart, self.restart_checked = False, 0.0   # screen access is on for a new run, not this one
         self.suggestion = None               # a group offered as one project: {name, ids, reason}
         self.suggest_answers = self.load_answers()
+        self.sug = self.load_sug()           # proposals waiting for an answer (suggestions.py): the pill and the window share them
         self.last_widget_refresh = 0.0
         self.control_file = Path(p.control_file)
         self.status_file = Path(p.status_file)
@@ -224,6 +226,8 @@ class Tracker:
 
         elif doc.get("action") == "suggest":
             self.offer_project(doc.get("name"), doc.get("ids") or [], doc.get("reason", ""))
+        elif doc.get("action") == "suggest_for":
+            self.offer_items(doc.get("project", ""), doc.get("ids") or [], doc.get("reason", ""))
 
     def publish_status(self):
         private_write(self.status_file, {
@@ -639,9 +643,14 @@ class Tracker:
         import projects
         with self.lock:
             reg = projects.load()
+            if action in suggestions.ACTIONS:
+                args = {**args, "sug": self.sug}
             result = project_actions.do(reg, self.items, action, **args)
             projects.save(reg)
             self.save(force=True)
+            if action in suggestions.ACTIONS:
+                self.save_sug()
+                self.sync_pill()
         line(now_hms(), "", result["message"])
         return result
 
@@ -650,9 +659,12 @@ class Tracker:
         import projects
         with self.lock:
             reg = projects.load()
-            project_actions.undo(reg, self.items, undo)
+            project_actions.undo(reg, self.items, undo, self.sug)
             projects.save(reg)
             self.save(force=True)
+            if undo.get("sug") is not None:
+                self.save_sug()
+                self.sync_pill()
         line(now_hms(), "", "undone")
 
     def widget_refresh_soon(self):
@@ -718,7 +730,7 @@ class Tracker:
     def open_window(self):
         if self.main_window is None:
             self.main_window = main_window.MainWindow(self.menu_pick, self.page_data, self.widget_tick, self.window_add_note,
-                                                   self.window_project, self.window_project_undo)   # its button sends a menu row id
+                                                   self.window_project, self.window_project_undo, self.sug_view)   # its button sends a menu row id
         self.adopt_projects()                       # things filed by name since the last time
         self.main_window.show(self.window_view(self.widget_status()))
 
@@ -1020,18 +1032,75 @@ class Tracker:
         except OSError:
             pass
 
+    @property
+    def sug_file(self):
+        return os.path.join(config.paths().memory_dir, "suggestions.json")
+
+    def load_sug(self):
+        try:
+            doc = json.loads(Path(self.sug_file).read_text())
+            if isinstance(doc.get("projects"), list) and isinstance(doc.get("items"), list):
+                return {**suggestions.empty(), **doc}
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass
+        return suggestions.empty()
+
+    def save_sug(self):
+        try:
+            os.makedirs(os.path.dirname(self.sug_file), exist_ok=True)
+            private_write(self.sug_file, self.sug)
+        except OSError:
+            pass
+
+    def sync_pill(self):
+        """The pill shows the first project proposal waiting; answering it anywhere clears it everywhere (S1)."""
+        first = self.sug["projects"][0] if self.sug["projects"] else None
+        self.suggestion = {"name": first["name"], "ids": first["ids"], "reason": first["reason"]} if first else None
+
+    def sug_view(self):
+        """The proposals as the window draws them. Tidies the list first (S3) and keeps the pill in step."""
+        reg, items = self.page_data()
+        with self.lock:
+            before = repr(self.sug)
+            view = suggestions.view(self.sug, reg, items, datetime.now())
+            if repr(self.sug) != before:
+                self.save_sug()
+            self.sync_pill()
+        return view
+
     def offer_project(self, name, ids, reason=""):
         """Offer a group of things as one project. The model will call this; until it
         exists, `lmemm.py suggest [NAME] [ID…]` does. With no ids, the four latest things."""
         with self.lock:
             if not ids:
                 ids = [i["id"] for i in sorted(self.items.values(), key=lambda i: i["last_seen"], reverse=True)[:4]]
-            ids = [i for i in ids if i in self.items]
-            if len(ids) < 2 or notes.was_declined(self.items, ids, name or "Project"):
+            entry = suggestions.offer_project(self.sug, self.items, name, ids, reason)
+            if entry is None:
                 line(now_hms(), "", "no project suggestion: needs two known things you have not refused")
                 return
-            self.suggestion = {"name": name or "Project", "ids": ids, "reason": reason or "Opened together"}
-        line(now_hms(), "", f"suggesting project {self.suggestion['name']} ({len(ids)} things)")
+            self.save_sug()
+            self.sync_pill()
+        line(now_hms(), "", f"suggesting project {entry['name']} ({len(entry['ids'])} things)")
+
+    def offer_items(self, project, ids, reason=""):
+        """Offer things for an existing project (`lmemm.py suggest-for PROJECT [ID…]`). With no ids, the
+        three latest things that are not in it. `project` is a name or a path, as the CLI takes it."""
+        import projects
+        try:
+            reg = projects.load()
+            pid = projects.resolve(reg, project)
+            with self.lock:
+                if not ids:
+                    latest = sorted(self.items.values(), key=lambda i: i["last_seen"], reverse=True)
+                    ids = [i["id"] for i in latest if pid not in projects._members_of(i)][:3]
+                entry = suggestions.offer_items(self.sug, reg, self.items, pid, ids, reason)
+                if entry is not None:
+                    self.save_sug()
+        except ValueError as error:
+            say(str(error))
+            return
+        line(now_hms(), "", f"suggesting {len(entry['ids'])} things for {projects.get(reg, pid)['name']}" if entry
+             else "no suggestion: nothing there that is not already in it or refused")
 
     def in_tree(self, change):
         """Run change(reg) on the project tree and save it, so what the pill does and what the window
@@ -1059,8 +1128,10 @@ class Tracker:
             if found:
                 self.save(force=True)
             if self.suggestion and set(self.suggestion["ids"]) & set(found):
-                self.suggestion = None
                 self.count_answer()
+            suggestions.drop_ids(self.sug, found)
+            self.save_sug()
+            self.sync_pill()
         line(now_hms(), "", f"{len(found)} thing{'s' * (len(found) != 1)} filed in {name}")
 
     def widget_decline(self, forever=True):
@@ -1069,7 +1140,9 @@ class Tracker:
                 notes.decline_project(self.items, self.suggestion["ids"], self.suggestion["name"])
                 self.in_tree(lambda reg: thing_actions.decline_by_name(reg, self.items, self.suggestion["ids"], self.suggestion["name"]))
                 self.save(force=True)
-            self.suggestion = None
+                self.sug["projects"] = [e for e in self.sug["projects"] if e["ids"] != self.suggestion["ids"]]
+                self.save_sug()
+            self.sync_pill()
             self.count_answer()
 
     def widget_picker(self, item_id, query):

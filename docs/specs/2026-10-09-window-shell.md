@@ -89,3 +89,13 @@ Rules T1–T6 are in `src/thing_actions.py` (tested in `tests/test_thing_actions
 - **Forget** is the only action that asks first (it removes a thing from memory), says what goes with it, and can be undone from the toast. Everything else just happens with Undo.
 - **The pill and the window agree.** The pill used to write only a project's name, so moving a thing from the pill left the tree pointing at the old project. Filing, "take it out" and "not this project" on the pill now go through the project tree (`tracker.in_tree`).
 - Capture copes with a thing forgotten mid-session (no more adding time to a thing that is gone).
+
+## Step 9: Suggestions
+
+Rules S1–S5 are in `src/suggestions.py` (tests in `tests/test_suggestions.py`). Proposals wait in `data/memory/suggestions.json` until answered.
+
+- **First page:** a "Suggestions" section. A project proposal is a card ("Make “Trip” a project?", the things it would hold, **Create** / **Dismiss**). A project with things waiting shows one row with **Review**.
+- **A project's page:** "Suggested for this project" above its things, one row per thing with **Add** / **Not here**, and **Add all**. Also shown on an empty project.
+- **Dismiss and Not here are permanent** (R14); Add and Create are the same actions as in step 8, so each says what it did and offers Undo (which also brings the proposal back).
+- **The pill and the window share the list.** Answering in either clears it in both; the pill shows the first project proposal waiting.
+- **Stand-ins for the model:** `lmemm.py suggest [NAME] [ID…]` (a project) and `lmemm.py suggest-for PROJECT [ID…]` (things for an existing one; with no ids, the three latest not in it).

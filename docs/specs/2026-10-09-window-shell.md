@@ -99,3 +99,16 @@ Rules S1–S5 are in `src/suggestions.py` (tests in `tests/test_suggestions.py`)
 - **Dismiss and Not here are permanent** (R14); Add and Create are the same actions as in step 8, so each says what it did and offers Undo (which also brings the proposal back).
 - **The pill and the window share the list.** Answering in either clears it in both; the pill shows the first project proposal waiting.
 - **Stand-ins for the model:** `lmemm.py suggest [NAME] [ID…]` (a project) and `lmemm.py suggest-for PROJECT [ID…]` (things for an existing one; with no ids, the three latest not in it).
+
+## Step 10: Settings
+
+Rules G1–G7 are in `src/settings_model.py` (tests in `tests/test_settings_model.py`). Open it from the gear at the bottom of the sidebar or **Settings…** in the menu-bar item.
+
+- **You:** first name (same rules as setup) and what you mostly work on.
+- **Apps:** every app, or only the ones you add. Removing the last one means every app, and the line says so. Takes effect immediately, including for the event trail.
+- **Access:** the three permissions read live from macOS with setup's own words and buttons. Red only for a permission that is off.
+- **Privacy:** what LMemM never reads (password managers, banks and sign-in pages, private windows, password fields), and apps you add to **Never remember**, skipped before anything is captured or read.
+- **General:** keep screenshots 1, 3, 7 or 30 days (the picture goes; the words and notes stay), the note shortcut, and Reopen setup.
+- **Data:** where memory lives and how big it is, Show in Finder, and Delete all my data (asks first, as in the menu).
+- Every change saves at once, says what it did, and can be undone from the toast. The change is also true in the running app: `Tracker.apply_user` updates the watched apps (and the trail's gate), the never-remember set and the screenshot keep time.
+- `tests/window_smoke.py` now also draws all six Settings pages and the app picker.

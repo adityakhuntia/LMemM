@@ -36,6 +36,7 @@ from datetime import datetime
 
 import notes
 import projects
+import settings_model
 import store
 
 ARCHIVE_ID = "archived"            # the tree's folder of archived projects (not a real project id: those are p1, p2...)
@@ -113,7 +114,7 @@ def plural(n, one, many=None):
 
 def new_state():
     return {"view": "home", "pid": None, "q": "", "open": [], "deep": True, "app": None,
-            "shown": THINGS_SHOWN, "subs": SUBS_SHOWN, "lim": {}, "needs_all": False, "tid": None, "back": None, "ex_open": []}
+            "shown": THINGS_SHOWN, "subs": SUBS_SHOWN, "lim": {}, "needs_all": False, "tid": None, "back": None, "ex_open": [], "sec": "you"}
 
 
 def press(reg, state, action, arg=None, items=None):
@@ -162,6 +163,10 @@ def press(reg, state, action, arg=None, items=None):
         s["lim"][key] = s["lim"].get(key, SIDE_LIMIT) + SIDE_LIMIT
     elif action == "needs":
         s.update(view="needs", pid=None, q="")
+    elif action == "settings":
+        if state["view"] != "settings":
+            s["back"] = {"view": state["view"], "pid": state["pid"], "q": state["q"]}
+        s.update(view="settings", pid=None, q="", sec=arg if arg in settings_model.SECTIONS else state.get("sec", "you"))
     elif action == "archived":
         s.update(view="archived", pid=None, q="")
         if ARCHIVE_ID not in s["open"]:
@@ -291,8 +296,10 @@ def crumbs(reg, pid):
     return chain
 
 
-def main(reg, items, state, counts, now, fading=(), sugg=None):
+def main(reg, items, state, counts, now, fading=(), sugg=None, prefs=None):
     view = state["view"]
+    if view == "settings" and prefs:
+        return prefs
     if view == "thing" and state.get("tid") in items:
         return thing_page(reg, items[state["tid"]], now, state.get("ex_open", ()), fading)
     if view == "search":
@@ -485,11 +492,11 @@ def search(reg, items, q, now):
 
 # ---------------------------------------------------------------- the whole page
 
-def view(reg, items, state, now=None, fading=(), sugg=None):
+def view(reg, items, state, now=None, fading=(), sugg=None, prefs=None):
     """fading: ids of notes ticked a moment ago, still on screen crossed out (P10). sugg: suggestions.view()."""
     now = now or datetime.now()
     counts = projects.counts(reg, items)
-    return {"side": side(reg, items, state, counts, now), "main": main(reg, items, state, counts, now, fading, sugg)}
+    return {"side": side(reg, items, state, counts, now), "main": main(reg, items, state, counts, now, fading, sugg, prefs)}
 
 
 def signature(v):

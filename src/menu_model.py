@@ -21,6 +21,7 @@ you can do. menubar.py only draws this and forwards clicks; it decides nothing.
         what it will remove; nothing is deleted while LMemM is running, it stops first.
     M7  When LMemM has suggestions waiting, "Open LMemM" says how many ("2 suggestions") so you
         know where to answer them.
+    M8  "Settings…" opens the window on its Settings page (settings_model.py).
     M6  "Open LMemM" is the first row and opens the window (window_model.py). A row that cannot
         do its job yet is not shown (no "Open project page" until there is one).
 """
@@ -110,7 +111,8 @@ def rows_for(status, now, hotkey="⌃⌥N"):
     elif not kind:
         rows += [pause_row(now), DIVIDER]
     off = access_off(status)
-    rows += [{"id": "access", "title": "Check access…", **({"detail": f"{off} off"} if off else {})},
+    rows += [{"id": "settings", "title": "Settings…"},
+             {"id": "access", "title": "Check access…", **({"detail": f"{off} off"} if off else {})},
              {"id": "setup", "title": "Reopen setup…"}, DIVIDER,
              {"id": "delete", "title": "Delete all my data…"}, QUIT]
     return rows

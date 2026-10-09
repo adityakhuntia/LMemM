@@ -67,9 +67,9 @@ class ViewTests(unittest.TestCase):
 
     def test_the_rows_in_order_with_no_dead_rows(self):
         self.assertEqual(ids(menu_model.view(FINE, now=NOW)["rows"]),
-                         ["open", "add_note", "-", "pause", "-", "access", "setup", "-", "delete", "quit"])
+                         ["open", "add_note", "-", "pause", "-", "settings", "access", "setup", "-", "delete", "quit"])
         titles = [r["title"] for r in menu_model.view(FINE, now=NOW)["rows"] if r["id"] != "-"]
-        self.assertEqual(titles, ["Open LMemM", "Add a note", "Pause LMemM", "Check access…", "Reopen setup…",
+        self.assertEqual(titles, ["Open LMemM", "Add a note", "Pause LMemM", "Settings…", "Check access…", "Reopen setup…",
                                   "Delete all my data…", "Quit LMemM"])
         self.assertNotIn("Open project page", titles)              # the window is "Open LMemM"; no project page yet
 
@@ -124,12 +124,12 @@ class ViewTests(unittest.TestCase):
 
     def test_a_pause_you_chose_has_resume_and_an_automatic_one_has_nothing_to_do(self):
         mine = menu_model.view(status(paused="manual"), now=NOW)["rows"]
-        self.assertEqual(ids(mine), ["open", "add_note", "-", "resume", "-", "access", "setup", "-", "delete", "quit"])
+        self.assertEqual(ids(mine), ["open", "add_note", "-", "resume", "-", "settings", "access", "setup", "-", "delete", "quit"])
         away = menu_model.view(status(paused="away"), now=NOW)["rows"]
-        self.assertEqual(ids(away), ["open", "add_note", "-", "access", "setup", "-", "delete", "quit"])
+        self.assertEqual(ids(away), ["open", "add_note", "-", "settings", "access", "setup", "-", "delete", "quit"])
 
     def test_every_clickable_row_id_is_one_the_tracker_understands(self):
-        known = {"resume", "quit", "add_note", "access", "setup", "delete", "restart", "open"} | {"pause:" + k for k in rules.PAUSE_CHOICES}
+        known = {"resume", "quit", "add_note", "access", "setup", "delete", "restart", "open", "settings"} | {"pause:" + k for k in rules.PAUSE_CHOICES}
         for s in (FINE, status(paused="manual"), status(paused="away"), status(screen=False)):
             for row in menu_model.view(s, now=NOW)["rows"]:
                 for r in [row] + row.get("children", []):

@@ -51,6 +51,7 @@ import onboarding
 import resolver
 import retention
 import rules
+import settings_model
 import store
 import suggestions
 import thing_actions
@@ -112,6 +113,8 @@ class Tracker:
         self.skip_kind = None                # why: "private" (a private window, a password manager...) or "unwatched" (R11)
         user = store.load_user() or {}
         self.watch_apps = apps.clean(user.get("watch_apps"))     # empty: every app (apps.py)
+        config.set_skip_apps(e["id"] for e in apps.clean(user.get("skip_apps")))    # Settings > Privacy
+        config.SCREENSHOT_DAYS = settings_model.keep_days(user)                     # Settings > General
         self.screen_ok, self.screen_checked = True, 0.0
         self.cur_place = None                # (app, window) of the newest timeline event
         self.pill_place = None               # (app, window) the pill last refreshed for
@@ -516,7 +519,8 @@ class Tracker:
         site = re.sub(r"^https?://", "", url or "").split("/")[0] or None
         title = tab_title or f["window"]
 
-        skip = ("password manager" if f["bundle_id"] in config.SKIP_APPS
+        skip = ("password manager" if f["bundle_id"] in config.BUILTIN_SKIP_APPS
+                else "an app you never remember" if f["bundle_id"] in config.SKIP_APPS
                 else "private window" if private or config.SKIP_TITLES.search(title or "")
                 else "sensitive site" if url and config.SKIP_SITES.search(url)
                 else None)
@@ -641,6 +645,8 @@ class Tracker:
         window shows and needs for Undo; ValueError says why not, in words."""
         import project_actions
         import projects
+        if action in settings_model.ACTIONS:
+            return self.window_settings(action, args.get("value"))
         with self.lock:
             reg = projects.load()
             if action in suggestions.ACTIONS:
@@ -654,9 +660,52 @@ class Tracker:
         line(now_hms(), "", result["message"])
         return result
 
+    def window_settings(self, action, value):
+        """A change in the Settings window (settings_model.py): saved to the user block of memory.json and
+        applied to the running tracker at once. Returns what the window shows and what Undo needs."""
+        with self.lock:
+            before = store.load_user() or {}
+            result = settings_model.apply(before, action, value)
+            store.save_user(result["user"])
+            self.apply_user(result["user"])
+        line(now_hms(), "", result["message"])
+        return {"message": result["message"], "go": None, "stay": True, "undo": {"settings": before}}
+
+    def apply_user(self, user):
+        """Make a changed user block true now: which apps are watched, which are never remembered,
+        how long screenshots stay. (Name and what you work on are only read from the file.)"""
+        self.watch_apps[:] = apps.clean(user.get("watch_apps"))
+        if self.trail:
+            self.trail.set_watch(self.watch_apps)
+        config.set_skip_apps(e["id"] for e in apps.clean(user.get("skip_apps")))
+        config.SCREENSHOT_DAYS = settings_model.keep_days(user)
+        self.last_retention_sweep = 0.0                  # sweep soon, so a shorter keep time shows its effect
+
+    def settings_view(self, section):
+        """The Settings page for the window. Reads macOS and the data folder only for the section that needs it."""
+        facts = data = None
+        if section == "access":
+            status = self.widget_status()
+            facts = {"screen": status["screen"], "screen_fresh": status["screen"] or status["restart"],
+                     "ax": permissions.accessibility_trusted(),
+                     "mic": "denied" if status["mic_off"] else "granted", "speech": "granted"}
+        elif section == "data":
+            import forget
+            try:
+                data = forget.plan(config.paths().data_dir)
+            except ValueError:
+                data = None
+        return settings_model.view(store.load_user() or {}, section, facts, data, hotkey=dictation.HOTKEY_LABEL)
+
     def window_project_undo(self, undo):
         import project_actions
         import projects
+        if "settings" in undo:
+            with self.lock:
+                store.save_user(undo["settings"])
+                self.apply_user(undo["settings"])
+            line(now_hms(), "", "undone")
+            return
         with self.lock:
             reg = projects.load()
             project_actions.undo(reg, self.items, undo, self.sug)
@@ -731,7 +780,8 @@ class Tracker:
     def open_window(self):
         if self.main_window is None:
             self.main_window = main_window.MainWindow(self.menu_pick, self.page_data, self.widget_tick, self.window_add_note,
-                                                   self.window_project, self.window_project_undo, self.sug_view)   # its button sends a menu row id
+                                                   self.window_project, self.window_project_undo, self.sug_view,
+                                                      self.settings_view)   # its button sends a menu row id
         self.adopt_projects()                       # things filed by name since the last time
         self.main_window.show(self.window_view(self.widget_status()))
 
@@ -749,6 +799,11 @@ class Tracker:
             self.note_request = True                    # the same as ⌃⌥N, paused card and all (R9)
         elif row == "open":
             self.open_window()
+        elif row == "settings":
+            self.open_window()
+            self.main_window.open_settings()
+        elif row == "access_ax":
+            permissions.MacSystem().open_settings("ax")
         elif row == "show_file":
             self.show_memory_file()
         elif row == "access":

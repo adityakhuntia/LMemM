@@ -104,6 +104,10 @@ class Gate:
         self.skip_apps = config.SKIP_APPS if skip_apps is None else skip_apps
         self.lock_apps = config.LOCK_APPS if lock_apps is None else lock_apps
 
+    def set_watch(self, watch_apps):
+        """Change which apps may be looked at while running (Settings > Apps)."""
+        self.watch = {e.get("id") if isinstance(e, dict) else e for e in (watch_apps or ())} - {None, ""}
+
     def app(self, front):
         """Reason to skip this app, or None. Checked first, before any accessibility call."""
         if not front or not front.get("bundle_id"):

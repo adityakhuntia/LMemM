@@ -297,6 +297,9 @@ class Trail:
         self.last_sweep = 0.0
         self.said = {}
 
+    def set_watch(self, watch_apps):
+        self.engine.gate.set_watch(watch_apps)
+
     # ---- notifications -> the scheduler (called on the main thread; they only record and wake)
 
     def poke(self, kind):

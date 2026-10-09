@@ -75,7 +75,7 @@ def line(t, app, msg):
 
 
 class Tracker:
-    def __init__(self, every=config.EVERY, input_apps=None, input_retention_hours=24, show_widget=True):
+    def __init__(self, every=config.EVERY, input_apps=None, input_retention_hours=24, show_widget=True, trail=True):
         p = config.paths()
         self.every = every
         self.session = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -129,6 +129,8 @@ class Tracker:
         self.last_retention_sweep = 0.0
         self.panel = dictation.NotePanel()
         self.show_widget = show_widget
+        self.use_trail = trail               # the accessibility event trail (trail_mac.py) runs inside this process
+        self.trail = None
         self.widget = None                   # the on-screen pill (widget.py), made in run()
         self.suggestion = None               # a group offered as one project: {name, ids, reason}
         self.suggest_answers = self.load_answers()
@@ -754,9 +756,15 @@ class Tracker:
         """Every ~0.1 s: ask the app in front where you are (a millisecond, no pixels). Its
         focused input's label names a chat or channel; a browser's page URL names a page.
         When that names an item you've been on, the pill switches to it at once."""
-        last = None
+        last, seen = None, 0
         while self.running:
-            time.sleep(0.1)
+            try:
+                if not self.trail:
+                    raise LookupError
+                seen = self.trail.wait_change(seen, 1.0)    # event-driven: wake when macOS says you moved (1 s at most)
+                time.sleep(0.06)                            # let a burst of changes settle
+            except Exception:
+                time.sleep(0.1)
             try:
                 app = macos.NSWorkspace.sharedWorkspace().frontmostApplication()
                 if app is None:
@@ -1197,6 +1205,15 @@ class Tracker:
         self.thread = threading.Thread(target=self.worker, daemon=True)
         self.thread.start()
         threading.Thread(target=self.quick_worker, daemon=True).start()
+        if self.use_trail:
+            try:
+                import trail_mac
+                self.trail = trail_mac.Trail(watch_apps=self.watch_apps,
+                                             paused=lambda: self.manual_paused or self.paused is not None)
+                self.trail.start()
+            except Exception as e:                       # the screenshot tracker must run even if the trail cannot
+                self.trail = None
+                say(f"event trail off ({type(e).__name__}: {e})")
         threading.Thread(target=self.ax_loop, daemon=True).start()
         self.click_monitor = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(1 << 1, self.on_click)
 
@@ -1228,6 +1245,8 @@ class Tracker:
         if self.panel.open:
             self.panel.close(save=False)
         say("\nstopping…")
+        if self.trail:
+            self.trail.stop()
         self.q.put(None)
         self.thread.join(timeout=60)
         with self.lock:

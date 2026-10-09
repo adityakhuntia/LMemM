@@ -28,7 +28,7 @@ Then give the app you launch it from (Terminal, iTerm, VS Code…) these permiss
 | **Automation** | reading the browser tab's URL (macOS asks the first time) |
 | **Microphone**, **Speech Recognition** | voice notes; asked for "LMemM Listen" the first time you press ⌃⌥N |
 | **Accessibility** | knowing exactly which page or chat you are on, instantly (the pill is slower without it); also the opt-in input timeline |
-| **Input Monitoring** | only for the opt-in input timeline |
+| **Input Monitoring**, **Accessibility** | the event trail (clicks, typing bursts, shortcuts, window and chat names); also the opt-in input timeline |
 
 The speech helper is built with clang (Xcode Command Line Tools) on first run.
 
@@ -263,6 +263,23 @@ included at all:
 No screenshots, ids, triggers, per-visit timing or activity seconds. Saved to
 `data/memory/context/<session or range>.json`, and also printed to stdout, so you can
 pipe it straight to another tool.
+
+## Event trail: knowing what you are doing from app events
+
+While LMemM runs it also keeps an **event trail**: app switches, window and tab changes, which chat or
+page you are on, typing bursts (counts, never the keys), clicks, shortcuts and the text apps expose through
+accessibility. No screenshots needed; the screenshot read is only a fallback for apps that expose almost nothing.
+Raw events stay on this Mac for 48 hours, then are deleted. `--no-trail` turns it off.
+
+```bash
+python3 lmemm.py trail show 40        # the last events, readable
+python3 lmemm.py trail places --hours 2   # where you were, one line per visit
+python3 lmemm.py trail status         # permissions, what a read costs
+python3 lmemm.py trail pause | resume
+python3 lmemm.py trail forget --last 10 | --app NAME | --all
+python3 lmemm.py trail probe          # save an app's accessibility tree, to teach LMemM a new app
+```
+How chats are told apart, what is and isn't recorded: [docs/specs/2026-10-09-event-trail.md](docs/specs/2026-10-09-event-trail.md).
 
 ## Input timeline (opt-in, VS Code only)
 

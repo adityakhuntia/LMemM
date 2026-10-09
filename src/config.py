@@ -33,6 +33,19 @@ RETENTION_SWEEP = 3600      # seconds between screenshot-expiry sweeps
 RSS_WARN_MB = 800           # warn in the terminal when LMemM itself uses more memory than this
 CPU_WARN_PCT = 60           # ...or more than this share of one core over the last 30 s
 
+# ---------------------------------------------------------------- event trail (trail_*.py)
+
+TRAIL_RETENTION_HOURS = 48      # raw events stay on this Mac this long, then are deleted
+TRAIL_MAX_MB = 50               # hard cap on the trail folder; oldest day goes first
+TRAIL_READ_FIELD_TEXT = False   # read the text INSIDE the focused text box (an editor's document)? off: only that one exists
+TRAIL_TEXT_EVERY = 2.0          # seconds: least time between two text reads of one place
+TRAIL_FULL_MS = 90              # a full tree read stops after this long (Chromium apps cost ~0.5 ms a node)
+TRAIL_SETTLE_MS = 150           # a shaky place must hold this long before it counts as a switch
+TRAIL_POLL = 1.0                # seconds: the cheap fallback check when an app sends no notifications
+TRAIL_IDLE = 60                 # no input for this long -> idle event, reads slow right down
+TRAIL_VISION = True             # fall back to a screenshot read when an app exposes too little text
+TRAIL_VISION_EVERY = 20         # seconds: least time between screenshot reads of one place
+
 # ---------------------------------------------------------------- memory
 
 KEEP_TEXT = 15          # newest lines kept per activity category on an item
@@ -69,6 +82,10 @@ class Paths:
     @property
     def items_file(self):         # the one memory file: source of truth + readable view
         return os.path.join(self.memory_dir, "memory.json")
+
+    @property
+    def trail_dir(self):          # the event trail: one JSONL file per day
+        return os.path.join(self.data_dir, "trail")
 
     @property
     def sessions_dir(self):

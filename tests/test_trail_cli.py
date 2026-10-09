@@ -1,0 +1,130 @@
+import contextlib
+import io
+import json
+import os
+import py_compile
+import tempfile
+import unittest
+from datetime import datetime, timedelta, timezone
+
+import config
+import trail_cli
+from test_trail import Node, text
+from trail_store import TrailStore
+
+
+def out(fn, *a, **k):
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        fn(*a, **k)
+    return buf.getvalue()
+
+
+class CliTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.store = TrailStore(os.path.join(self.tmp.name, "trail"), "t")
+        place = {"key": "WhatsApp:chat:mum", "kind": "chat", "name": "Mum", "service": "WhatsApp",
+                 "signals": ["box", "selected"], "confidence": 0.95, "conflict": False}
+        self.store.add("app_switch", app="WhatsApp", bundle_id="x")
+        self.store.add("focus", app="WhatsApp", place=place, dwell_ms=0)
+        self.store.add("text", place="WhatsApp:chat:mum", source="ax", added=["hi", "there"], removed=0, total=2)
+        self.store.add("typing", place="WhatsApp:chat:mum", n=5, ms=900, field="Type a message to Mum")
+        self.store.add("click", place="WhatsApp:chat:mum", button="left", role="AXButton", target="Send")
+        self.store.add("gap", reason="excluded_app")
+
+    def test_show_reads_like_a_diary(self):
+        s = out(trail_cli.show, self.store, 40, True)
+        for want in ("→ chat: Mum (WhatsApp)", "box+selected 0.95", "text +2 -0 (ax)", "+ hi", "typing x5 over 900 ms",
+                     "click left AXButton “Send”", "gap: excluded_app"):
+            self.assertIn(want, s)
+
+    def test_places_lists_visits_with_duration(self):
+        s = out(trail_cli.places, self.store, 1.0)
+        self.assertIn("Mum", s)
+        self.assertIn("chat", s)
+
+    def test_a_place_without_a_name_does_not_crash_the_views(self):
+        self.store.add("focus", app="X", place={"key": "x:page:/", "kind": "page", "service": "x"}, dwell_ms=0)
+        self.assertIn("x:page:/", out(trail_cli.show, self.store, 5))
+        self.assertIn("x:page:/", out(trail_cli.places, self.store, 1.0))
+
+    def test_forget_requires_a_choice(self):
+        with self.assertRaises(SystemExit):
+            trail_cli.forget(self.store, [])
+        self.assertIn("removed 6", out(trail_cli.forget, self.store, ["--all"]))
+        self.assertEqual(self.store.read(), [])
+
+    def test_pause_flag(self):
+        with config.use_paths(self.tmp.name):
+            out(trail_cli.set_pause, True)
+            self.assertTrue(os.path.exists(os.path.join(self.tmp.name, "trail", ".paused")))
+            out(trail_cli.set_pause, False)
+            self.assertFalse(os.path.exists(os.path.join(self.tmp.name, "trail", ".paused")))
+
+    def test_status_without_a_file(self):
+        with config.use_paths(self.tmp.name):
+            self.assertIn("not running", out(trail_cli.status))
+            os.makedirs(os.path.join(self.tmp.name, "trail"), exist_ok=True)
+            with open(os.path.join(self.tmp.name, "trail", ".status.json"), "w") as fh:
+                json.dump({"pid": os.getpid(), "updated": datetime.now().timestamp(), "gap": None}, fh)
+            self.assertIn("running", out(trail_cli.status))
+
+    def test_probe_dump_hides_typed_text_and_passwords(self):
+        win = Node("AXWindow", [Node("AXTextArea", Value="my private draft", PlaceholderValue="Message Mum"),
+                                Node("AXTextField", Subrole="AXSecureTextField", Value="hunter2"),
+                                text("Mum"), Node("AXRow", [text("x")], Selected=True)], Title="WhatsApp")
+        dump = trail_cli.dump_tree(win)
+        self.assertNotIn("my private draft", dump)
+        self.assertNotIn("hunter2", dump)
+        self.assertIn('placeholder="Message Mum"', dump)
+        self.assertIn("SELECTED", dump)
+
+
+    def test_probe_dump_skips_empty_wrappers_and_does_not_open_toolbars(self):
+        win = Node("AXWindow", [Node("AXToolbar", [Node("AXButton", Title="Back")]),
+                                Node("AXGroup", [Node("AXGroup", [Node("AXWebArea", [text("hi")], Title="Page")])])], Title="W")
+        dump = trail_cli.dump_tree(win)
+        self.assertIn("AXToolbar (not opened)", dump)
+        self.assertNotIn("Back", dump)
+        self.assertNotIn("AXGroup", dump)
+        self.assertIn('AXWebArea title="Page"', dump)
+        self.assertIn('AXStaticText value="hi"', dump)
+
+
+class MacFilesCompile(unittest.TestCase):
+    def test_macos_only_files_at_least_compile(self):
+        for name in ("trail_mac.py", "trail_cli.py"):
+            py_compile.compile(os.path.join(os.path.dirname(__file__), "..", "src", name), doraise=True)
+
+
+class StandardMethodWiring(unittest.TestCase):
+    """The trail runs inside `lmemm.py start` (macOS-only code, so checked as source on Linux)."""
+    ROOT = os.path.join(os.path.dirname(__file__), "..")
+
+    def src(self, *path):
+        with open(os.path.join(self.ROOT, *path), encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_start_runs_the_trail_unless_told_not_to(self):
+        cli = self.src("lmemm.py")
+        self.assertIn('"--no-trail"', cli)
+        self.assertIn("trail=not opts.no_trail", cli)
+
+    def test_the_tracker_starts_it_shares_pause_and_the_app_list_and_stops_it(self):
+        t = self.src("src", "tracker.py")
+        self.assertIn("trail_mac.Trail(watch_apps=self.watch_apps", t)
+        self.assertIn("self.manual_paused or self.paused is not None", t)
+        self.assertIn("self.trail.start()", t)
+        self.assertIn("self.trail.stop()", t)
+        self.assertIn("self.trail.wait_change(", t)
+
+    def test_a_trail_that_cannot_start_does_not_stop_the_tracker(self):
+        t = self.src("src", "tracker.py")
+        i = t.index("self.trail.start()")
+        self.assertIn("except Exception", t[i:i + 400])
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -13,6 +13,8 @@ LMemM - the one command.
     lmemm.py context [SESSION] [--days N]
                                       a clean export for handing to an AI: what you did
                                       and why, grouped by project, with no operational detail
+    lmemm.py trail start|show|places|status|pause|resume|forget|probe
+                                      the event trail: what you are doing, from app events (see docs/specs)
     lmemm.py status | pause | resume  the running tracker
     lmemm.py pin                      force-save the current screen
     lmemm.py note                     open the note window (same as ⌃⌥N)
@@ -48,7 +50,7 @@ USAGE = ("usage: lmemm.py [menu] | start [--every N] [--input-events --input-app
          " | memory [N] [--content] [--events]"
          " | notes [--all] [PROJECT] | notes done|reopen ID…"
          " | context [SESSION] [--days N]"
-         " | status | pause | resume | pin | note | delete-session ID (--dry-run | --confirm ID)"
+         " | trail … | status | pause | resume | pin | note | delete-session ID (--dry-run | --confirm ID)"
          " | delete-all (--dry-run | --confirm) | setup [--again] [--no-start]")
 
 
@@ -142,6 +144,7 @@ def cmd_start(args):
     parser.add_argument("--input-app", action="append", default=[])
     parser.add_argument("--input-retention-hours", type=float, default=24)
     parser.add_argument("--no-widget", action="store_true", help="don't show the on-screen pill")
+    parser.add_argument("--no-trail", action="store_true", help="don't run the accessibility event trail")
     parser.add_argument("--no-setup", action="store_true", help="skip first-run setup (it asks for permissions itself)")
     opts = parser.parse_args(args)
     if opts.every <= 0 or not 0 < opts.input_retention_hours <= 24:
@@ -151,7 +154,8 @@ def cmd_start(args):
     if not opts.no_setup and not first_run_setup():
         sys.exit("Setup isn't finished. Run LMemM again to pick up where you left off.")
     tracker.Tracker(every=opts.every, input_apps=set(opts.input_app) or None,
-                    input_retention_hours=opts.input_retention_hours, show_widget=not opts.no_widget).run()
+                    input_retention_hours=opts.input_retention_hours, show_widget=not opts.no_widget,
+                    trail=not opts.no_trail).run()
 
 
 def first_run_setup(again=False):
@@ -441,6 +445,9 @@ def main():
         cmd_suggest(rest)
     elif cmd in {"status", "pause", "resume"}:
         cmd_control(cmd)
+    elif cmd == "trail":
+        import trail_cli
+        trail_cli.main(sys.argv[2:])
     elif cmd == "pin":
         tracker.pin()
     elif cmd == "note":

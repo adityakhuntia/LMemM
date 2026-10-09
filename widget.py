@@ -23,6 +23,10 @@
               the mic off) or, on hover, when there is nothing to show (no notes yet, all done,
               no projects yet). The rules are in rules.py (R8).
 
+    pause     a plain "Pause LMemM" row ends the card; it asks for how long (1 hour, until tomorrow,
+              until you resume). Any pause, yours or "you stepped away", is one pause mark on the
+              pill; its card says which, when it ends, and has Resume if you paused it (rules.py R9).
+
 Everything is a non-activating panel: it never takes focus from the app you're in,
 and it shows on every Space and over full-screen apps. It follows the system light/dark
 setting. What the card shows is decided in notes.card_view() (plain data, tested);
@@ -32,6 +36,7 @@ this file only draws it. Ticking a box calls back into the tracker, which saves 
 import math
 import subprocess
 import time
+from datetime import datetime
 
 import objc
 from Foundation import NSObject, NSPointInRect
@@ -69,7 +74,8 @@ SAVED_SECONDS = 1.8                 # "Saved to Q3 plan" stays on the pill this 
 PROJECT_EXPLAINER = ("A project keeps related things and your notes together, so you can pick up "
                      "where you left off. You can change this any time.")
 # the marks: an SF Symbol, and whether it is neutral or red (a permission that is off)
-MARKS = {"screen_off": ("eye.slash", True, "Screen access is off"),
+MARKS = {"paused": ("pause.fill", False, "Paused"),
+         "screen_off": ("eye.slash", True, "Screen access is off"),
          "private": ("lock", False, "Private window"),
          "mic_off": ("mic.slash", True, "Mic is off"),
          "fresh": ("square.and.pencil", False, "No notes yet"),
@@ -412,7 +418,9 @@ class Widget:
 
     def __init__(self, provider, on_tick, on_add=None, heard=None, hotkey="⌃⌥N",
                  suggestion=None, on_project=None, on_decline=None, picker=None, on_unfile=None,
-                 busy=None, status=None):
+                 busy=None, status=None, on_pause=None, on_resume=None):
+        self.on_pause = on_pause or (lambda kind: None)
+        self.on_resume = on_resume or (lambda: None)
         self.status_fn = status or (lambda: {})
         self.status = {}                            # what is wrong right now (see rules.pill_mark)
         self.pick_empty = False                     # the picker is showing "Start a project"
@@ -525,6 +533,8 @@ class Widget:
             self.pill_view.setToolTip_(None)
             return
         symbol, bad, tip = MARKS[state]
+        if state == "paused" and self.status.get("paused") == "away":
+            tip = "Paused while you’re away"
         image = _symbol(symbol)
         icon.setImage_(image)
         icon.setFrame_(NSMakeRect(PILL_MARGIN[0] + (cw - 16) / 2, PILL_MARGIN[1] + (ch - 16) / 2, 16, 16))
@@ -587,7 +597,8 @@ class Widget:
         self.card_open = not self.card_open
         if self.card_open:
             self.saved = None               # R5: the card replaces the confirmation
-            self.mode, self.show_done, self.scroll = ("suggest" if self.sug and not self.count else "here"), False, None
+            self.mode, self.show_done, self.scroll = (
+                "suggest" if self.sug and not self.count and not self.status.get("paused") else "here"), False, None
             self.query, self.also = "", True
             self.data = self.provider()
             self.render()
@@ -643,7 +654,11 @@ class Widget:
         kept = self.scroll.contentView().bounds().origin.y if self.scroll is not None else 0
         body = _Flipped.alloc().initWithFrame_(NSMakeRect(0, 0, CARD_W, 10))
         y = 14
-        if self.mode == "suggest":
+        if self.status.get("paused"):
+            y = self._paused(body, y)
+        elif self.mode == "pause":
+            y = self._pause_menu(body, y)
+        elif self.mode == "suggest":
             y = self._suggest(body, y)
         elif self.mode == "pick":
             y = self._pick(body, y)
@@ -762,6 +777,66 @@ class Widget:
         body.addSubview_(small)
         return y + h + 10
 
+    def show_paused(self):
+        """⌃⌥N while paused: open the card that says so (rules.py R9)."""
+        if not self.card_open:
+            self.toggle_card()
+
+    def _pause_row(self, body, y):
+        """The plain "Pause LMemM" row at the bottom of the card."""
+        tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(6, y + 2, CARD_W - 12, 28), lambda: self._go("pause"))
+        mute = NSColor.secondaryLabelColor()
+        image = _symbol("pause.fill")
+        if image is not None:
+            holder = NSImageView.alloc().initWithFrame_(NSMakeRect(PAD - 6, 7, 13, 14))
+            holder.setImage_(image)
+            holder.setContentTintColor_(mute)
+            tap.addSubview_(holder)
+        tap.addSubview_(_label("Pause LMemM", 12, color=mute, frame=(PAD - 6 + 22, 6, CARD_W - 80, 16))[0])
+        tap.addSubview_(_label("›", 13, color=mute, frame=(CARD_W - 12 - PAD - 4, 5, 14, 16))[0])
+        body.addSubview_(tap)
+        return y + 32
+
+    def _pause_menu(self, body, y):
+        """Pause for: three choices, each showing when it ends."""
+        back = _Tap.alloc().initWithFrame_callback_(NSMakeRect(PAD - 4, y - 4, 120, 16), lambda: self._go("here"))
+        back.addSubview_(_label("‹ Back", 12, color=NSColor.secondaryLabelColor(), frame=(4, 0, 110, 16))[0])
+        body.addSubview_(back)
+        y += 22
+        body.addSubview_(_label("Pause for", 16, bold=True, frame=(PAD, y, CARD_W - 2 * PAD, 20))[0])
+        y += 28
+        for row in rules.pause_options(datetime.now()):
+            tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(6, y, CARD_W - 12, 46),
+                                                       lambda kind=row["kind"]: self._pause(kind))
+            tap.addSubview_(_label(row["title"], 14, bold=True, frame=(PAD - 6 + 2, 6, CARD_W - 60, 18))[0])
+            tap.addSubview_(_label(row["sub"], 12, color=NSColor.secondaryLabelColor(),
+                                   frame=(PAD - 6 + 2, 25, CARD_W - 60, 16))[0])
+            body.addSubview_(tap)
+            y += 46
+        return y
+
+    def _pause(self, kind):
+        self.on_pause(kind)
+        self._after_pause_change()
+
+    def _resume(self):
+        self.on_resume()
+        self._after_pause_change()
+
+    def _after_pause_change(self):
+        self.status = self.status_fn()               # the pill shows it now, not a second later
+        self.close_card()
+        self.layout()
+
+    def _paused(self, body, y):
+        """The card for any pause: what is true, when it ends, and Resume if you paused it."""
+        view = self.status.get("pause_view") or {"title": "Paused", "line": "", "resume": False}
+        y = self._state(body, y, "pause.fill", "soft", view["title"], view["line"])
+        if view["resume"]:
+            self._button(body, (8, y, CARD_W - 16, 33), "Resume", self._resume, primary=True)
+            y += 41
+        return y
+
     def _problem(self, body, y):
         """Screen access is off, or this window is private."""
         if self._mark() == "screen_off":
@@ -777,12 +852,14 @@ class Widget:
     def _here(self, body, view, y):
         kind = rules.empty_kind(view)
         if kind == "fresh":
-            return self._state(body, y, "square.and.pencil", "soft", "No notes yet",
-                               f"Press {self.hotkey} and say what to remember.")
+            y = self._state(body, y, "square.and.pencil", "soft", "No notes yet",
+                            f"Press {self.hotkey} and say what to remember.")
+            return self._pause_row(body, y)
         if kind == "caught":
             n = view["done_count"]
             y = self._state(body, y, "checkmark", "accent", "All caught up", f"{n} note{'s' * (n != 1)} done.")
-            return self._link(body, y, "Show done", "›", lambda: self._go("project", show_done=True))
+            y = self._link(body, y, "Show done", "›", lambda: self._go("project", show_done=True))
+            return self._pause_row(body, y)
         y = self._header(body, y, view["title"], view["caption"])
         if view["rows"]:
             for row in view["rows"]:
@@ -797,7 +874,7 @@ class Widget:
         elif view.get("item"):
             left = f"In {view['filed']}" if view.get("filed") else "Not in a project. Add…"
             y = self._link(body, y, left, "›", lambda: self._go("pick"))
-        return y
+        return self._pause_row(body, y)
 
     # -- projects: the suggestion, the picker, and the confirmation
 

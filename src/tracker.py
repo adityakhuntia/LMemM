@@ -35,12 +35,14 @@ import ax
 from AppKit import NSEvent
 
 import activity
+import apps
 import config
 import dictation
 import identity
 import input_monitor as input_hooks
 import macos
 import notes
+import onboarding
 import resolver
 import retention
 import rules
@@ -73,7 +75,7 @@ def line(t, app, msg):
 
 
 class Tracker:
-    def __init__(self, every=config.EVERY, input_apps=None, input_retention_hours=24, show_widget=True):
+    def __init__(self, every=config.EVERY, input_apps=None, input_retention_hours=24, show_widget=True, trail=True):
         p = config.paths()
         self.every = every
         self.session = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -100,6 +102,9 @@ class Tracker:
         self.note_request = False
         self.waiting = []                    # saved notes whose screen is still being read
         self.skipped_place = None            # (app, window) of the last window we chose not to read
+        self.skip_kind = None                # why: "private" (a private window, a password manager...) or "unwatched" (R11)
+        user = store.load_user() or {}
+        self.watch_apps = apps.clean(user.get("watch_apps"))     # empty: every app (apps.py)
         self.screen_ok, self.screen_checked = True, 0.0
         self.cur_place = None                # (app, window) of the newest timeline event
         self.pill_place = None               # (app, window) the pill last refreshed for
@@ -124,6 +129,8 @@ class Tracker:
         self.last_retention_sweep = 0.0
         self.panel = dictation.NotePanel()
         self.show_widget = show_widget
+        self.use_trail = trail               # the accessibility event trail (trail_mac.py) runs inside this process
+        self.trail = None
         self.widget = None                   # the on-screen pill (widget.py), made in run()
         self.suggestion = None               # a group offered as one project: {name, ids, reason}
         self.suggest_answers = self.load_answers()
@@ -372,7 +379,13 @@ class Tracker:
         if self.note_request:
             self.note_request = False
             card_open = bool(self.widget and self.widget.card_open)
-            action = rules.hotkey_action(False, card_open, self.manual_paused)
+            front = macos.front()
+            unwatched = bool(front) and not apps.watched(self.watch_apps, front["bundle_id"])
+            action = rules.hotkey_action(False, card_open, self.manual_paused, unwatched)
+            if action == "show_unwatched":              # R11: say why, with a way out, instead of nothing
+                if self.widget:
+                    self.widget.show_unwatched()
+                return
             if action == "close_card_then_open_note":
                 self.widget.close_card()                # R2
             if action != "ignore":
@@ -463,6 +476,10 @@ class Tracker:
         f = macos.front()
         if f is None:
             return None
+        if not apps.watched(self.watch_apps, f["bundle_id"]):          # R11: before anything is read or grabbed
+            self.skipped_place, self.skip_kind = (f["app"], f["window"]), "unwatched"
+            self.close_interval()
+            return None
         url, tab_title, private = macos.browser_info(f["app"])
         site = re.sub(r"^https?://", "", url or "").split("/")[0] or None
         title = tab_title or f["window"]
@@ -472,6 +489,7 @@ class Tracker:
                 else "sensitive site" if url and config.SKIP_SITES.search(url)
                 else None)
         self.skipped_place = (f["app"], f["window"]) if skip else None     # the pill wears a lock here
+        self.skip_kind = "private" if skip else None
         if skip:
             self.close_interval()
             self.stats["skipped"] += 1
@@ -587,7 +605,8 @@ class Tracker:
         now = datetime.now()
         end = datetime.fromtimestamp(self.pause_until) if self.pause_until else None
         return {"screen": self.screen_ok, "mic_off": dictation.mic_off(),
-                "private": self.skipped_place is not None and self.skipped_place == self.front_sig(),
+                "private": self.skip_kind == "private" and self.skipped_place == self.front_sig(),
+                "unwatched": self.skip_kind == "unwatched" and self.skipped_place == self.front_sig(),
                 "paused": kind, "pause_view": rules.paused_view(kind, end, now) if kind else None}
 
     def widget_pause(self, kind):
@@ -654,6 +673,12 @@ class Tracker:
         app only shows where you are on screen (a WhatsApp chat), clicks in it start a quick
         read of the window's top strip instead (see on_click). Either way the answer is only
         used until the real capture lands."""
+        if not apps.watched(self.watch_apps, f["bundle_id"]):          # R11: nothing is read from an app you did not choose
+            self.ocr_apps.pop(f["app"], None)
+            with self.lock:
+                self.set_now((f["app"], f["window"]), None)
+            self.last_widget_refresh = 0.0
+            return
         url, tab_title, _private = macos.browser_info(f["app"])
         meta = {"app": f["app"], "bundle_id": f["bundle_id"], "window": f["window"], "url": url,
                 "site": re.sub(r"^https?://", "", url or "").split("/")[0] or None, "tab_title": tab_title,
@@ -731,9 +756,15 @@ class Tracker:
         """Every ~0.1 s: ask the app in front where you are (a millisecond, no pixels). Its
         focused input's label names a chat or channel; a browser's page URL names a page.
         When that names an item you've been on, the pill switches to it at once."""
-        last = None
+        last, seen = None, 0
         while self.running:
-            time.sleep(0.1)
+            try:
+                if not self.trail:
+                    raise LookupError
+                seen = self.trail.wait_change(seen, 1.0)    # event-driven: wake when macOS says you moved (1 s at most)
+                time.sleep(0.06)                            # let a burst of changes settle
+            except Exception:
+                time.sleep(0.1)
             try:
                 app = macos.NSWorkspace.sharedWorkspace().frontmostApplication()
                 if app is None:
@@ -1125,10 +1156,16 @@ class Tracker:
 
     def run(self):
         p = config.paths()
-        if not macos.screen_recording_allowed():
+        set_up = onboarding.load_state(p.onboarding_file)["completed"]
+        allowed = macos.screen_recording_allowed(request=not set_up)      # setup has already asked, calmly
+        if not allowed and not set_up:
             sys.exit("Screen Recording permission is not granted to this terminal.\n"
                      "System Settings -> Privacy & Security -> Screen Recording, enable it,\n"
                      "quit and reopen the terminal, then run again.")
+        if not allowed:                          # you finished setup without it: keep running, the pill says so
+            self.screen_ok, self.screen_checked = False, time.time()
+            say("Screen Recording is off, so LMemM can't see your screen yet. The pill shows a red mark;\n"
+                "turn it on in System Settings -> Privacy & Security -> Screen Recording, then restart LMemM.")
         os.makedirs(p.memory_dir, exist_ok=True)
         with open(p.pidfile, "w") as fh:
             fh.write(str(os.getpid()))
@@ -1168,6 +1205,15 @@ class Tracker:
         self.thread = threading.Thread(target=self.worker, daemon=True)
         self.thread.start()
         threading.Thread(target=self.quick_worker, daemon=True).start()
+        if self.use_trail:
+            try:
+                import trail_mac
+                self.trail = trail_mac.Trail(watch_apps=self.watch_apps,
+                                             paused=lambda: self.manual_paused or self.paused is not None)
+                self.trail.start()
+            except Exception as e:                       # the screenshot tracker must run even if the trail cannot
+                self.trail = None
+                say(f"event trail off ({type(e).__name__}: {e})")
         threading.Thread(target=self.ax_loop, daemon=True).start()
         self.click_monitor = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(1 << 1, self.on_click)
 
@@ -1199,6 +1245,8 @@ class Tracker:
         if self.panel.open:
             self.panel.close(save=False)
         say("\nstopping…")
+        if self.trail:
+            self.trail.stop()
         self.q.put(None)
         self.thread.join(timeout=60)
         with self.lock:

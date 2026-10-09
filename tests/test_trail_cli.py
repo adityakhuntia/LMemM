@@ -99,5 +99,32 @@ class MacFilesCompile(unittest.TestCase):
             py_compile.compile(os.path.join(os.path.dirname(__file__), "..", "src", name), doraise=True)
 
 
+class StandardMethodWiring(unittest.TestCase):
+    """The trail runs inside `lmemm.py start` (macOS-only code, so checked as source on Linux)."""
+    ROOT = os.path.join(os.path.dirname(__file__), "..")
+
+    def src(self, *path):
+        with open(os.path.join(self.ROOT, *path), encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_start_runs_the_trail_unless_told_not_to(self):
+        cli = self.src("lmemm.py")
+        self.assertIn('"--no-trail"', cli)
+        self.assertIn("trail=not opts.no_trail", cli)
+
+    def test_the_tracker_starts_it_shares_pause_and_the_app_list_and_stops_it(self):
+        t = self.src("src", "tracker.py")
+        self.assertIn("trail_mac.Trail(watch_apps=self.watch_apps", t)
+        self.assertIn("self.manual_paused or self.paused is not None", t)
+        self.assertIn("self.trail.start()", t)
+        self.assertIn("self.trail.stop()", t)
+        self.assertIn("self.trail.wait_change(", t)
+
+    def test_a_trail_that_cannot_start_does_not_stop_the_tracker(self):
+        t = self.src("src", "tracker.py")
+        i = t.index("self.trail.start()")
+        self.assertIn("except Exception", t[i:i + 400])
+
+
 if __name__ == "__main__":
     unittest.main()

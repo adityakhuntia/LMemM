@@ -8,7 +8,10 @@ A second tracker, `lmemm.py trail start`, that works the way ChatGPT's Computer 
 **events** (app switches, window/title/focus/selection changes, clicks, typing bursts, shortcuts) and
 reads **what apps expose through macOS accessibility** (window title, page URL, the message box's label,
 headings, the selected sidebar row, visible text). No screenshots and no Screen Recording permission.
-It runs beside the screenshot tracker; nothing in `tracker.py` changed.
+It now runs **inside** `lmemm.py start` (turn off with `--no-trail`), and `lmemm.py trail start` runs it alone.
+Inside the tracker it shares the pause (Pause on the pill, idle, locked) and the "only these apps" list from setup, and
+the old 0.1 s accessibility poll that names the current chat for the pill now wakes on the trail's change notifications
+instead (1 s fallback). The screenshot pipeline and memory items are otherwise unchanged; the trail is not yet turned into memory.
 
 Screenshots stay as a **fallback**: when an app exposes too little (a canvas, a game, some Electron
 apps) and Screen Recording is already granted, one screen is read with Apple Vision, at most once per
@@ -56,9 +59,8 @@ keys, long tokens). The app gate runs **before** any accessibility call, and an 
 not even named in the log.
 
 Controls: `trail pause|resume`, `trail forget --last 10 | --app NAME | --all`, `trail status`.
-The per-app choice from first-run setup (PR #9, `apps.watched`) is honoured through
-`Gate(watch_apps=...)`: when #9 merges, `trail_mac.Trail(watch_apps=...)` just needs the `user.watch_apps` list passed in
-(`lmemm.py trail start` does not read memory.json yet).
+The per-app choice from first-run setup (`apps.watched`) is honoured: inside `lmemm.py start` the tracker passes
+`user.watch_apps` to the trail's gate. The stand-alone `lmemm.py trail start` does not read it yet.
 
 ## What was tested where
 
@@ -96,7 +98,7 @@ their accessibility tree, which costs them some work; it is switched back off on
 ## Decisions taken (change in `config.py`)
 
 - 48 h retention, 50 MB cap. - Text inside text boxes is not read. - Screenshot fallback on. -
-  Recording is opt-in per run (`trail start`); it is not yet part of `lmemm.py start`.
+  The trail runs with `lmemm.py start` by default.
 
 ## Not done
 

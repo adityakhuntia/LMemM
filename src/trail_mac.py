@@ -261,7 +261,10 @@ def vision(front_info, snap):
 class Trail:
     """The running tracker: a worker thread does the reading, the main thread runs the run loop."""
 
-    def __init__(self, watch_apps=None):
+    def __init__(self, watch_apps=None, paused=None):
+        self.external_pause = paused or (lambda: False)     # the screenshot tracker's pause, when run inside it
+        self.changes = 0                                    # counts notifications; wait_change() sleeps on it
+        self.worker = None
         self.paths = config.paths()
         os.makedirs(self.paths.trail_dir, mode=0o700, exist_ok=True)
         self.store = TrailStore(session=time.strftime("%Y%m%d-%H%M%S"))
@@ -284,7 +287,17 @@ class Trail:
     def poke(self, kind):
         with self.cond:
             self.sched.poke(kind, time.monotonic())
-            self.cond.notify()
+            if kind in self.sched.PLACE:             # layout/scroll chatter does not count as "you moved"
+                self.changes += 1
+            self.cond.notify_all()
+
+    def wait_change(self, seen, timeout):
+        """Sleep until something changed since `seen` (a value of .changes) or `timeout`; returns .changes.
+        Lets another thread follow the trail without polling."""
+        with self.cond:
+            if self.changes == seen:
+                self.cond.wait(timeout)
+            return self.changes
 
     trigger = lambda self, why: self.poke("app")                # macos.subscribe() handler protocol
 
@@ -293,7 +306,7 @@ class Trail:
         self.poke("app")
 
     def paused(self):
-        return bool(self.flags & {"asleep", "display_off", "locked"}) or os.path.exists(
+        return bool(self.flags & {"asleep", "display_off", "locked"}) or bool(self.external_pause()) or os.path.exists(
             os.path.join(self.paths.trail_dir, ".paused"))
 
     # ---- the worker
@@ -315,8 +328,8 @@ class Trail:
                         self.say(f"no change notifications for {info['app']} ({type(e).__name__}: {e}); checking every second")
                 if info and self.reader.warming(info["pid"]):      # its tree is still filling in: look again
                     self.engine.last_sig = None
-                    self.sched.poke("window", now)
-                    self.sched.poke("layout", now)
+                    self.poke("window")
+                    self.poke("layout")
                 self.drain(now)
                 jobs = self.sched.due(now)
                 if jobs:
@@ -342,13 +355,13 @@ class Trail:
             if kind == "click":
                 role, label = click_target(self.reader, *point)
                 self.engine.on_input("click", t, button=extra, role=role, target=label)
-                self.sched.poke("selection", t)             # a click often changes the chat or tab
+                self.poke("selection")                      # a click often changes the chat or tab
             elif kind == "shortcut":
                 self.engine.on_input("shortcut", t, combo=extra)
-                self.sched.poke("title", t)
+                self.poke("title")
             else:
                 self.engine.on_input(kind, t)
-                self.sched.poke("layout", t)
+                self.poke("layout")
 
     def housekeeping(self, now):
         if now - self.last_sweep > config.RETENTION_SWEEP:
@@ -377,17 +390,36 @@ class Trail:
 
     # ---- lifecycle
 
-    def run(self):
+    def start(self):
+        """Begin tracking and return at once (observers and the event tap live on the main run loop,
+        which the caller keeps spinning). Safe to call when Accessibility is off: it says so and idles."""
         if not self.reader.trusted():
-            print("Accessibility is off for this app. System Settings > Privacy & Security > Accessibility, then rerun.")
+            print("trail: Accessibility is off for this app. System Settings > Privacy & Security > Accessibility, then restart.")
         self.running = True
         self.events = macos.subscribe(self)
         if not self.tap.start():
-            print(f"input events off ({self.tap.state}); app, window and text tracking still run")
-        worker = threading.Thread(target=self.work, daemon=True)
-        worker.start()
-        signal.signal(signal.SIGTERM, lambda *_: setattr(self, "running", False))
+            print(f"trail: input events off ({self.tap.state}); app, window and text tracking still run")
+        self.worker = threading.Thread(target=self.work, daemon=True)
+        self.worker.start()
         self.poke("app")
+
+    def stop(self):
+        self.running = False
+        with self.cond:
+            self.cond.notify_all()
+        if self.worker:
+            self.worker.join(2)
+        self.tap.stop()
+        self.observers.detach()
+        self.reader.restore()
+        for b in self.engine.bursts.all():
+            self.engine.emit_burst(b)
+        self.store.flush()
+
+    def run(self):
+        """Stand-alone: `lmemm.py trail start`."""
+        self.start()
+        signal.signal(signal.SIGTERM, lambda *_: setattr(self, "running", False))
         print("trail running. Ctrl-C to stop.")
         try:
             while self.running:
@@ -396,13 +428,4 @@ class Trail:
         except KeyboardInterrupt:
             pass
         finally:
-            self.running = False
-            with self.cond:
-                self.cond.notify()
-            worker.join(2)
-            self.tap.stop()
-            self.observers.detach()
-            self.reader.restore()
-            for b in self.engine.bursts.all():
-                self.engine.emit_burst(b)
-            self.store.flush()
+            self.stop()

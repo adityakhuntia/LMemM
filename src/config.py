@@ -92,6 +92,10 @@ class Paths:
         return os.path.join(self.memory_dir, "sessions")
 
     @property
+    def onboarding_file(self):    # where first-run setup stands (step, answers); beside the pid file's data
+        return os.path.join(self.data_dir, "onboarding.json")
+
+    @property
     def control_file(self):
         return os.path.splitext(self.pidfile)[0] + ".control.json"
 

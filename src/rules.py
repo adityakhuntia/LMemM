@@ -27,6 +27,11 @@ What that means:
         one tap flips a note; a finished note holds 1.2 s then folds; the pill counts open notes
         at once; "All caught up" shows once per clear, only after the last fold, and still lets
         you add a note; Undo reverts a batch of ticks made within 2 s.
+    R11 An app you did not choose in setup ("only some apps") is never captured, read or
+        remembered. The pill wears one neutral mark there (not red: nothing is wrong), its card
+        says LMemM is not watching this app, and ⌃⌥N opens that card instead of failing quietly.
+        Marks, strongest first: paused, screen access off, private window, app not chosen,
+        mic off (see R8).
     R8  Every state wears a mark on the pill you can read at a glance; the card only confirms it,
         in a title and one line, with at most one thing to do. Red is for a permission that is
         off. A private window and an empty place stay neutral.
@@ -45,6 +50,8 @@ def pill_mark(status, count=0, has_suggestion=False):
         return "screen_off"
     if status.get("private"):
         return "private"
+    if status.get("unwatched"):
+        return "unwatched"
     if status.get("mic_off") and not count and not has_suggestion:
         return "mic_off"
     return None
@@ -77,12 +84,15 @@ def pill_state(note_open, saved, hover, card_open, count, has_suggestion, mark=N
     return "suggest" if has_suggestion else "rest"
 
 
-def hotkey_action(note_open, card_open, paused):
-    """What ⌃⌥N does right now: ignore, show_paused, open_note, or close_card_then_open_note."""
+def hotkey_action(note_open, card_open, paused, unwatched=False):
+    """What ⌃⌥N does right now: ignore, show_paused, show_unwatched (R11), open_note, or
+    close_card_then_open_note."""
     if note_open:
         return "ignore"
     if paused:
         return "show_paused"
+    if unwatched:
+        return "show_unwatched"
     return "close_card_then_open_note" if card_open else "open_note"
 
 

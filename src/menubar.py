@@ -10,7 +10,7 @@ import objc
 from Foundation import NSObject
 from AppKit import (NSAttributedString, NSBezierPath, NSColor, NSFont, NSFontAttributeName,
                     NSForegroundColorAttributeName, NSImage, NSMakeRect, NSMakeSize, NSMenu, NSMenuItem,
-                    NSMutableAttributedString, NSStatusBar)
+                    NSAlert, NSApplication, NSMutableAttributedString, NSStatusBar)
 
 import menu_model
 
@@ -123,6 +123,21 @@ class MenuBar:
                 continue
             menu.addItem_(_row_item(row, self.target))
         self.item.setMenu_(menu)
+
+    def ask(self, title, text, ok, careful=False):
+        """A question in words with two buttons. True when the person says yes. careful=True is for
+        what cannot be undone: Cancel is the button Return presses."""
+        NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+        alert = NSAlert.alloc().init()
+        alert.setMessageText_(title)
+        alert.setInformativeText_(text)
+        if careful:
+            alert.addButtonWithTitle_("Cancel")
+            alert.addButtonWithTitle_(ok)
+            return alert.runModal() == 1001               # NSAlertSecondButtonReturn
+        alert.addButtonWithTitle_(ok)
+        alert.addButtonWithTitle_("Cancel")
+        return alert.runModal() == 1000                   # NSAlertFirstButtonReturn
 
     def remove(self):
         NSStatusBar.systemStatusBar().removeStatusItem_(self.item)

@@ -44,6 +44,7 @@ import macos
 import menu_model
 import menubar
 import notes
+import permissions
 import onboarding
 import resolver
 import retention
@@ -135,6 +136,8 @@ class Tracker:
         self.menubar = None                  # the menu-bar item (menubar.py), made in run()
         self.menu_refreshed = 0.0
         self.quit_requested = False          # "Quit LMemM" in the menu: ends the main loop
+        self.after_exit = None               # what to do once stopped: "restart", "setup" or "delete" (hand_over)
+        self.screen_restart, self.restart_checked = False, 0.0   # screen access is on for a new run, not this one
         self.suggestion = None               # a group offered as one project: {name, ids, reason}
         self.suggest_answers = self.load_answers()
         self.last_widget_refresh = 0.0
@@ -361,7 +364,7 @@ class Tracker:
             self.widget.refresh()
         if self.menubar and time.time() - self.menu_refreshed >= 1:
             self.menu_refreshed = time.time()
-            self.menubar.update(menu_model.view(self.widget_status(), self.watch_apps))
+            self.menubar.update(menu_model.view(self.widget_status(), self.watch_apps, hotkey=dictation.HOTKEY_LABEL))
         if self.widget:
             self.widget.pulse(self.widget_heard())      # waveform + words while the note window is open
         if self.manual_paused and self.pause_until and time.time() >= self.pause_until:
@@ -610,9 +613,13 @@ class Tracker:
         if time.time() - self.screen_checked > 5:
             self.screen_ok, self.screen_checked = macos.screen_recording_allowed(request=False), time.time()
         kind = "manual" if self.manual_paused else "away" if self.paused == "idle" else None
+        if self.screen_ok:
+            self.screen_restart = False
+        elif time.time() - self.restart_checked > 15:           # on in System Settings, but only for a new run?
+            self.screen_restart, self.restart_checked = permissions.screen_allowed_fresh(), time.time()
         now = datetime.now()
         end = datetime.fromtimestamp(self.pause_until) if self.pause_until else None
-        return {"screen": self.screen_ok, "mic_off": dictation.mic_off(),
+        return {"screen": self.screen_ok, "restart": self.screen_restart, "mic_off": dictation.mic_off(),
                 "private": self.skip_kind == "private" and self.skipped_place == self.front_sig(),
                 "unwatched": self.skip_kind == "unwatched" and self.skipped_place == self.front_sig(),
                 "paused": kind, "pause_view": rules.paused_view(kind, end, now) if kind else None}
@@ -624,6 +631,15 @@ class Tracker:
             self.widget_pause(kind)                     # the same Pause as the pill's (R9)
         elif row == "resume":
             self.widget_resume()
+        elif row == "add_note":
+            self.note_request = True                    # the same as ⌃⌥N, paused card and all (R9)
+        elif row == "access":
+            self.check_access()
+        elif row in {"restart", "setup", "delete"}:
+            if not self.confirm_leaving(row):
+                return
+            self.after_exit = row
+            self.quit_requested = True
         elif row == "quit":
             self.quit_requested = True
         else:
@@ -631,6 +647,35 @@ class Tracker:
         self.menu_refreshed = 0.0                       # show the new state at the next tick
         if self.nsapp is not None:
             macos.wake(self.nsapp)                      # act now, not at the next 0.25 s boundary
+
+    def check_access(self):
+        """"Check access…": open the pane for what is off, or restart when macOS only needs that,
+        or say that all is on."""
+        status = self.widget_status()
+        action = menu_model.access_action(status)
+        if action == "restart":
+            if self.confirm_leaving("restart"):
+                self.after_exit, self.quit_requested = "restart", True
+        elif action in {"screen", "mic"}:
+            permissions.MacSystem().open_settings("screen" if action == "screen" else "voice")
+        elif self.widget:
+            self.widget.flash("All access is on")
+
+    def confirm_leaving(self, row):
+        """Ask before a restart, reopening setup or deleting everything. The words come from
+        menu_model; nothing happens on Cancel."""
+        if row == "delete":
+            import forget
+            try:
+                title, text = menu_model.delete_words(forget.plan(config.paths().data_dir))
+            except ValueError as error:
+                say(str(error))
+                return False
+            return self.menubar.ask(title, text, "Delete everything", careful=True)
+        if row == "setup":
+            title, text = menu_model.setup_words()
+            return self.menubar.ask(title, text, "Reopen setup")
+        return True                                      # a restart has nothing to lose
 
     def widget_pause(self, kind):
         """The pill's Pause row: kind is one of rules.PAUSE_CHOICES."""
@@ -1245,6 +1290,27 @@ class Tracker:
             pass
         finally:
             self.finish()
+        self.hand_over()
+
+    def hand_over(self):
+        """Restart, reopen setup, or delete everything, once LMemM has saved and stopped. A restart
+        replaces this process in place, so macOS sees the same app (permissions.relaunch does the same)."""
+        if not self.after_exit:
+            return
+        python, script = sys.executable, os.path.abspath(sys.argv[0])
+        if self.after_exit == "delete":
+            import forget
+            try:
+                result = forget.delete_all(config.paths().data_dir, None)
+                say(f"deleted {result['files']} file(s). LMemM will ask you to set up again.")
+            except ValueError as error:
+                say(str(error))
+            argv = [python, script, "start"]
+        elif self.after_exit == "setup":
+            argv = [python, script, "setup", "--again"]
+        else:
+            argv = [python] + sys.argv
+        os.execv(python, argv)
 
     def finish(self):
         p = config.paths()

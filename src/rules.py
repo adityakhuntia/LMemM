@@ -32,6 +32,7 @@ What that means:
         says LMemM is not watching this app, and ⌃⌥N opens that card instead of failing quietly.
         Marks, strongest first: paused, screen access off, private window, app not chosen,
         mic off (see R8).
+    The menu-bar item has its own short list, M1-M5, in menu_model.py: it shows this same mark.
     R8  Every state wears a mark on the pill you can read at a glance; the card only confirms it,
         in a title and one line, with at most one thing to do. Red is for a permission that is
         off. A private window and an empty place stay neutral.

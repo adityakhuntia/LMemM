@@ -170,7 +170,7 @@ class Engine:
         self.gap = None
         self.seen = {}                      # place key -> set of lines already logged
         self.vision_at = {}                 # place key -> when the screen was last read
-        self.cost = {"reads": 0, "full": 0, "ms": [], "vision": 0, "events": 0}
+        self.cost = {"reads": 0, "full": 0, "ms": [], "vision": 0, "events": 0, "nodes": [], "truncated": 0}
 
     # ---- helpers
 
@@ -233,6 +233,8 @@ class Engine:
             snap = self.reader.read(front, True) or light
             self.cost["full"] += 1
             self.cost["ms"].append(snap.ms)
+            self.cost["nodes"].append(snap.nodes)
+            self.cost["truncated"] += snap.truncated
             if snap.focus_secure or self.gate.page(snap.url, snap.title):
                 self.gap_once("secure_field")
                 return

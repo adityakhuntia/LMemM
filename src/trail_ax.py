@@ -32,7 +32,9 @@ SECURE = "AXSecureTextField"
 
 # the attributes a node is asked for, in one call
 ATTRS = ("AXRole", "AXSubrole", "AXTitle", "AXDescription", "AXValue", "AXPlaceholderValue",
-         "AXSelected", "AXURL", "AXDocument", "AXPosition", "AXFocused")
+         "AXSelected", "AXURL", "AXDocument", "AXPosition", "AXFocused",
+         "AXChildren", "AXVisibleRows", "AXVisibleChildren")      # children ride the same call: half the round trips
+LIST_ROLES = {"AXList", "AXTable", "AXOutline", "AXScrollArea"}
 
 
 @dataclass
@@ -185,17 +187,12 @@ class LiveNode:
         return self._attrs
 
     def children(self):
-        import ApplicationServices as AS
-        role = self.attrs().get("AXRole")
-        names = ("AXVisibleRows", "AXVisibleChildren", "AXChildren") if role in {"AXList", "AXTable", "AXOutline", "AXScrollArea"} \
-            else ("AXChildren",)
+        a = self.attrs()
+        names = ("AXVisibleRows", "AXVisibleChildren", "AXChildren") if a.get("AXRole") in LIST_ROLES else ("AXChildren",)
         for name in names:
-            try:
-                err, kids = AS.AXUIElementCopyAttributeValue(self.el, name, None)
-            except Exception:
-                continue
-            if err == 0 and kids:
-                return [LiveNode(k) for k in list(kids)[:MAX_CHILDREN]]
+            kids = a.get(name)
+            if kids:
+                return [LiveNode(k) for k in kids[:MAX_CHILDREN]]
         return []
 
 
@@ -204,6 +201,8 @@ def _plain(AS, v):
     object we don't read."""
     if v is None or isinstance(v, (str, bool, int, float)):
         return v
+    if isinstance(v, (list, tuple)) or type(v).__name__ in {"NSArray", "__NSArrayI", "__NSArrayM", "__NSCFArray"}:
+        return list(v)                          # child lists
     try:
         kind = AS.AXValueGetType(v)
         if kind == AS.kAXValueAXErrorType:

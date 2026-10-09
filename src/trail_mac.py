@@ -216,12 +216,20 @@ def click_target(reader, x, y):
     err, el = AS.AXUIElementCopyElementAtPosition(AS.AXUIElementCreateSystemWide(), x, y, None)
     if err != 0 or el is None:
         return None, None
-    node = trail_ax.LiveNode(el).attrs()
-    role = node.get("AXRole")
-    if node.get("AXSubrole") == "AXSecureTextField" or role in trail_ax.TEXT_FIELDS:
-        return role, None
-    label = node.get("AXTitle") or node.get("AXDescription") or node.get("AXValue") if role != "AXTextArea" else None
-    return role, (" ".join(str(label).split())[:80] if isinstance(label, str) else None)
+    role = None
+    for hop in range(5):                 # an unlabeled group/static text: the nearest labeled parent names it
+        node = trail_ax.LiveNode(el).attrs()
+        if hop == 0:
+            role = node.get("AXRole")
+        if node.get("AXSubrole") == "AXSecureTextField" or node.get("AXRole") in trail_ax.TEXT_FIELDS:
+            return role, None
+        label = node.get("AXTitle") or node.get("AXDescription") or (node.get("AXValue") if hop == 0 else None)
+        if isinstance(label, str) and label.strip():
+            return role, " ".join(label.split())[:80]
+        err, el = AS.AXUIElementCopyAttributeValue(el, "AXParent", None)
+        if err != 0 or el is None:
+            break
+    return role, None
 
 
 def vision(front_info, snap):
@@ -349,6 +357,8 @@ class Trail:
                "gap": self.engine.gap, "paused": self.paused(),
                "reads": self.engine.cost["reads"], "full_reads": self.engine.cost["full"],
                "ocr_reads": self.engine.cost["vision"], "events": self.engine.cost["events"],
+               "full_read_nodes_p50": sorted(self.engine.cost["nodes"][-200:])[len(self.engine.cost["nodes"][-200:]) // 2]
+               if self.engine.cost["nodes"] else None, "truncated_reads": self.engine.cost["truncated"],
                "full_read_ms": {"p50": ms[len(ms) // 2] if ms else None, "p95": ms[int(len(ms) * .95)] if ms else None}}
         tmp = os.path.join(self.paths.trail_dir, ".status.json.tmp")
         with open(tmp, "w") as fh:

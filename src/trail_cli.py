@@ -100,7 +100,8 @@ def status(paths=None):
           f'observer notifications: {doc.get("observer_notifications")}')
     print(f'now: {doc.get("place")}')
     print(f'reads {doc.get("reads")} (full {doc.get("full_reads")}, screen {doc.get("ocr_reads")})  events {doc.get("events")}  '
-          f'full read ms {doc.get("full_read_ms")}')
+          f'full read ms {doc.get("full_read_ms")}  nodes p50 {doc.get("full_read_nodes_p50")}  '
+          f'truncated {doc.get("truncated_reads")}')
 
 
 def set_pause(on):

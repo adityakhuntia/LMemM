@@ -441,5 +441,31 @@ class ContextTests(TmpPaths):
         self.assertNotIn("summary", row)
 
 
+
+class ChromeAndLogTests(unittest.TestCase):
+    def test_log_lines_run_together_are_split_and_dropped(self):
+        blob = "Pricing tiers for the new plan are ready typing: Yokn 180 DC receiving: Unread 20 16:17:07 Gmail Reading the inbox"
+        out = labels._usable_lines([blob])
+        self.assertEqual(out, ["Pricing tiers for the new plan are ready"])
+
+    def test_words_on_most_things_are_chrome_but_prose_is_kept(self):
+        bar = "Razorpay NPTEL Wunderfund Gatesscholarship Whatsapp tracker"
+        items = {str(n): thing(str(n), excerpts=[excerpt(bar + f" page {n}")]) for n in range(5)}
+        common = labels.common_words(items, words={"page", "tracker"})
+        self.assertIn("razorpay", common)
+        self.assertNotIn("page", common)
+        labels._COMMON.clear()
+        labels._COMMON.update(common)
+        try:
+            kept = labels._usable_lines([bar, "Pricing section goes here with three tiers"])
+        finally:
+            labels._COMMON.clear()
+        self.assertEqual(kept, ["Pricing section goes here with three tiers"])
+
+    def test_too_few_things_means_no_common_words(self):
+        items = {"a": thing("a", excerpts=[excerpt("Razorpay NPTEL")])}
+        self.assertEqual(labels.common_words(items, words=set()), set())
+
+
 if __name__ == "__main__":
     unittest.main()

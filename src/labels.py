@@ -226,15 +226,48 @@ def noisy_line(line):
     return mostly_unreadable(line)
 
 
+LOG_JOINS = re.compile(r"\s(?=(?:typing|receiving|quick|edit):)|\s(?=\d{1,2}:\d{2}:\d{2}\s)", re.I)
+_COMMON = set()
+
+
+def common_words(items, min_items=3, share=0.4, words=None):
+    """Words found on screen in many different things, such as a browser's bookmarks bar or an app's sidebar names.
+    Only words that are not ordinary English count (Razorpay, NPTEL), so normal prose is never mistaken for chrome."""
+    words = load_words() if words is None else words
+    seen = []
+    for item in items.values() if isinstance(items, dict) else items:
+        text = " ".join(e.get("text", "") for e in item.get("content", {}).get("excerpts", []))
+        found = {t for t in re.findall(r"[a-z]{4,}", text.lower()) if (t not in words if words else len(t) >= 6)}
+        if found:
+            seen.append(found)
+    if len(seen) < min_items + 1:
+        return set()
+    counts = {}
+    for found in seen:
+        for t in found:
+            counts[t] = counts.get(t, 0) + 1
+    return {t for t, c in counts.items() if c >= min_items and c >= share * len(seen)}
+
+
+def set_common(items):
+    _COMMON.clear()
+    _COMMON.update(common_words(items))
+
+
+def mostly_common(line):
+    tokens = re.findall(r"[a-z]{4,}", line.lower())
+    return len(tokens) >= 4 and sum(t in _COMMON for t in tokens) >= 0.6 * len(tokens)
+
+
 def _clean_lines(lines):
     """Private lines out, whitespace squashed. (The text near the pointer goes through just this.)"""
-    squashed = [re.sub(r"\s+", " ", x).strip() for x in lines]
+    squashed = [re.sub(r"\s+", " ", part).strip() for x in lines for part in LOG_JOINS.split(x)]
     return [l for l in squashed if l and not private_line(l)]
 
 
 def _usable_lines(lines):
     """_clean_lines, then noise out, then lines already contained in a longer one out."""
-    kept = [l for l in _clean_lines(lines) if not noisy_line(l)]
+    kept = [l for l in _clean_lines(lines) if not noisy_line(l) and not mostly_common(l)]
     keys = [re.sub(r"[^a-z0-9]", "", l.lower()) for l in kept]
     out, seen = [], []
     for line, key in zip(kept, keys):
@@ -523,6 +556,7 @@ def run(items, provider, governor=None, limit=None, dry_run=False, now=None):
     "stopped": reason|None, "batches": [...] (dry run: the payloads)}."""
     governor = governor or Governor()
     labels = load_labels()
+    set_common(items)                       # what shows up in most things (bookmarks bar, sidebars) is not about any one
     candidates = due(items, labels, now)
     result = {"waiting": len(candidates), "sent": 0, "labelled": 0, "tokens": 0, "calls": 0,
               "stopped": None, "mode": governor.mode(), "batches": []}

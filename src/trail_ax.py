@@ -2,8 +2,8 @@
 
 `collect(root)` walks an app window's accessibility tree and returns a Snapshot: the window
 title, the page URL, what is focused, the headings, the selected sidebar rows and the visible
-text. It never throws, never reads a password field and never reads what is typed into a
-text box (only that one exists). A hung app cannot stall it: the walk stops at a node count
+text. It never throws, never reads a password field and, unless the person opted in (config.TRAIL_WRITING),
+never reads what is written in a text box (only that one exists). A hung app cannot stall it: the walk stops at a node count
 or a time budget, whichever comes first.
 
 The walk is written against a tiny node protocol (`attrs()` and `children()`), so it runs on
@@ -12,8 +12,11 @@ plain test data on any OS. `LiveNode` (bottom of the file) is the macOS implemen
 which is what makes a read ~10-40 ms instead of hundreds.
 """
 
+import re
 import time
 from dataclasses import dataclass, field
+
+import config
 
 MAX_NODES = 350            # nodes visited per read
 MAX_DEPTH = 16             # web content nests deeply
@@ -26,6 +29,7 @@ MAX_CHILDREN = 80          # children looked at per node (long lists: the visibl
 SKIP_ROLES = {"AXMenuBar", "AXMenu", "AXMenuItem", "AXMenuBarItem", "AXScrollBar", "AXValueIndicator",
               "AXSlider", "AXImage", "AXBusyIndicator", "AXProgressIndicator", "AXSplitter",
               "AXToolbar", "AXTabGroup", "AXPopUpButton", "AXMenuButton"}      # a browser's tabs and bookmarks are not the page
+SECRET_LABEL = re.compile(r"pass(word|code)|\bpin\b|cvv|cvc|card number|secret|token|api key|otp|one.time", re.I)
 TEXT_FIELDS = {"AXTextArea", "AXTextField", "AXComboBox", "AXSearchField"}
 ROW_ROLES = {"AXRow", "AXCell", "AXOutlineRow", "AXListItem", "AXGroup", "AXStaticText_row"}
 TAB_ROLES = {"AXTab", "AXRadioButton", "AXTabButton"}
@@ -44,6 +48,7 @@ class Snapshot:
     url: str = ""                    # page URL / document, when the app has one
     page_title: str = ""             # title of the web page inside the window (an app wrapping a web page)
     focus_role: str = ""
+    focus_text: str = ""                          # what is written in the focused box (opt-in, never a secret field)
     focus_label: str = ""            # name of the focused text control ("Type a message to Mum")
     focus_secure: bool = False
     headings: list = field(default_factory=list)
@@ -118,6 +123,8 @@ def collect(window, focus=None, app=None, clock=time.monotonic, max_nodes=MAX_NO
                     if _s(fa.get(key)):
                         snap.focus_label = _s(fa.get(key), 160)
                         break
+                if config.TRAIL_WRITING and not SECRET_LABEL.search(snap.focus_label or ""):
+                    snap.focus_text = _s(fa.get("AXValue"), config.TRAIL_WRITING_CHARS)
         queue, total, web = ([(window, 0)] if window is not None and max_nodes > 0 else []), 0, False
         while queue:
             node, depth = queue.pop(0)

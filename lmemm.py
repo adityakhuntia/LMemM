@@ -55,7 +55,8 @@ USAGE = ("usage: lmemm.py [menu] | start [--every N] [--input-events --input-app
          " | notes [--all] [PROJECT] | notes done|reopen ID…"
          " | projects [--all] | projects new|rename|move|archive|restore|merge|delete …"
          " | context [SESSION] [--days N]"
-         " | label [--dry-run] [--status] [--limit N]"
+         " | label [--dry-run] [--status] [--limit N] [--show] [--last [N]] [--ping]"
+         " | tasks [--minutes N] [--session ID] [--dry-run] [--show]"
          " | trail … | status | pause | resume | pin | note | delete-session ID (--dry-run | --confirm ID)"
          " | delete-all (--dry-run | --confirm) | setup [--again] [--no-start]")
 
@@ -151,8 +152,15 @@ def cmd_start(args):
     parser.add_argument("--input-retention-hours", type=float, default=24)
     parser.add_argument("--no-widget", action="store_true", help="don't show the on-screen pill")
     parser.add_argument("--no-trail", action="store_true", help="don't run the accessibility event trail")
+    parser.add_argument("--labels", action="store_true",
+                        help="label settled things in the background with your Claude (limited to %d tokens a day)" % config.LABEL_DAILY_TOKENS)
+    parser.add_argument("--writing", action="store_true",
+                        help="OPT-IN: also read what you write in any text box (documents, chats, notes) so `tasks` can say what you did. "
+                             "Passwords and secure fields are never read; stays on this Mac; deleted after 48 h")
     parser.add_argument("--no-setup", action="store_true", help="skip first-run setup (it asks for permissions itself)")
     opts = parser.parse_args(args)
+    if opts.writing:
+        config.TRAIL_WRITING = True
     if opts.every <= 0 or not 0 < opts.input_retention_hours <= 24:
         parser.error("positive capture interval and input retention of at most 24 hours required")
     if opts.input_events != bool(opts.input_app) or not set(opts.input_app) <= SUPPORTED_INPUT_APPS:
@@ -161,7 +169,7 @@ def cmd_start(args):
         sys.exit("Setup isn't finished. Run LMemM again to pick up where you left off.")
     tracker.Tracker(every=opts.every, input_apps=set(opts.input_app) or None,
                     input_retention_hours=opts.input_retention_hours, show_widget=not opts.no_widget,
-                    trail=not opts.no_trail).run()
+                    trail=not opts.no_trail, live_labels=opts.labels).run()
 
 
 def first_run_setup(again=False):
@@ -336,6 +344,10 @@ def cmd_label(args):
     parser = argparse.ArgumentParser(prog="lmemm.py label")
     parser.add_argument("--dry-run", action="store_true", help="show what would be sent and its token estimate; send nothing")
     parser.add_argument("--status", action="store_true", help="today's tokens, what is waiting, whether `claude` is found")
+    parser.add_argument("--last", nargs="?", const=1, type=int, metavar="N",
+                        help="print the last N calls to Claude word for word: the instruction, the prompt, the reply, the tokens")
+    parser.add_argument("--show", action="store_true", help="list the labels Claude wrote, one readable line per thing")
+    parser.add_argument("--ping", action="store_true", help="one tiny call (about 2.5k tokens) to check Claude answers, and how fast")
     parser.add_argument("--limit", type=int, help="label at most this many things")
     opts = parser.parse_args(args)
     try:
@@ -346,6 +358,54 @@ def cmd_label(args):
     known = len(labels.load_words())
     print(f"word list for the garbled-text filter: {f'{known} words' if known else 'NOT found (/usr/share/dict/words); garbled OCR lines are only partly filtered'}",
           file=sys.stderr)
+    if opts.last:
+        log = labels.read_log()
+        if not log:
+            sys.exit("No calls recorded yet (they are recorded from now on). Run `python3 lmemm.py label` first.")
+        for call in log[-opts.last:]:
+            usage = call.get("usage") or {}
+            print(f"==== {call['at']}  model {call['model']}  tokens in {usage.get('input_tokens', 0)}"
+                  f" (+{usage.get('cache_creation_input_tokens', 0)} cached write, {usage.get('cache_read_input_tokens', 0)} cached read)"
+                  f", out {usage.get('output_tokens', 0)} ====")
+            print("---- instruction (system prompt) ----\n" + call["system_prompt"])
+            print("---- prompt (everything else Claude was sent) ----\n" + call["prompt"])
+            print("---- Claude's reply ----\n" + call["reply"] + "\n")
+        print(f"(the last {labels.LOG_KEEP} calls are kept in {os.path.relpath(labels.log_path())}; delete that file to erase them)")
+        return
+    if opts.show:
+        found = labels.load_labels()
+        rows = [(i, found[i["id"]]) for i in items.values() if i["id"] in found]
+        if not rows:
+            sys.exit("No labels yet. Run `python3 lmemm.py label` or start with --labels.")
+        for item, label in sorted(rows, key=lambda r: r[1].get("at", ""), reverse=True):
+            print(f"{item['app'][:16]:16} {(item.get('title') or item.get('doing') or '')[:50]}")
+            print(f"    {label.get('summary')}")
+            extra = [f"kind: {label.get('kind')}" if label.get("kind") else "",
+                     f"project: {label['project_guess']}" if label.get("project_guess") else "",
+                     f"entities: {', '.join(label['entities'])}" if label.get("entities") else "",
+                     f"question: {label['open_question']}" if label.get("open_question") else ""]
+            print("    " + "  |  ".join(x for x in extra if x) + f"  |  {label.get('at', '')[11:16]}")
+        today = datetime.now().strftime("%Y-%m-%d")
+        made_today = sum(1 for _i, l in rows if l.get("at", "").startswith(today))
+        calls = governor.doc["calls"]
+        print(f"\nTokens today: {governor.used} of {governor.cap} in {calls} call(s)"
+              + (f", about {governor.used // calls} per call" if calls else "")
+              + (f", about {governor.used // made_today} per label ({made_today} labels written today)" if made_today else "")
+              + ".\nMost of each call is Claude's fixed overhead (~2.5k tokens), so bigger batches cost less per label.")
+        return
+    if opts.ping:
+        import time
+        if not provider.available():
+            sys.exit("The `claude` command was not found. Install Claude Code and sign in, then try again.")
+        print(f"asking Claude (model {provider.model}, waits up to {provider.timeout} s)...", flush=True)
+        began = time.time()
+        try:
+            answers, usage = provider.label("THING 1\napp: Notes\nwindow: Shopping list\ntext:\n  \"milk, eggs, bread\"\n", {"1"})
+        except labels.ProviderError as error:
+            sys.exit(f"no good answer after {time.time() - began:.1f} s: {error}")
+        spent = governor.record(usage)
+        print(f"OK in {time.time() - began:.1f} s, {spent} tokens. Claude answered: {answers.get('1', {}).get('summary')!r}")
+        return
     if opts.status:
         waiting = labels.due(items, labels.load_labels())
         print(f"claude command: {'found' if provider.available() else 'NOT found'}")
@@ -361,6 +421,75 @@ def cmd_label(args):
     print(f"waiting {result['waiting']}, sent {result['sent']}, labelled {result['labelled']}, "
           f"tokens spent {result['tokens']} (today {governor.used} of {governor.cap})"
           + (f"; stopped: {result['stopped']}" if result["stopped"] else ""), file=sys.stderr)
+
+
+def cmd_tasks(args):
+    """What were you trying to get done? Claude reads the last stretch of your session as one story."""
+    import context
+    import labels
+    import tasks
+    parser = argparse.ArgumentParser(prog="lmemm.py tasks")
+    parser.add_argument("--minutes", type=int, default=90, help="how far back to read (default 90)")
+    parser.add_argument("--session", help="a session id (default: the latest)")
+    parser.add_argument("--dry-run", action="store_true", help="print what would be sent; send nothing")
+    parser.add_argument("--show", action="store_true", help="print the tasks found by earlier runs")
+    parser.add_argument("--force", action="store_true", help="ask again even if nothing changed since the last run")
+    opts = parser.parse_args(args)
+    try:
+        items = store.load_items()
+    except ValueError as error:
+        sys.exit(str(error))
+
+    def name(iid):
+        i = items.get(iid) or {}
+        return f"{i.get('app', '?')}: {(i.get('title') or i.get('doing') or '')[:60]}"
+
+    def show(found, minutes):
+        for n, t in enumerate(found["tasks"], 1):
+            print(f"Task {n}: {t['title']}   [{t['stage']} · {tasks._minutes(t.get('seconds', 0))}]")
+            print(f"    {t['goal']}")
+            if t.get("open"):
+                print(f"    Next: {t['open']}")
+            if t.get("project_guess"):
+                print(f"    Project: {t['project_guess']}")
+            for iid in t["items"]:
+                print(f"      - {name(iid)}")
+            print()
+        if found["other"]:
+            print("Glanced at: " + "; ".join(name(i) for i in found["other"]))
+    if opts.show:
+        book = tasks.load_tasks()
+        if not book:
+            sys.exit("No tasks yet. Run `python3 lmemm.py tasks`.")
+        for session, found in book.items():
+            print(f"==== session {session}, found {found['at']} (last {found.get('minutes') or 'all'} min) ====")
+            show(found, found.get("minutes"))
+        return
+    doc = context.find_session_doc(opts.session) if opts.session else context.latest_session_doc()
+    if doc is None:
+        sys.exit("No session to read yet. Run LMemM for a while first.")
+    provider, governor = labels.ClaudeCli(), labels.Governor()
+    if not opts.dry_run and not provider.available():
+        sys.exit("The `claude` command was not found. Install Claude Code and sign in, then try again.")
+    if not opts.dry_run:
+        print("asking Claude (this can take up to a minute)...", flush=True)
+    try:
+        result = tasks.run(doc, items, provider, governor, minutes=opts.minutes, dry_run=opts.dry_run, force=opts.force)
+    except labels.ProviderError as error:
+        sys.exit(str(error))
+    if opts.dry_run:
+        print(result["payload"] or f"nothing to send: {result['stopped']}")
+        if result["payload"]:
+            print(f"\n(about {result['estimate']} tokens for this call, {config.LABEL_DAILY_TOKENS - governor.used} left today)")
+        return
+    if result["stopped"]:
+        sys.exit("Stopped: " + result["stopped"])
+    show(result, opts.minutes)
+    if result.get("cached"):
+        print("(nothing new since the last run: no call made, 0 tokens. Use --force to ask again.)")
+        return
+    print(f"({result['things']} things read, {result['tokens']} tokens; today {governor.used} of {governor.cap}."
+          f" `python3 lmemm.py label --last` shows the exact prompt and reply.)")
 
 
 def cmd_delete_session(args):
@@ -531,6 +660,8 @@ def main():
         cmd_context(rest)
     elif cmd == "label":
         cmd_label(rest)
+    elif cmd == "tasks":
+        cmd_tasks(rest)
     else:
         sys.exit(USAGE)
 

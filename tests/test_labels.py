@@ -441,5 +441,76 @@ class ContextTests(TmpPaths):
         self.assertNotIn("summary", row)
 
 
+
+class LogTests(TmpPaths):
+    def test_calls_are_logged_word_for_word_and_trimmed(self):
+        for n in range(labels.LOG_KEEP + 3):
+            labels.log_exchange({"at": str(n), "prompt": f"p{n}", "reply": "r", "system_prompt": "s", "model": "m", "usage": {}})
+        log = labels.read_log()
+        self.assertEqual(len(log), labels.LOG_KEEP)
+        self.assertEqual(log[-1]["prompt"], f"p{labels.LOG_KEEP + 2}")
+
+    def test_run_records_what_the_provider_exchanged(self):
+        class Recording(FakeProvider):
+            def label(self, payload, wanted):
+                self.last_exchange = {"at": "t", "model": "m", "system_prompt": "s", "prompt": payload, "reply": "{}", "usage": {}}
+                return super().label(payload, wanted)
+        items = {"a": thing("a", seconds=300, excerpts=[excerpt("A real sentence about the pricing plan that is long enough")])}
+        labels.run(items, Recording(), labels.Governor(cap=50000), now=datetime(2026, 10, 7))
+        self.assertIn("THING 1", labels.read_log()[-1]["prompt"])
+
+
+class GroundTests(TmpPaths):
+    def test_unsupported_names_addresses_and_questions_are_dropped(self):
+        item = thing("g", title="Auto Send - Project Editor - Apps Script", excerpts=[excerpt("function sendDrafts() sends the first email")])
+        block = labels.thing_block(1, item)
+        answer = {"summary": "Editing Auto Send; mail to meetaparti @ yahoo.com", "kind": "editor", "project_guess": "Seni Mall",
+                  "entities": ["sendDrafts", "meetaparti@yahoo.com", "Seni Mall"], "open_question": "What is it for?"}
+        out = labels.ground(answer, block, item)
+        self.assertIsNone(out["project_guess"])
+        self.assertEqual(out["entities"], ["sendDrafts"])
+        self.assertIsNone(out["open_question"])
+        self.assertNotIn("yahoo", out["summary"])
+
+    def test_a_project_named_in_the_title_is_kept(self):
+        item = thing("g", title="Auto Send - Project Editor", excerpts=[excerpt("function sendDrafts() sends the first email")])
+        out = labels.ground({"summary": "x", "project_guess": "Auto Send", "entities": []}, labels.thing_block(1, item), item)
+        self.assertEqual(out["project_guess"], "Auto Send")
+
+    def test_a_question_survives_when_there_is_an_open_note(self):
+        item = thing("g", title="Plan", note_texts=["ask about pricing"], excerpts=[excerpt("Pricing tiers for the plan are listed here")])
+        out = labels.ground({"summary": "x", "open_question": "Which tier?"}, labels.thing_block(1, item), item)
+        self.assertEqual(out["open_question"], "Which tier?")
+
+    def test_addresses_with_ocr_gaps_are_private_lines(self):
+        self.assertTrue(labels.private_line("sendEmail to meetaparti @yahoo.com now ok"))
+        self.assertTrue(labels.private_line("write to someone @ gmail . com today"))
+
+
+class ChromeAndLogTests(unittest.TestCase):
+    def test_log_lines_run_together_are_split_and_dropped(self):
+        blob = "Pricing tiers for the new plan are ready typing: Yokn 180 DC receiving: Unread 20 16:17:07 Gmail Reading the inbox"
+        out = labels._usable_lines([blob])
+        self.assertEqual(out, ["Pricing tiers for the new plan are ready"])
+
+    def test_words_on_most_things_are_chrome_but_prose_is_kept(self):
+        bar = "Razorpay NPTEL Wunderfund Gatesscholarship Whatsapp tracker"
+        items = {str(n): thing(str(n), excerpts=[excerpt(bar + f" page {n}")]) for n in range(5)}
+        common = labels.common_words(items, words={"page", "tracker"})
+        self.assertIn("razorpay", common)
+        self.assertNotIn("page", common)
+        labels._COMMON.clear()
+        labels._COMMON.update(common)
+        try:
+            kept = labels._usable_lines([bar, "Pricing section goes here with three tiers"])
+        finally:
+            labels._COMMON.clear()
+        self.assertEqual(kept, ["Pricing section goes here with three tiers"])
+
+    def test_too_few_things_means_no_common_words(self):
+        items = {"a": thing("a", excerpts=[excerpt("Razorpay NPTEL")])}
+        self.assertEqual(labels.common_words(items, words=set()), set())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -18,6 +18,7 @@ MIN_GAP = 2.0           # never two captures closer than this (pinned excepted)
 POLL = 0.5              # seconds between window/tab title checks
 IDLE = 60               # no input for this long -> pause
 MAX_QUEUE = 8           # resolver backlog above which timer captures are skipped
+BROWSER_INFO_TTL = 10.0   # seconds a browser tab's URL/title is reused between captures of the same window and title
 MAX_PX = 1600           # a captured screen wider than this is scaled down to it
 
 # ---------------------------------------------------------------- cost control
@@ -35,7 +36,13 @@ CPU_WARN_PCT = 60           # ...or more than this share of one core over the la
 
 # ---------------------------------------------------------------- labels (labels.py)
 
+LABEL_EVERY = 900               # seconds between live label runs (`lmemm.py start --labels`)
+LABEL_FIRST_AFTER = 120         # ...and how long after start the first one may run
+LABEL_MIN_WAITING = 3
+LABEL_MAX_WAIT = 1800                  # seconds: a settled thing waits this long for company, then goes alone           # ...and how many settled things must be waiting for a run to be worth its fixed cost
 LABEL_DAILY_TOKENS = 50000      # most tokens `lmemm.py label` may spend per day (counted from the CLI's own usage)
+TASK_MODEL = "sonnet"            # tasks need real reasoning over a whole session; one call per run
+TASK_OFF_APPS = set()            # apps `tasks` never reads. Empty for now: mail and messages are read. Secrets are always dropped
 LABEL_MODEL = "haiku"           # the `claude --model` alias used for labels
 LABEL_SETTLE = 120              # seconds a thing must sit unchanged before it is sent
 LABEL_MIN_SECONDS = 20          # ...and have been worked on this long (unless pinned, noted or 2+ min)
@@ -50,6 +57,8 @@ LABEL_OFF_KINDS = {"chat", "chat_list", "email", "email_draft", "mailbox", "emai
 TRAIL_RETENTION_HOURS = 48      # raw events stay on this Mac this long, then are deleted
 TRAIL_MAX_MB = 50               # hard cap on the trail folder; oldest day goes first
 TRAIL_READ_FIELD_TEXT = False   # read the text INSIDE the focused text box (an editor's document)? off: only that one exists
+TRAIL_WRITING = os.environ.get("LMEMM_WRITING") == "1"   # OPT-IN: also record what you write in any text box (documents, chats, forms). Passwords and secure fields never. `start --writing`
+TRAIL_WRITING_CHARS = 6000      # most text read from one box at a time
 TRAIL_TEXT_EVERY = 2.0          # seconds: least time between two text reads of one place
 TRAIL_FULL_MS = 90              # a full tree read stops after this long (Chromium apps cost ~0.5 ms a node)
 TRAIL_SETTLE_MS = 150           # a shaky place must hold this long before it counts as a switch

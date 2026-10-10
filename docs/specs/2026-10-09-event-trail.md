@@ -108,3 +108,7 @@ their accessibility tree, which costs them some work; it is switched back off on
 
 Feeding the trail into memory items/context; a menu entry; showing it on the pill; Windows; reading
 `user.watch_apps` from memory.json; per-site allow/exclude lists beyond `config.SKIP_*`.
+
+## Opt-in: what you write (`start --writing`)
+
+Off by default. With `--writing` (or `LMEMM_WRITING=1`) the trail also reads the text written in the focused text box of any app (documents, chats, notes, mail) and logs a `write` event with only the sentences that are new since the last read (`place`, `app`, `field`, `added`, `total`). Never read: secure/password fields, boxes whose label looks like a password, PIN, card, token or key, apps and pages the gate already excludes. Secret-looking sentences are dropped. Mail and messages are NOT redacted or excluded for now (`config.TASK_OFF_APPS` is empty). Same 48-hour retention and `trail forget` as every other event. `tasks` uses these events as "wrote:" evidence.

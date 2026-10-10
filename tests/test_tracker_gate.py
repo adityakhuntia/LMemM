@@ -9,7 +9,7 @@ import os
 import unittest
 
 SRC = os.path.join(os.path.dirname(__file__), "..", "src", "tracker.py")
-LOOKS = {"browser_info", "grab", "grab_with_screencapture", "start_read", "display_for", "input_ages"}
+LOOKS = {"browser_info", "browser_info_cached", "grab", "grab_with_screencapture", "start_read", "display_for", "input_ages"}
 
 
 def calls_in(func):
@@ -40,7 +40,7 @@ class GateTests(unittest.TestCase):
         self.assertLess(min(gate), min(looks), f"{name}() reads the app before the R11 check")
 
     def test_capture_checks_before_it_reads_or_grabs(self):
-        self.check("capture")
+        self.check("_capture")
 
     def test_identify_now_checks_before_it_reads(self):
         self.check("identify_now")

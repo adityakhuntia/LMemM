@@ -19,6 +19,8 @@ CHAT_KINDS = {"chat", "ai_chat"}
 SECRET = re.compile(r"\b\d{13,19}\b|\bsk-[A-Za-z0-9_-]{16,}|\b(?:ghp|gho|xox[bap])[-_A-Za-z0-9]{16,}|"
                     r"\b[A-Fa-f0-9]{40,}\b|\b[A-Za-z0-9+/]{40,}={0,2}(?![A-Za-z0-9+/])|password\s*[:=]|\bAKIA[0-9A-Z]{16}\b", re.I)
 MAX_ADDED = 40
+MAX_WRITTEN = 12
+URL_LIKE = re.compile(r"^(?:https?://)?[\w.-]+\.[a-z]{2,}(?:[/?#]\S*)?\.?$", re.I)     # chatgpt.com, mail.google.com/mail/u/0/
 MAX_PLACES_SEEN = 24
 
 
@@ -173,6 +175,7 @@ class Engine:
         self.last_sig = None
         self.gap = None
         self.seen = {}                      # place key -> set of lines already logged
+        self.written = {}                   # (place key, box) -> sentences already logged (opt-in writing)
         self.vision_at = {}                 # place key -> when the screen was last read
         self.cost = {"reads": 0, "full": 0, "ms": [], "vision": 0, "events": 0, "nodes": [], "truncated": 0}
 
@@ -283,6 +286,25 @@ class Engine:
         seen.update(lines)
         if added or removed:
             self.emit("text", place=cur["key"], source=source, added=added, removed=removed, total=len(lines))
+        if config.TRAIL_WRITING and snap.focus_text:
+            self.read_writing(front, cur, snap)
+
+    def read_writing(self, front, cur, snap):
+        """Opt-in: the sentences newly written in the focused box. Secrets are dropped like everywhere else;
+        mail and messages are kept. Only what is new since the last read goes to disk, not the whole box."""
+        pieces = redact([p.strip() for p in re.split(r"(?<=[.!?])\s+|\n", snap.focus_text)])
+        key = (cur["key"], snap.focus_label)
+        seen = self.written.setdefault(key, set())
+        label = (snap.focus_label or "").strip().lower()
+        pieces = [p for p in pieces if len(p) >= 3 and p.lower().rstrip(".!?… ") != label.rstrip(".!?… ") and not URL_LIKE.match(p)]   # placeholder text, addresses
+        added = [p for p in pieces if p not in seen][:MAX_WRITTEN]
+        if len(self.written) > MAX_PLACES_SEEN:
+            self.written.pop(next(iter(self.written)))
+        seen.clear()
+        seen.update(pieces)
+        if added:
+            self.emit("write", place=cur["key"], app=front["app"], field=snap.focus_label or snap.focus_role,
+                      added=added, total=len(snap.focus_text))
 
     # ---- input from the event tap
 

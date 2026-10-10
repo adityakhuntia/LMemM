@@ -16,6 +16,7 @@ resolver thread, and turns resolved screens into memory and a timeline.
 Run it through lmemm.py:   python3 lmemm.py          (Ctrl-C to stop)
 """
 
+import copy
 import hashlib
 import json
 import os
@@ -40,6 +41,7 @@ import config
 import dictation
 import identity
 import input_monitor as input_hooks
+import capture_plan
 import labels
 import macos
 import menu_model
@@ -84,7 +86,7 @@ def line(t, app, msg):
 
 
 class Tracker:
-    def __init__(self, every=config.EVERY, input_apps=None, input_retention_hours=24, show_widget=True, trail=True):
+    def __init__(self, every=config.EVERY, input_apps=None, input_retention_hours=24, show_widget=True, trail=True, live_labels=False):
         p = config.paths()
         self.every = every
         self.session = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -133,6 +135,11 @@ class Tracker:
         self.last_save = 0.0
         self.dirty = False
         self.metrics = Counter()             # work done and time spent, shown by `status`
+        self.tick_times = capture_plan.Timings(400)      # how long each main-loop pass blocked (p95 in `status`)
+        self.capture_times = capture_plan.Timings(200)   # ... and each capture on the main thread
+        self.last_place_key = None           # the trail's place, to notice a move inside one window
+        self.live_labels = live_labels
+        self.labeller = None                 # labels.LiveLabeller, made in run() when asked for
         self.started = time.time()
         self.cpu_started = time.process_time()
         self.resources = {}
@@ -285,7 +292,17 @@ class Tracker:
             "avg_ms": {"capture": avg("capture"), "ocr_fast": avg("ocr_fast"), "ocr_accurate": avg("ocr_accurate"),
                        "handle": avg("handle"), "save": avg("save")},
             "capture_interval_s": round(self.current_interval(time.time(), quiet=True)),
+            "main_loop_ms": {"tick_p95": self.tick_times.p95(), "tick_max": self.tick_times.max(),
+                             "capture_p95": self.capture_times.p95(), "capture_max": self.capture_times.max()},
+            "browser_lookups": {"asked": macos._BROWSER_CACHE.misses, "saved": macos._BROWSER_CACHE.hits},
+            "labels": self.labels_report(),
         }
+
+    def labels_report(self):
+        if not self.labeller:
+            return "off (start with --labels)"
+        last = self.labeller.last or {}
+        return {"running": self.labeller.busy, "last": last.get("stopped") or f"{last.get('labelled', 0)} labelled"}
 
     # ------------------------------------------------------------ input timeline
 
@@ -467,6 +484,10 @@ class Tracker:
                 self.start_read(f, clear=False)      # keyboard, notifications and redraws don't click
             if f and self.last_sig and any(f[k] != self.last_sig[k] for k in ("pid", "win_id", "window")):
                 self.identify_now(f)                 # a new app, window or tab
+            place = self.trail.place_key(f["bundle_id"]) if (f and self.trail) else None
+            if place and self.last_place_key and place != self.last_place_key:
+                self.trigger("place_change")         # another chat/channel in the same window
+            self.last_place_key = place
             self.last_sig = f or self.last_sig
 
         if self.pending and now >= self.pending[1]:
@@ -506,6 +527,13 @@ class Tracker:
 
     def capture(self, trigger, pinned=False):
         """Screenshot the front window's display and queue it. Returns its metadata."""
+        began = time.perf_counter()
+        try:
+            return self._capture(trigger, pinned)
+        finally:
+            self.capture_times.add((time.perf_counter() - began) * 1000)
+
+    def _capture(self, trigger, pinned=False):
         if self.manual_paused or any(self.flags.values()):
             return None
         self.last_capture = time.time()
@@ -516,7 +544,7 @@ class Tracker:
             self.skipped_place, self.skip_kind = (f["app"], f["window"]), "unwatched"
             self.close_interval()
             return None
-        url, tab_title, private = macos.browser_info(f["app"])
+        url, tab_title, private = macos.browser_info_cached(f["app"], (f["win_id"], f["window"]))
         site = re.sub(r"^https?://", "", url or "").split("/")[0] or None
         title = tab_title or f["window"]
 
@@ -1574,6 +1602,8 @@ class Tracker:
         say((f"{dictation.HOTKEY_LABEL} dictate a note" if hotkey_ok
              else f"(couldn't register {dictation.HOTKEY_LABEL}: use  python3 lmemm.py note)")
             + "  ·  Ctrl-C stop\n")
+        if self.live_labels:
+            self.start_labels()
         self.last_sig = macos.front()
         if self.last_sig:
             self.identify_now(self.last_sig)     # so the app you start in is followed too
@@ -1582,12 +1612,32 @@ class Tracker:
         try:
             while True:
                 macos.next_event(app)
+                began = time.perf_counter()
                 self.tick()
+                self.tick_times.add((time.perf_counter() - began) * 1000)
+                if self.labeller:
+                    self.labeller.poll()
         except KeyboardInterrupt:
             pass
         finally:
             self.finish()
         self.hand_over()
+
+    def start_labels(self):
+        """--labels: label settled things in the background with the laptop's Claude (labels.py)."""
+        provider = labels.ClaudeCli()
+        if not provider.available():
+            say("labels off: the `claude` command was not found (install Claude Code and log in)")
+            return
+
+        def snapshot():
+            with self.lock:
+                return copy.deepcopy(self.items)
+        self.labeller = labels.LiveLabeller(snapshot, provider, say=lambda m: line(now_hms(), "", m),
+                                            paused=lambda: bool(self.manual_paused or self.paused or any(self.flags.values())
+                                                                or self.panel.open))
+        say(f"labels on  ·  first run in {round(self.labeller.first_after / 60)} min, then every "
+            f"{round(self.labeller.every / 60)} min  ·  at most {config.LABEL_DAILY_TOKENS} tokens a day")
 
     def hand_over(self):
         """Restart, reopen setup, or delete everything, once LMemM has saved and stopped. A restart

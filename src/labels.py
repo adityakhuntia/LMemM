@@ -27,6 +27,8 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
+import time
 from datetime import datetime
 from urllib.parse import urlsplit
 
@@ -549,3 +551,58 @@ def run(items, provider, governor=None, limit=None, dry_run=False, now=None):
             result["stopped"] = "daily limit reached"
             break
     return result
+
+
+# ---------------------------------------------------------------- live (while the tracker runs)
+
+class LiveLabeller:
+    """Runs `run()` in the background while LMemM is tracking: the first time `first_after` seconds after start,
+    then every `every` seconds, and only when at least `min_waiting` things are due, so a call is never wasted on
+    one thing. It works on a copy of the items taken under the tracker's lock and never touches the main loop.
+    `poll(now)` is called from the tick (a few comparisons); the work happens on its own thread."""
+
+    def __init__(self, get_items, provider, say=print, paused=lambda: False, first_after=None, every=None,
+                 min_waiting=None, clock=time.monotonic, governor=None, threaded=True):
+        self.get_items, self.provider, self.say, self.paused = get_items, provider, say, paused
+        self.first_after = config.LABEL_FIRST_AFTER if first_after is None else first_after
+        self.every = config.LABEL_EVERY if every is None else every
+        self.min_waiting = config.LABEL_MIN_WAITING if min_waiting is None else min_waiting
+        self.clock, self.governor, self.threaded = clock, governor, threaded
+        self.next_at = clock() + self.first_after
+        self.busy = False
+        self.last = None                      # the last result, for `status`
+
+    def poll(self):
+        """True when a run was started."""
+        if self.busy or self.clock() < self.next_at or self.paused():
+            return False
+        self.next_at = self.clock() + self.every
+        self.busy = True
+        if self.threaded:
+            threading.Thread(target=self._work, daemon=True).start()
+        else:
+            self._work()
+        return True
+
+    def _work(self):
+        try:
+            items = self.get_items()
+            governor = self.governor or Governor()
+            if governor.mode() == "stopped":
+                self.last = {"stopped": "daily limit reached"}
+                return
+            waiting = len(due(items, load_labels()))
+            if waiting < self.min_waiting:
+                self.last = {"waiting": waiting, "sent": 0, "stopped": None}
+                return
+            result = run(items, self.provider, governor)
+            self.last = result
+            if result["calls"]:
+                self.say(f"labels: {result['labelled']} of {result['sent']} things labelled, "
+                         f"{result['tokens']} tokens ({governor.used}/{governor.cap} today)")
+            elif result["stopped"]:
+                self.say(f"labels paused: {result['stopped']}")
+        except Exception as error:               # a label failure must never reach the tracker
+            self.last = {"stopped": f"{type(error).__name__}: {error}"}
+        finally:
+            self.busy = False

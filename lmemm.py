@@ -151,6 +151,8 @@ def cmd_start(args):
     parser.add_argument("--input-retention-hours", type=float, default=24)
     parser.add_argument("--no-widget", action="store_true", help="don't show the on-screen pill")
     parser.add_argument("--no-trail", action="store_true", help="don't run the accessibility event trail")
+    parser.add_argument("--labels", action="store_true",
+                        help="label settled things in the background with your Claude (limited to %d tokens a day)" % config.LABEL_DAILY_TOKENS)
     parser.add_argument("--no-setup", action="store_true", help="skip first-run setup (it asks for permissions itself)")
     opts = parser.parse_args(args)
     if opts.every <= 0 or not 0 < opts.input_retention_hours <= 24:
@@ -161,7 +163,7 @@ def cmd_start(args):
         sys.exit("Setup isn't finished. Run LMemM again to pick up where you left off.")
     tracker.Tracker(every=opts.every, input_apps=set(opts.input_app) or None,
                     input_retention_hours=opts.input_retention_hours, show_widget=not opts.no_widget,
-                    trail=not opts.no_trail).run()
+                    trail=not opts.no_trail, live_labels=opts.labels).run()
 
 
 def first_run_setup(again=False):

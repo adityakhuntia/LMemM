@@ -18,6 +18,7 @@ try:
 except ImportError:
     sys.exit("Missing dependency. Run:  python3 -m pip install -r requirements.txt")
 
+import capture_plan
 import config
 
 _CG = {}
@@ -97,6 +98,17 @@ def front():
 _SCRIPTS = {}
 
 
+_BROWSER_CACHE = capture_plan.BrowserInfoCache(ttl=config.BROWSER_INFO_TTL)
+
+
+def browser_info_cached(app, key):
+    """browser_info(), but asking the browser (an AppleScript round trip, ~77 ms, once 9.6 s) at most once per
+    BROWSER_INFO_TTL seconds for the same window and title. `key` = (window id, window title)."""
+    if app not in config.BROWSERS:
+        return None, None, False
+    return _BROWSER_CACHE.get((app,) + tuple(key), lambda: browser_info(app))
+
+
 def browser_info(app):
     """(URL, tab title, private?) of the front tab, or (None, None, False)."""
     if app not in config.BROWSERS:
@@ -150,12 +162,20 @@ class Frame:
     """
 
     def __init__(self, cg, rgba, width, height):
-        import numpy as np
         self.cg, self.rgba, self.width, self.height = cg, rgba, width, height
-        px = np.frombuffer(rgba, np.uint8).reshape(height, width, 4)
-        weighted = (px[..., 0].astype(np.int32) * 299 + px[..., 1].astype(np.int32) * 587
-                    + px[..., 2].astype(np.int32) * 114)             # int32: 255 * 1000 overflows int16
-        self.gray = (weighted // 1000).astype(np.int16)              # same weights as PIL's "L"
+        self._gray = None
+
+    @property
+    def gray(self):
+        """Luminance for the pixel diff, built the first time it is asked for. That is on the resolver
+        thread, not the main loop (it used to be built inside the capture, ~35 ms of a blocked pill)."""
+        if self._gray is None and self.rgba is not None:
+            import numpy as np
+            px = np.frombuffer(self.rgba, np.uint8).reshape(self.height, self.width, 4)
+            weighted = (px[..., 0].astype(np.int32) * 299 + px[..., 1].astype(np.int32) * 587
+                        + px[..., 2].astype(np.int32) * 114)             # int32: 255 * 1000 overflows int16
+            self._gray = (weighted // 1000).astype(np.int16)             # same weights as PIL's "L"
+        return self._gray
 
     def image(self, long_edge=None):
         """A PIL RGB image of the frame, optionally shrunk so its long edge is `long_edge`."""
@@ -170,7 +190,7 @@ class Frame:
         self.image(long_edge).save(path, quality=quality)
 
     def release(self):
-        self.cg = self.rgba = self.gray = None
+        self.cg = self.rgba = self._gray = None
 
 
 def _frame_from_cg(cg):
@@ -190,17 +210,35 @@ def _frame_from_cg(cg):
 
 def grab(display):
     """The display as an in-memory Frame (~25 ms), or None if the OS won't give it to us.
-    Uses the screen-image API at nominal (1x) resolution, so no resize step is needed."""
+    Uses the screen-image API at nominal (1x) resolution, so no resize step is needed.
+    LMemM's own windows (the pill, the note card, its window) are left out of the picture, so
+    its text never gets read as part of what you were doing; if that fails the whole display is taken."""
     try:
         import Quartz
         b = display_bounds(display)
-        cg = Quartz.CGWindowListCreateImage(
-            Quartz.CGRectMake(b["X"], b["Y"], b["Width"], b["Height"]),
-            Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID,
-            Quartz.kCGWindowImageNominalResolution | Quartz.kCGWindowImageBoundsIgnoreFraming)
+        rect = Quartz.CGRectMake(b["X"], b["Y"], b["Width"], b["Height"])
+        options = Quartz.kCGWindowImageNominalResolution | Quartz.kCGWindowImageBoundsIgnoreFraming
+        cg = None
+        try:
+            infos = cg_windows()
+            others = capture_plan.windows_except_pid(infos, os.getpid())
+            if others and len(others) < len(infos):          # only worth it when one of ours is on screen
+                cg = Quartz.CGWindowListCreateImageFromArray(rect, others, options)
+                if cg is not None and Quartz.CGImageGetWidth(cg) < 2:
+                    cg = None
+        except Exception:
+            cg = None
+        if cg is None:
+            cg = Quartz.CGWindowListCreateImage(rect, Quartz.kCGWindowListOptionOnScreenOnly,
+                                                Quartz.kCGNullWindowID, options)
         return _frame_from_cg(cg) if cg is not None else None
     except Exception:
         return None
+
+
+def cg_windows():
+    """Every on-screen window, front to back (the list front() walks)."""
+    return list(cg()["CGWindowListCopyWindowInfo"](1, 0) or [])
 
 
 STRIP_MIN = 360         # points: a browser's tabs, address and bookmarks bars take ~160 before the page starts

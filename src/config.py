@@ -18,6 +18,7 @@ MIN_GAP = 2.0           # never two captures closer than this (pinned excepted)
 POLL = 0.5              # seconds between window/tab title checks
 IDLE = 60               # no input for this long -> pause
 MAX_QUEUE = 8           # resolver backlog above which timer captures are skipped
+BROWSER_INFO_TTL = 10.0   # seconds a browser tab's URL/title is reused between captures of the same window and title
 MAX_PX = 1600           # a captured screen wider than this is scaled down to it
 
 # ---------------------------------------------------------------- cost control
@@ -35,6 +36,9 @@ CPU_WARN_PCT = 60           # ...or more than this share of one core over the la
 
 # ---------------------------------------------------------------- labels (labels.py)
 
+LABEL_EVERY = 900               # seconds between live label runs (`lmemm.py start --labels`)
+LABEL_FIRST_AFTER = 120         # ...and how long after start the first one may run
+LABEL_MIN_WAITING = 3           # ...and how many settled things must be waiting for a run to be worth its fixed cost
 LABEL_DAILY_TOKENS = 50000      # most tokens `lmemm.py label` may spend per day (counted from the CLI's own usage)
 LABEL_MODEL = "haiku"           # the `claude --model` alias used for labels
 LABEL_SETTLE = 120              # seconds a thing must sit unchanged before it is sent

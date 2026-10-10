@@ -333,6 +333,15 @@ class Trail:
             return dict(cur)
         return None
 
+    def place_key(self, bundle_id=None):
+        """A short string naming the place the trail is sure of (a chat, a channel), or None. It changes when the
+        user moves inside one window, which the window title and the screenshot poll do not notice."""
+        cur = self.engine.tracker.current
+        if (not cur or cur.get("confidence", 0) < 0.7 or cur.get("conflict") or cur["key"].endswith(":?")
+                or (bundle_id and cur.get("bundle_id") != bundle_id)):
+            return None
+        return cur["key"]
+
     def paused(self):
         return bool(self.flags & {"asleep", "display_off", "locked"}) or bool(self.external_pause()) or os.path.exists(
             os.path.join(self.paths.trail_dir, ".paused"))

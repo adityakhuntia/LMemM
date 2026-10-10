@@ -18,6 +18,7 @@ Pure Python: the CLI is run through an injectable `runner`, so every rule here i
 without macOS or a Claude login.
 """
 
+import difflib
 import hashlib
 import json
 import os
@@ -122,14 +123,63 @@ EMAIL_OR_PROMPT = re.compile(r"\S+@\S+")                                   # add
 PHONE = re.compile(r"(?:\+\d{1,3}[\s-]?)?\(?\d{3,5}\)?[\s-]?\d{3,5}[\s-]?\d{3,5}")
 FILENAME = re.compile(r"^\W*(?:\w{1,3}\W+)?[\w.\-]+\.(?:json|jpe?g|png|py|md|txt|csv|pdf|xlsx?)\b\W*\w{0,2}\W*$", re.I)
 GARBLED_WORD = re.compile(r"[A-Za-z][\d*•(){}\[\]$&%#@~^|\\/<>=+][A-Za-z]")     # a digit or symbol sandwiched in a word: bad OCR
-SELF_UI = re.compile(r"^(?:in the chat with|all caught up|no notes yet|things you work on|nothing here yet|\d+ things?\b"
-                     r"|moved \"|added to |saved to drive|all changes saved|.*\bpending edits?\b)", re.I)       # LMemM's own pill/card text, and status lines of common apps
+SELF_UI = re.compile(                      # LMemM's own pill/card/log text, and status lines of common apps
+    r"^(?:in the chat with|the chat with|chat with|all caught up|no notes yet|things you work on|nothing here yet"
+    r"|\d+ things?\b|moved \"|added to |saved to drive|all changes saved|talking to\b|looking through\b"
+    r"|(?:typing|receiving|reading|focus)\s*[:\"'“]|(?:reading|working on|editing)\s+[\"'“]"
+    r"|using (?-i:(?:[A-Z]\w+ ?){1,3})\s*[:\"'“]"
+    r"|with (?-i:[A-Z][\w']+(?: [A-Z][\w']+){0,3})$"
+    r"|.*\bpending edits?\b)", re.I)
 LONG_ID = re.compile(r"/[A-Za-z0-9_\-]{20,}")
 
 
 def private_line(line):
     """True for a line that must never be sent: secrets, addresses, terminal prompts, phone numbers."""
     return bool(line) and (bool(EMAIL_OR_PROMPT.search(line)) or bool(PHONE.search(line)) or not redact([line]))
+
+
+SINGLE_LETTER_OK = {"a", "A", "I"}
+CAMEL_OR_ACRONYM = re.compile(r"^(?:[A-Z]{2,}|(?=.*[a-z])(?:.*[A-Z]){2}.*|[a-z]+[A-Z]\w*)$")      # PRs, OCRResult, LMemM, iPhone
+_WORDS = {}
+
+
+def load_words(path="/usr/share/dict/words"):
+    """The system word list (macOS ships one), lower-cased, or an empty set. Loaded once."""
+    if "set" not in _WORDS:
+        try:
+            with open(path, encoding="utf-8", errors="ignore") as fh:
+                _WORDS["set"] = {w.strip().lower() for w in fh if w.strip()}
+        except OSError:
+            _WORDS["set"] = set()
+    return _WORDS["set"]
+
+
+def _known(word, words):
+    w = word.lower()
+    if w in words:
+        return True
+    for suffix in ("s", "es", "ed", "d", "ing", "ly", "er", "ers"):
+        if w.endswith(suffix) and (w[:-len(suffix)] in words or w[:-len(suffix)] + "e" in words):
+            return True
+    return False
+
+
+def mostly_unreadable(line, words=None):
+    """OCR soup: letter-case flips inside words, stray single letters, or mostly non-words."""
+    tokens = [t.strip(".,;:!?()[]{}\"'“”‘’-–—•|/\\") for t in line.split()]
+    tokens = [t for t in tokens if t]
+    if len([t for t in tokens if len(t) == 1 and t.isalpha() and t not in SINGLE_LETTER_OK]) >= 2:
+        return True
+    if any((re.search(r"[a-z][A-Z]$", t) or re.match(r"^[a-z]{1,2}[A-Z][a-z]{1,2}$", t)) and t not in config.LABEL_KNOWN_TOKENS
+           for t in tokens):          # "WheN", "nKe": a capital where OCR slipped
+        return True
+    words = load_words() if words is None else words
+    if not words or not config.LABEL_DICTIONARY_FILTER:
+        return False
+    checked = [t for t in tokens if len(t) >= 4 and t.isalpha() and not CAMEL_OR_ACRONYM.match(t)]
+    if len(checked) < 2:
+        return False
+    return sum(1 for t in checked if not _known(t, words)) > 0.5 * len(checked)
 
 
 def noisy_line(line):
@@ -140,7 +190,9 @@ def noisy_line(line):
         return True
     if sum(c.isalpha() for c in line) < 0.7 * len(line.replace(" ", "")):
         return True
-    return sum(1 for w in words if GARBLED_WORD.search(w)) >= max(1, len(words) // 4)
+    if sum(1 for w in words if GARBLED_WORD.search(w)) >= max(1, len(words) // 4):
+        return True
+    return mostly_unreadable(line)
 
 
 def _clean_lines(lines):
@@ -153,11 +205,13 @@ def _usable_lines(lines):
     """_clean_lines, then noise out, then lines already contained in a longer one out."""
     kept = [l for l in _clean_lines(lines) if not noisy_line(l)]
     keys = [re.sub(r"[^a-z0-9]", "", l.lower()) for l in kept]
-    out, seen = [], set()
+    out, seen = [], []
     for line, key in zip(kept, keys):
         if key in seen or any(key != other and key in other for other in keys):
             continue
-        seen.add(key)
+        if any(difflib.SequenceMatcher(None, key, other).ratio() > 0.85 for other in seen):
+            continue                                  # the same line read twice with different OCR slips
+        seen.append(key)
         out.append(line)
     return out
 

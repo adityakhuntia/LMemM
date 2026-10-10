@@ -156,6 +156,32 @@ class NoiseTests(unittest.TestCase):
         self.assertEqual(self.usable("In the chat with ADMIN TNP 2027", "All caught up on everything", "Moved \"Decks\" into \"Juniors\" Undo",
                                      "Quarterly planning notes for the team"), ["Quarterly planning notes for the team"])
 
+    WORDS = {"remind", "allocate", "these", "kids", "project", "name", "type", "number", "plan", "pricing", "tier", "cannot",
+             "write", "badminton", "play", "document", "section", "goes", "here", "three", "tiers", "branch", "merge", "different"}
+
+    def test_lines_that_are_mostly_not_words_go_when_a_word_list_exists(self):
+        self.assertTrue(labels.mostly_unreadable("prolect8 nDtina proiectyet canttype", self.WORDS))
+        self.assertFalse(labels.mostly_unreadable("remind me to allocate these kids", self.WORDS))
+        self.assertFalse(labels.mostly_unreadable("merge two different branches today", self.WORDS))
+        self.assertFalse(labels.mostly_unreadable("the LMemM OCRResult PRs", self.WORDS))      # acronyms and CamelCase are not "unknown"
+        self.assertFalse(labels.mostly_unreadable("prolect8 nDtina proiectyet canttype", set()))   # no word list: this check is off
+
+    def test_case_flips_and_stray_letters_go_without_a_word_list(self):
+        self.assertTrue(labels.mostly_unreadable("Hello shutup very nKe", set()))
+        self.assertTrue(labels.mostly_unreadable("When i empe sub l canttype", set()))
+        self.assertFalse(labels.mostly_unreadable("GitHub and macOS and iPhone are fine", set()))
+
+    def test_lmemms_activity_log_lines_are_dropped_but_ordinary_sentences_are_not(self):
+        for log in ("typing: merge step 7 first", "receiving: Claude working 3m 17s", "with Divyaansh Seth",
+                    "Using Script Editor: Open", "Talking to Claude back", "Reading \"Google\" on", "chat with ADMIN TNP 2027"):
+            self.assertTrue(labels.SELF_UI.match(log), log)
+        for fine in ("with three tiers we can launch the plan", "Typing speed tests are useful", "using pytest for the new tests"):
+            self.assertFalse(labels.SELF_UI.match(fine), fine)
+
+    def test_the_same_line_read_twice_with_ocr_slips_is_kept_once(self):
+        out = self.usable("Not in any project yet. Move it to one and it stays", "Not in ary project yet. Move it to one and it stavs")
+        self.assertEqual(len(out), 1)
+
     def test_one_short_line_does_not_hide_the_ones_after_it(self):
         item = thing(excerpts=[excerpt("ok\nthe second line is long enough to keep\nanother perfectly useful line here")])
         block = labels.thing_block(1, item)

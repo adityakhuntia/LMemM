@@ -343,6 +343,9 @@ def cmd_label(args):
     except ValueError as error:
         sys.exit(str(error))
     provider, governor = labels.ClaudeCli(), labels.Governor()
+    known = len(labels.load_words())
+    print(f"word list for the garbled-text filter: {f'{known} words' if known else 'NOT found (/usr/share/dict/words); garbled OCR lines are only partly filtered'}",
+          file=sys.stderr)
     if opts.status:
         waiting = labels.due(items, labels.load_labels())
         print(f"claude command: {'found' if provider.available() else 'NOT found'}")

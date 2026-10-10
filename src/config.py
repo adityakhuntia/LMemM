@@ -40,7 +40,9 @@ LABEL_MODEL = "haiku"           # the `claude --model` alias used for labels
 LABEL_SETTLE = 120              # seconds a thing must sit unchanged before it is sent
 LABEL_MIN_SECONDS = 20          # ...and have been worked on this long (unless pinned, noted or 2+ min)
 LABEL_BATCH = 15                # things per call: the CLI's fixed cost (~2.4k tokens) is paid once per batch
-LABEL_OFF_APPS = {"Messages", "Mail", "WhatsApp", "Signal", "Telegram", "Slack", "Microsoft Teams", "Discord"}
+LABEL_DICTIONARY_FILTER = True   # drop lines that are mostly not words (OCR soup), using the system word list when there is one
+LABEL_KNOWN_TOKENS = {"LMemM", "eBay", "iPad", "iOS", "iCal"}  # words that look like OCR case-flips but are real
+LABEL_OFF_APPS = {"Photos", "Messages", "Mail", "WhatsApp", "Signal", "Telegram", "Slack", "Microsoft Teams", "Discord"}
 LABEL_OFF_KINDS = {"chat", "chat_list", "email", "email_draft", "mailbox", "email_search"}   # never sent to a model (default)
 
 # ---------------------------------------------------------------- event trail (trail_*.py)

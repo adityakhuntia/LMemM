@@ -109,6 +109,23 @@ class LiveLabellerTest(unittest.TestCase):
         self.assertEqual(self.provider.calls, [])
         self.assertEqual(live.last["waiting"], 2)
 
+    def test_an_expired_login_says_how_to_fix_it_and_backs_off(self):
+        self.provider.error = labels.ProviderError(labels.LOGIN_HELP)
+        live = self.make()
+        self.t[0] = 101
+        live.poll()
+        self.assertTrue(any("/login" in m for m in self.said))
+        self.t[0] = 101 + 600
+        self.assertFalse(live.poll())
+
+    def test_login_failures_from_the_cli_are_recognised(self):
+        out = '{"type":"result","is_error":true,"result":"Failed to authenticate: OAuth session expired"}'
+        cli = labels.ClaudeCli(runner=lambda *a, **k: type("D", (), {"returncode": 1, "stdout": out, "stderr": ""})(),
+                               which=lambda n: "/x/claude")
+        with self.assertRaises(labels.ProviderError) as ctx:
+            cli.label("p", {"1"})
+        self.assertEqual(str(ctx.exception), labels.LOGIN_HELP)
+
     def test_a_provider_crash_never_escapes(self):
         self.provider.error = RuntimeError("boom")
         live = self.make()

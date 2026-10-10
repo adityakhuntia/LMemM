@@ -400,6 +400,10 @@ class Governor:
 
 # ---------------------------------------------------------------- providers
 
+LOGIN_WORDS = re.compile(r"authenticat|oauth|log ?in|not logged|expired|credential|api key", re.I)
+LOGIN_HELP = "your Claude login needs refreshing: open a terminal, run `claude`, then type /login"
+
+
 class ProviderError(Exception):
     pass
 
@@ -464,13 +468,15 @@ class ClaudeCli:
             except (OSError, subprocess.TimeoutExpired) as error:
                 raise ProviderError(f"claude did not answer ({type(error).__name__})")
         if done.returncode != 0:
-            raise ProviderError("claude failed: " + (done.stderr or done.stdout or "").strip()[:200])
+            said = (done.stderr or done.stdout or "").strip()
+            raise ProviderError(LOGIN_HELP if LOGIN_WORDS.search(said) else "claude failed: " + said[:200])
         try:
             doc = json.loads(done.stdout)
         except ValueError:
             raise ProviderError("claude gave unreadable output")
         if doc.get("is_error"):
-            raise ProviderError("claude reported an error: " + str(doc.get("result"))[:200])
+            said = str(doc.get("result"))
+            raise ProviderError(LOGIN_HELP if LOGIN_WORDS.search(said) else "claude reported an error: " + said[:200])
         return parse_labels(doc.get("result"), wanted_ids), doc.get("usage") or {}
 
 
@@ -602,6 +608,8 @@ class LiveLabeller:
                          f"{result['tokens']} tokens ({governor.used}/{governor.cap} today)")
             elif result["stopped"]:
                 self.say(f"labels paused: {result['stopped']}")
+                if result["stopped"] == LOGIN_HELP:       # asking again every 15 min cannot fix a login
+                    self.next_at = self.clock() + 4 * self.every
         except Exception as error:               # a label failure must never reach the tracker
             self.last = {"stopped": f"{type(error).__name__}: {error}"}
         finally:

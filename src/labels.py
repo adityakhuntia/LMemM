@@ -165,6 +165,7 @@ def private_line(line):
 
 SINGLE_LETTER_OK = {"a", "A", "I"}
 CAMEL_OR_ACRONYM = re.compile(r"^(?:[A-Z]{2,}|(?=.*[a-z])(?:.*[A-Z]){2}.*|[a-z]+[A-Z]\w*)$")      # PRs, OCRResult, LMemM, iPhone
+DIGIT_INSIDE = re.compile(r"[A-Za-z]\d+[A-Za-z]|^\d[A-Za-z]{3,}")
 _WORDS = {}
 
 
@@ -202,9 +203,11 @@ def mostly_unreadable(line, words=None):
     if not words or not config.LABEL_DICTIONARY_FILTER:
         return False
     checked = [t for t in tokens if len(t) >= 4 and t.isalpha() and not CAMEL_OR_ACRONYM.match(t)]
-    if len(checked) < 2:
+    digit_soup = [t for t in tokens if DIGIT_INSIDE.search(t)]            # "5esston", "sla5hed": OCR swapped a letter for a digit
+    if len(checked) + len(digit_soup) < 2:
         return False
-    unknown = sum(1 for t in checked if not _known(t, words))
+    unknown = len(digit_soup) + sum(1 for t in checked if not _known(t, words))
+    checked = checked + digit_soup
     return unknown >= 2 and unknown >= 0.4 * len(checked)
 
 

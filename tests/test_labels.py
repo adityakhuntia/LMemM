@@ -206,6 +206,11 @@ class NoiseTests(unittest.TestCase):
         self.assertTrue(labels.mostly_unreadable("I pendLng edit rerntnd to allocate these ktds", words))
         self.assertFalse(labels.mostly_unreadable("remind Karol to allocate these kids", words))     # one unknown name is fine
 
+    def test_digits_swapped_for_letters_count_as_unknown_words(self):
+        words = {"toggle", "session", "that", "already", "running", "python", "tests"}
+        self.assertTrue(labels.mostly_unreadable("tcggle a 5esston that already running", words))
+        self.assertFalse(labels.mostly_unreadable("python3 tests are running", words))             # a trailing digit is a name, not soup
+
     def test_the_same_line_read_twice_with_ocr_slips_is_kept_once(self):
         out = self.usable("Not in any project yet. Move it to one and it stays", "Not in ary project yet. Move it to one and it stavs")
         self.assertEqual(len(out), 1)

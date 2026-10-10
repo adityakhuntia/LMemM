@@ -140,6 +140,8 @@ class Tracker:
         self.last_place_key = None           # the trail's place, to notice a move inside one window
         self.live_labels = live_labels
         self.labeller = None                 # labels.LiveLabeller, made in run() when asked for
+        self.sections = {}                   # main-loop part -> capture_plan.Timings (see mark())
+        self._tick_mark = 0.0
         self.capture_q = queue.Queue(maxsize=1)      # one capture waiting at most; the loop never queues a second
         self.capture_lock = threading.Lock()         # one capture at a time (the worker's, or the note hotkey's)
         self.capture_busy = False
@@ -298,6 +300,8 @@ class Tracker:
             "capture_interval_s": round(self.current_interval(time.time(), quiet=True)),
             "main_loop_ms": {"tick_p95": self.tick_times.p95(), "tick_max": self.tick_times.max(),
                              "capture_p95": self.capture_times.p95(), "capture_max": self.capture_times.max()},
+            "slowest_parts_ms": {k: [v.p95(), v.max()] for k, v in sorted(
+                self.sections.items(), key=lambda kv: -(kv[1].p95() or 0))},
             "browser_lookups": {"asked": macos._BROWSER_CACHE.misses, "saved": macos._BROWSER_CACHE.hits},
             "labels": self.labels_report(),
         }
@@ -389,9 +393,11 @@ class Tracker:
         """One pass of the main loop (~4x a second)."""
         if self.quit_requested:
             raise KeyboardInterrupt
+        self._tick_mark = time.perf_counter()
         self.process_control()
         self.poll_input()
         self.maintain()
+        self.mark("housekeeping")
         if self.widget:
             here = self.front_sig()
             if here != self.pill_place:             # you switched tab or app: update the pill now, not within a second
@@ -422,6 +428,7 @@ class Tracker:
             self.note_request = False                   # R9: say why, with a way out, instead of nothing
             if self.widget:
                 self.widget.show_paused()
+        self.mark("pill and menu")
         if self.manual_paused:
             return
         if any(self.flags.values()):
@@ -453,6 +460,7 @@ class Tracker:
             return                      # the card is open: don't capture it into memory
         now = time.time()
         f = macos.front()
+        self.mark("window lookup")
 
         reason = next((k for k, v in self.flags.items() if v), None)
         if reason is None and f and f["app"] in config.LOCK_APPS:
@@ -494,6 +502,7 @@ class Tracker:
             self.last_place_key = place
             self.last_sig = f or self.last_sig
 
+        self.mark("poll and identify")
         if self.pending and now >= self.pending[1]:
             if now - self.last_capture >= config.MIN_GAP:
                 why = self.pending[0]
@@ -505,6 +514,12 @@ class Tracker:
             else:
                 self.last_capture = now
                 self.stats["backlog_skip"] += 1
+
+    def mark(self, name):
+        """Time since the last mark, filed under `name`: shows which part of the main loop is slow."""
+        now = time.perf_counter()
+        self.sections.setdefault(name, capture_plan.Timings(400)).add((now - self._tick_mark) * 1000)
+        self._tick_mark = now
 
     def current_interval(self, now, quiet=False):
         """Seconds until the next timer capture. Fast (`every`) while you're active; each
@@ -1762,6 +1777,8 @@ class Tracker:
         loop, lookups = c["main_loop_ms"], c["browser_lookups"]
         say(f"      main loop: tick p95 {loop['tick_p95']} ms (max {loop['tick_max']}), capture (background thread) p95 "
             f"{loop['capture_p95']} ms (max {loop['capture_max']}); browser lookups {lookups['asked']} asked, {lookups['saved']} saved")
+        say("      slowest parts of the loop (p95 / max ms): "
+            + ", ".join(f"{k} {v[0]}/{v[1]}" for k, v in c["slowest_parts_ms"].items()))
         say(f"      labels: {c['labels'] if isinstance(c['labels'], str) else c['labels']['last']}")
         say(f"\nsaved to {os.path.relpath(config.paths().items_file)}")
 

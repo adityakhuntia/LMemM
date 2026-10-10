@@ -442,6 +442,33 @@ class ContextTests(TmpPaths):
 
 
 
+class GroundTests(TmpPaths):
+    def test_unsupported_names_addresses_and_questions_are_dropped(self):
+        item = thing("g", title="Auto Send - Project Editor - Apps Script", excerpts=[excerpt("function sendDrafts() sends the first email")])
+        block = labels.thing_block(1, item)
+        answer = {"summary": "Editing Auto Send; mail to meetaparti @ yahoo.com", "kind": "editor", "project_guess": "Seni Mall",
+                  "entities": ["sendDrafts", "meetaparti@yahoo.com", "Seni Mall"], "open_question": "What is it for?"}
+        out = labels.ground(answer, block, item)
+        self.assertIsNone(out["project_guess"])
+        self.assertEqual(out["entities"], ["sendDrafts"])
+        self.assertIsNone(out["open_question"])
+        self.assertNotIn("yahoo", out["summary"])
+
+    def test_a_project_named_in_the_title_is_kept(self):
+        item = thing("g", title="Auto Send - Project Editor", excerpts=[excerpt("function sendDrafts() sends the first email")])
+        out = labels.ground({"summary": "x", "project_guess": "Auto Send", "entities": []}, labels.thing_block(1, item), item)
+        self.assertEqual(out["project_guess"], "Auto Send")
+
+    def test_a_question_survives_when_there_is_an_open_note(self):
+        item = thing("g", title="Plan", note_texts=["ask about pricing"], excerpts=[excerpt("Pricing tiers for the plan are listed here")])
+        out = labels.ground({"summary": "x", "open_question": "Which tier?"}, labels.thing_block(1, item), item)
+        self.assertEqual(out["open_question"], "Which tier?")
+
+    def test_addresses_with_ocr_gaps_are_private_lines(self):
+        self.assertTrue(labels.private_line("sendEmail to meetaparti @yahoo.com now ok"))
+        self.assertTrue(labels.private_line("write to someone @ gmail . com today"))
+
+
 class ChromeAndLogTests(unittest.TestCase):
     def test_log_lines_run_together_are_split_and_dropped(self):
         blob = "Pricing tiers for the new plan are ready typing: Yokn 180 DC receiving: Unread 20 16:17:07 Gmail Reading the inbox"

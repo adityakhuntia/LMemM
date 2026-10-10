@@ -125,7 +125,8 @@ def _page(item):
     return None
 
 
-EMAIL_OR_PROMPT = re.compile(r"\S+@\S+")                                   # addresses, and terminal prompts (user@host)
+EMAIL_OR_PROMPT = re.compile(r"\S+@\S+|[\w.\-]+\s@|@\s?[\w\-]+\s?\.\s?[A-Za-z]{2,}")   # addresses (also with OCR gaps), and terminal prompts (user@host)
+EMAIL_ANYWHERE = re.compile(r"[\w.+\-]+\s?@\s?[\w\-]+(?:\s?\.\s?[\w\-]+)+")
 PHONE = re.compile(r"(?:\+\d{1,3}[\s-]?)?\(?\d{3,5}\)?[\s-]?\d{3,5}[\s-]?\d{3,5}")
 FILENAME = re.compile(r"^\W*(?:\w{1,3}\W+)?[\w.\-]+\.(?:json|jpe?g|png|py|md|txt|csv|pdf|xlsx?)\b\W*\w{0,2}\W*$", re.I)
 GARBLED_WORD = re.compile(r"[A-Za-z][\d*•(){}\[\]$&%#@~^|\\/<>=+][A-Za-z]")     # a digit or symbol sandwiched in a word: bad OCR
@@ -534,6 +535,39 @@ def load_labels():
         return {}
 
 
+def _squash(text):
+    return re.sub(r"[^a-z0-9]", "", str(text).lower())
+
+
+def ground(answer, block, item):
+    """Keep only what the thing's own payload supports: a project name must be in the title, the page or a
+    registered project, an entity must appear in the text that was sent, and an address or a question nobody
+    asked for is dropped. Claude fills gaps with plausible names, and a wrong name is worse than none."""
+    sent = _squash(block)
+    out = dict(answer)
+    guess = out.get("project_guess")
+    known = {_squash(p) for p in _project_names()}
+    where = _squash(" ".join([item.get("title") or "", _page(item) or ""]))
+    if guess and not (_squash(guess) and (_squash(guess) in where or _squash(guess) in known)):
+        out["project_guess"] = None
+    out["entities"] = [e for e in out.get("entities") or []
+                       if _squash(e) and _squash(e) in sent and not EMAIL_ANYWHERE.search(e) and "@" not in e]
+    if not open_notes(item):
+        out["open_question"] = None
+    for key in ("summary", "open_question"):
+        if out.get(key):
+            out[key] = EMAIL_ANYWHERE.sub("an address", out[key])
+    return out
+
+
+def _project_names():
+    try:
+        import projects
+        return [p.get("name", "") for p in projects.load()["projects"].values()]
+    except Exception:
+        return []
+
+
 def plan_batches(candidates, labels, governor):
     """Split candidates into batches that fit the cap. Returns [(items, payload, est_tokens)]."""
     mode = governor.mode()
@@ -589,6 +623,7 @@ def run(items, provider, governor=None, limit=None, dry_run=False, now=None):
             if not answer:
                 continue
             _fresh, ids = new_text(item, None)
+            answer = ground(answer, thing_block(n + 1, item, None), item)
             labels[item["id"]] = {**answer, "source": provider.name, "at": datetime.now().isoformat(timespec="seconds"),
                                   "text_hash": text_hash(item), "excerpts": ids}
             result["labelled"] += 1

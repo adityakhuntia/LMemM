@@ -630,6 +630,18 @@ class LiveLabeller:
             self._work()
         return True
 
+    @staticmethod
+    def _old_enough(waiting):
+        """A thing that has waited LABEL_MAX_WAIT seconds since it settled goes out even alone."""
+        now = datetime.now()
+        for item in waiting:
+            try:
+                if (now - datetime.fromisoformat(item["last_seen"])).total_seconds() >= config.LABEL_MAX_WAIT:
+                    return True
+            except (KeyError, TypeError, ValueError):
+                continue
+        return False
+
     def _work(self):
         try:
             items = self.get_items()
@@ -637,9 +649,11 @@ class LiveLabeller:
             if governor.mode() == "stopped":
                 self.last = {"stopped": "daily limit reached"}
                 return
-            waiting = len(due(items, load_labels()))
-            if waiting < self.min_waiting:
-                self.last = {"waiting": waiting, "sent": 0, "stopped": None}
+            waiting = due(items, load_labels())
+            if len(waiting) < self.min_waiting and not self._old_enough(waiting):
+                self.last = {"waiting": len(waiting), "sent": 0, "labelled": 0, "stopped": None}
+                self.say(f"labels: {len(waiting)} thing(s) ready, waiting for {self.min_waiting} (or one that has waited "
+                         f"{round(config.LABEL_MAX_WAIT / 60)} min) so the call is worth its fixed cost")
                 return
             result = run(items, self.provider, governor)
             self.last = result

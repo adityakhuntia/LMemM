@@ -310,7 +310,11 @@ class Tracker:
         if not self.labeller:
             return "off (start with --labels)"
         last = self.labeller.last or {}
-        return {"running": self.labeller.busy, "last": last.get("stopped") or f"{last.get('labelled', 0)} labelled"}
+        if not self.labeller.last:
+            return {"running": self.labeller.busy, "last": "no run yet"}
+        said = last.get("stopped") or (f"{last.get('waiting', 0)} ready, waiting for more" if not last.get("sent")
+                                       else f"{last.get('labelled', 0)} labelled")
+        return {"running": self.labeller.busy, "last": said}
 
     # ------------------------------------------------------------ input timeline
 

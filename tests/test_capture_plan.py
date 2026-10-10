@@ -2,6 +2,7 @@
 
 import tempfile
 import unittest
+from datetime import timedelta
 
 import config
 import capture_plan as cp
@@ -73,7 +74,7 @@ class LiveLabellerTest(unittest.TestCase):
         self.t = [0.0]
         self.said = []
         self.paused = False
-        self.items = {f"i{n}": thing(f"i{n}", title=f"Doc {n}", seconds=300, last="2026-10-06T10:00:00",
+        self.items = {f"i{n}": thing(f"i{n}", title=f"Doc {n}", seconds=300, last=(labels.datetime.now() - timedelta(minutes=5)).isoformat(timespec="seconds"),
                             excerpts=[excerpt(f"A real sentence about topic {n} that is long enough to count.")])
                       for n in range(4)}
         self.provider = FakeProvider()
@@ -108,6 +109,22 @@ class LiveLabellerTest(unittest.TestCase):
         live.poll()
         self.assertEqual(self.provider.calls, [])
         self.assertEqual(live.last["waiting"], 2)
+
+    def test_a_lone_old_thing_goes_out_and_waiting_is_announced(self):
+        self.items = {"i0": thing("i0", seconds=300, last="2026-10-06T10:00:00",       # settled long ago: past LABEL_MAX_WAIT
+                                  excerpts=[excerpt("A real sentence about topic 0 that is long enough to count.")])}
+        live = self.make()
+        self.t[0] = 101
+        live.poll()
+        self.assertEqual(len(self.provider.calls), 1)
+        fresh = thing("n", seconds=300, last=(labels.datetime.now() - timedelta(minutes=5)).isoformat(timespec="seconds"),
+                      excerpts=[excerpt("A real sentence about topic z that is long enough to count.")])
+        self.items = {"n": fresh}
+        self.provider.calls.clear()
+        live.next_at = 0
+        live.poll()
+        self.assertEqual(self.provider.calls, [])
+        self.assertTrue(any("ready, waiting for" in m for m in self.said))
 
     def test_an_expired_login_says_how_to_fix_it_and_backs_off(self):
         self.provider.error = labels.ProviderError(labels.LOGIN_HELP)

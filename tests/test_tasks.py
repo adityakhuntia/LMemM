@@ -151,6 +151,12 @@ class WritingTests(TmpPaths):
         self.assertNotIn("outside the session", json.dumps(proof))
         self.assertNotIn("hunter2", json.dumps(proof))
 
+    def test_a_sentence_typed_over_several_reads_is_kept_once_in_its_final_form(self):
+        pieces = ["No", "No so this", "No so this is before we", "No so this is before we made the followup edit.",
+                  "Th", "The execution from Oct 9"]
+        self.assertEqual(tasks.drop_drafts(pieces),
+                         ["No so this is before we made the followup edit.", "The execution from Oct 9"])
+
     def test_the_payload_says_what_was_written_and_how_much_typing(self):
         payload, _ = tasks.payload_for(doc(), world(), events=self.events())
         self.assertIn("wrote:", payload)

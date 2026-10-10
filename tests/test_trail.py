@@ -474,6 +474,16 @@ class EngineTests(unittest.TestCase):
         finally:
             config.TRAIL_WRITING = old
 
+    def test_placeholders_and_addresses_are_not_logged_as_writing(self):
+        old = config.TRAIL_WRITING
+        config.TRAIL_WRITING = True
+        try:
+            self.reader.full.focus_text = "Type a message to Mum. chatgpt.com. mail.google.com/mail/u/0/. Hello there Mum."
+            self.e.step({"place", "text"}, 0)
+            self.assertEqual(self.store.read(kinds={"write"})[0]["added"], ["Hello there Mum."])
+        finally:
+            config.TRAIL_WRITING = old
+
     def test_a_password_box_or_a_secret_label_is_never_read_even_when_writing_is_on(self):
         old = config.TRAIL_WRITING
         config.TRAIL_WRITING = True

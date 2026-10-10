@@ -20,6 +20,7 @@ SECRET = re.compile(r"\b\d{13,19}\b|\bsk-[A-Za-z0-9_-]{16,}|\b(?:ghp|gho|xox[bap
                     r"\b[A-Fa-f0-9]{40,}\b|\b[A-Za-z0-9+/]{40,}={0,2}(?![A-Za-z0-9+/])|password\s*[:=]|\bAKIA[0-9A-Z]{16}\b", re.I)
 MAX_ADDED = 40
 MAX_WRITTEN = 12
+URL_LIKE = re.compile(r"^(?:https?://)?[\w.-]+\.[a-z]{2,}(?:[/?#]\S*)?\.?$", re.I)     # chatgpt.com, mail.google.com/mail/u/0/
 MAX_PLACES_SEEN = 24
 
 
@@ -294,6 +295,8 @@ class Engine:
         pieces = redact([p.strip() for p in re.split(r"(?<=[.!?])\s+|\n", snap.focus_text)])
         key = (cur["key"], snap.focus_label)
         seen = self.written.setdefault(key, set())
+        label = (snap.focus_label or "").strip().lower()
+        pieces = [p for p in pieces if len(p) >= 3 and p.lower().rstrip(".!?… ") != label.rstrip(".!?… ") and not URL_LIKE.match(p)]   # placeholder text, addresses
         added = [p for p in pieces if p not in seen][:MAX_WRITTEN]
         if len(self.written) > MAX_PLACES_SEEN:
             self.written.pop(next(iter(self.written)))

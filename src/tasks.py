@@ -170,7 +170,17 @@ def evidence(session_doc, items, events, slack=6):
             for piece in ev.get("added") or []:
                 if piece and labels.redact([piece]) and not own_text(piece) and piece not in row["wrote"]:
                     row["wrote"].append(piece)
+    for row in out.values():
+        row["wrote"] = drop_drafts(row["wrote"])
     return out
+
+
+def drop_drafts(pieces):
+    """The box is read every couple of seconds while it grows, so one sentence arrives as 'No so', 'No so this is',
+    'No so this is before we ...'. Keep only the version that something longer does not extend."""
+    norm = [re.sub(r"\s+", " ", p.lower()).strip() for p in pieces]
+    return [p for i, p in enumerate(pieces)
+            if not any(j != i and len(norm[j]) > len(norm[i]) and norm[j].startswith(norm[i]) for j in range(len(pieces)))]
 
 
 def wrote_lines(row, limit):

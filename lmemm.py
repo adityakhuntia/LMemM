@@ -363,6 +363,13 @@ def cmd_label(args):
                      f"entities: {', '.join(label['entities'])}" if label.get("entities") else "",
                      f"question: {label['open_question']}" if label.get("open_question") else ""]
             print("    " + "  |  ".join(x for x in extra if x) + f"  |  {label.get('at', '')[11:16]}")
+        today = datetime.now().strftime("%Y-%m-%d")
+        made_today = sum(1 for _i, l in rows if l.get("at", "").startswith(today))
+        calls = governor.doc["calls"]
+        print(f"\nTokens today: {governor.used} of {governor.cap} in {calls} call(s)"
+              + (f", about {governor.used // calls} per call" if calls else "")
+              + (f", about {governor.used // made_today} per label ({made_today} labels written today)" if made_today else "")
+              + ".\nMost of each call is Claude's fixed overhead (~2.5k tokens), so bigger batches cost less per label.")
         return
     if opts.ping:
         import time

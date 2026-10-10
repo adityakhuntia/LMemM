@@ -493,20 +493,21 @@ class ClaudeCli:
     def available(self):
         return bool(self.which("claude"))
 
-    def argv(self):
-        return ["claude", "-p", "--output-format", "json", "--model", self.model, "--effort", "low",
-                "--no-session-persistence", "--system-prompt", INSTRUCTION, "--tools", "",
+    def argv(self, instruction=None, model=None, effort="low"):
+        return ["claude", "-p", "--output-format", "json", "--model", model or self.model, "--effort", effort,
+                "--no-session-persistence", "--system-prompt", instruction or INSTRUCTION, "--tools", "",
                 "--disable-slash-commands", "--strict-mcp-config"]
 
-    def label(self, payload, wanted_ids):
+    def ask(self, payload, instruction=None, model=None, effort="low"):
+        """One call. Returns (the reply text, usage). The exchange is kept in .last_exchange for the log."""
         if not self.available():
             raise ProviderError("the `claude` command was not found")
         with tempfile.TemporaryDirectory(prefix="lmemm-label-") as empty:
             try:
-                done = self.runner(self.argv(), input=payload, capture_output=True, text=True,
+                done = self.runner(self.argv(instruction, model, effort), input=payload, capture_output=True, text=True,
                                    timeout=self.timeout, cwd=empty)
             except (OSError, subprocess.TimeoutExpired) as error:
-                raise ProviderError(f"claude did not answer within {self.timeout} s ({type(error).__name__}); run `python3 lmemm.py label --limit 3` to see if it works by hand")
+                raise ProviderError(f"claude did not answer within {self.timeout} s ({type(error).__name__}); run `python3 lmemm.py label --ping` to see if it works by hand")
         if done.returncode != 0:
             said = (done.stderr or done.stdout or "").strip()
             raise ProviderError(LOGIN_HELP if LOGIN_WORDS.search(said) else "claude failed: " + said[:200])
@@ -517,10 +518,14 @@ class ClaudeCli:
         if doc.get("is_error"):
             said = str(doc.get("result"))
             raise ProviderError(LOGIN_HELP if LOGIN_WORDS.search(said) else "claude reported an error: " + said[:200])
-        self.last_exchange = {"at": datetime.now().isoformat(timespec="seconds"), "model": self.model,
-                              "system_prompt": INSTRUCTION, "prompt": payload, "reply": str(doc.get("result")),
+        self.last_exchange = {"at": datetime.now().isoformat(timespec="seconds"), "model": model or self.model,
+                              "system_prompt": instruction or INSTRUCTION, "prompt": payload, "reply": str(doc.get("result")),
                               "usage": doc.get("usage") or {}}
-        return parse_labels(doc.get("result"), wanted_ids), doc.get("usage") or {}
+        return doc.get("result"), doc.get("usage") or {}
+
+    def label(self, payload, wanted_ids):
+        text, usage = self.ask(payload)
+        return parse_labels(text, wanted_ids), usage
 
 
 # ---------------------------------------------------------------- the run

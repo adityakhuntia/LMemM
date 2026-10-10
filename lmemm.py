@@ -55,7 +55,8 @@ USAGE = ("usage: lmemm.py [menu] | start [--every N] [--input-events --input-app
          " | notes [--all] [PROJECT] | notes done|reopen ID…"
          " | projects [--all] | projects new|rename|move|archive|restore|merge|delete …"
          " | context [SESSION] [--days N]"
-         " | label [--dry-run] [--status] [--limit N]"
+         " | label [--dry-run] [--status] [--limit N] [--show] [--last [N]] [--ping]"
+         " | tasks [--minutes N] [--session ID] [--dry-run] [--show]"
          " | trail … | status | pause | resume | pin | note | delete-session ID (--dry-run | --confirm ID)"
          " | delete-all (--dry-run | --confirm) | setup [--again] [--no-start]")
 
@@ -417,6 +418,69 @@ def cmd_label(args):
           + (f"; stopped: {result['stopped']}" if result["stopped"] else ""), file=sys.stderr)
 
 
+def cmd_tasks(args):
+    """What were you trying to get done? Claude reads the last stretch of your session as one story."""
+    import context
+    import labels
+    import tasks
+    parser = argparse.ArgumentParser(prog="lmemm.py tasks")
+    parser.add_argument("--minutes", type=int, default=90, help="how far back to read (default 90)")
+    parser.add_argument("--session", help="a session id (default: the latest)")
+    parser.add_argument("--dry-run", action="store_true", help="print what would be sent; send nothing")
+    parser.add_argument("--show", action="store_true", help="print the tasks found by earlier runs")
+    opts = parser.parse_args(args)
+    try:
+        items = store.load_items()
+    except ValueError as error:
+        sys.exit(str(error))
+
+    def name(iid):
+        i = items.get(iid) or {}
+        return f"{i.get('app', '?')}: {(i.get('title') or i.get('doing') or '')[:60]}"
+
+    def show(found, minutes):
+        for n, t in enumerate(found["tasks"], 1):
+            print(f"Task {n}: {t['title']}   [{t['stage']} · {tasks._minutes(t.get('seconds', 0))}]")
+            print(f"    {t['goal']}")
+            if t.get("open"):
+                print(f"    Next: {t['open']}")
+            if t.get("project_guess"):
+                print(f"    Project: {t['project_guess']}")
+            for iid in t["items"]:
+                print(f"      - {name(iid)}")
+            print()
+        if found["other"]:
+            print("Glanced at: " + "; ".join(name(i) for i in found["other"]))
+    if opts.show:
+        book = tasks.load_tasks()
+        if not book:
+            sys.exit("No tasks yet. Run `python3 lmemm.py tasks`.")
+        for session, found in book.items():
+            print(f"==== session {session}, found {found['at']} (last {found.get('minutes') or 'all'} min) ====")
+            show(found, found.get("minutes"))
+        return
+    doc = context.find_session_doc(opts.session) if opts.session else context.latest_session_doc()
+    if doc is None:
+        sys.exit("No session to read yet. Run LMemM for a while first.")
+    provider, governor = labels.ClaudeCli(), labels.Governor()
+    if not opts.dry_run and not provider.available():
+        sys.exit("The `claude` command was not found. Install Claude Code and sign in, then try again.")
+    if not opts.dry_run:
+        print("asking Claude (this can take up to a minute)...", flush=True)
+    try:
+        result = tasks.run(doc, items, provider, governor, minutes=opts.minutes, dry_run=opts.dry_run)
+    except labels.ProviderError as error:
+        sys.exit(str(error))
+    if opts.dry_run:
+        print(result["payload"] or f"nothing to send: {result['stopped']}")
+        return
+    if result["stopped"]:
+        sys.exit("Stopped: " + result["stopped"])
+    show(result, opts.minutes)
+    print(f"({result['things']} things read, {result['tokens']} tokens; today {governor.used} of {governor.cap}."
+          f" `python3 lmemm.py label --last` shows the exact prompt and reply.)")
+
+
 def cmd_delete_session(args):
     from input_store import delete_session, plan_session_deletion
     parser = argparse.ArgumentParser(prog="lmemm.py delete-session")
@@ -585,6 +649,8 @@ def main():
         cmd_context(rest)
     elif cmd == "label":
         cmd_label(rest)
+    elif cmd == "tasks":
+        cmd_tasks(rest)
     else:
         sys.exit(USAGE)
 

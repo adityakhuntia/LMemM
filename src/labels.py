@@ -446,7 +446,7 @@ class ClaudeCli:
 
     name = "claude"
 
-    def __init__(self, runner=None, model=None, timeout=90, which=shutil.which):
+    def __init__(self, runner=None, model=None, timeout=150, which=shutil.which):
         self.runner, self.timeout, self.which = runner or subprocess.run, timeout, which
         self.model = model or config.LABEL_MODEL
 
@@ -466,7 +466,7 @@ class ClaudeCli:
                 done = self.runner(self.argv(), input=payload, capture_output=True, text=True,
                                    timeout=self.timeout, cwd=empty)
             except (OSError, subprocess.TimeoutExpired) as error:
-                raise ProviderError(f"claude did not answer ({type(error).__name__})")
+                raise ProviderError(f"claude did not answer within {self.timeout} s ({type(error).__name__}); run `python3 lmemm.py label --limit 3` to see if it works by hand")
         if done.returncode != 0:
             said = (done.stderr or done.stdout or "").strip()
             raise ProviderError(LOGIN_HELP if LOGIN_WORDS.search(said) else "claude failed: " + said[:200])

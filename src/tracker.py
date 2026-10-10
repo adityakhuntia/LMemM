@@ -140,6 +140,10 @@ class Tracker:
         self.last_place_key = None           # the trail's place, to notice a move inside one window
         self.live_labels = live_labels
         self.labeller = None                 # labels.LiveLabeller, made in run() when asked for
+        self.capture_q = queue.Queue(maxsize=1)      # one capture waiting at most; the loop never queues a second
+        self.capture_lock = threading.Lock()         # one capture at a time (the worker's, or the note hotkey's)
+        self.capture_busy = False
+        self.capture_thread = None
         self.started = time.time()
         self.cpu_started = time.process_time()
         self.resources = {}
@@ -455,7 +459,7 @@ class Tracker:
             reason = "locked"
         if reason is None and self.pin:          # a pin wakes us even when idle
             self.pin = False
-            self.capture("pin", pinned=True)
+            self.capture_later("pin", pinned=True)
             return
         if reason is None and macos.idle_seconds() > config.IDLE:
             reason = "idle"
@@ -494,10 +498,10 @@ class Tracker:
             if now - self.last_capture >= config.MIN_GAP:
                 why = self.pending[0]
                 self.pending = None
-                self.capture(why)
+                self.capture_later(why)
         elif now - self.last_capture >= self.current_interval(now):
             if self.q.qsize() < config.MAX_QUEUE:
-                self.capture("timer")
+                self.capture_later("timer")
             else:
                 self.last_capture = now
                 self.stats["backlog_skip"] += 1
@@ -527,11 +531,37 @@ class Tracker:
 
     def capture(self, trigger, pinned=False):
         """Screenshot the front window's display and queue it. Returns its metadata."""
-        began = time.perf_counter()
+        with self.capture_lock:
+            began = time.perf_counter()
+            try:
+                return self._capture(trigger, pinned)
+            finally:
+                self.capture_times.add((time.perf_counter() - began) * 1000)
+
+    def capture_later(self, trigger, pinned=False):
+        """What the main loop calls: hand the capture (window lookups, the accessibility read, the screenshot,
+        ~100-250 ms in all) to the capture thread so the pill and menu never wait for it. Without the thread
+        (tests) it simply captures. A capture already running or waiting means this one is not needed."""
+        if self.capture_thread is None:
+            return self.capture(trigger, pinned)
+        self.last_capture = time.time()
         try:
-            return self._capture(trigger, pinned)
-        finally:
-            self.capture_times.add((time.perf_counter() - began) * 1000)
+            self.capture_q.put_nowait((trigger, pinned))
+        except queue.Full:
+            self.stats["capture_busy"] += 1
+
+    def capture_worker(self):
+        while True:
+            job = self.capture_q.get()
+            if job is None:
+                return
+            self.capture_busy = True
+            try:
+                self.capture(*job)
+            except Exception as error:               # one bad capture must not end capturing
+                say(f"capture failed ({type(error).__name__}: {error})")
+            finally:
+                self.capture_busy = False
 
     def _capture(self, trigger, pinned=False):
         if self.manual_paused or any(self.flags.values()):
@@ -1584,6 +1614,8 @@ class Tracker:
         self.thread = threading.Thread(target=self.worker, daemon=True)
         self.thread.start()
         threading.Thread(target=self.quick_worker, daemon=True).start()
+        self.capture_thread = threading.Thread(target=self.capture_worker, daemon=True)
+        self.capture_thread.start()
         if self.use_trail:
             try:
                 import trail_mac
@@ -1673,6 +1705,12 @@ class Tracker:
         say("\nstopping…")
         if self.trail:
             self.trail.stop()
+        if self.capture_thread:
+            try:
+                self.capture_q.put_nowait(None)
+            except queue.Full:
+                pass
+            self.capture_thread.join(timeout=5)
         self.q.put(None)
         self.thread.join(timeout=60)
         with self.lock:
@@ -1722,7 +1760,7 @@ class Tracker:
             f"{c['ocr']['fast']} fast OCR, {c['ocr']['accurate']} accurate OCR; "
             f"avg capture {ms['capture']} ms, fast OCR {ms['ocr_fast']} ms, accurate OCR {ms['ocr_accurate']} ms")
         loop, lookups = c["main_loop_ms"], c["browser_lookups"]
-        say(f"      main loop: tick p95 {loop['tick_p95']} ms (max {loop['tick_max']}), capture on main thread p95 "
+        say(f"      main loop: tick p95 {loop['tick_p95']} ms (max {loop['tick_max']}), capture (background thread) p95 "
             f"{loop['capture_p95']} ms (max {loop['capture_max']}); browser lookups {lookups['asked']} asked, {lookups['saved']} saved")
         say(f"      labels: {c['labels'] if isinstance(c['labels'], str) else c['labels']['last']}")
         say(f"\nsaved to {os.path.relpath(config.paths().items_file)}")

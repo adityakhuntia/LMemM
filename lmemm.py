@@ -338,6 +338,7 @@ def cmd_label(args):
     parser = argparse.ArgumentParser(prog="lmemm.py label")
     parser.add_argument("--dry-run", action="store_true", help="show what would be sent and its token estimate; send nothing")
     parser.add_argument("--status", action="store_true", help="today's tokens, what is waiting, whether `claude` is found")
+    parser.add_argument("--ping", action="store_true", help="one tiny call (about 2.5k tokens) to check Claude answers, and how fast")
     parser.add_argument("--limit", type=int, help="label at most this many things")
     opts = parser.parse_args(args)
     try:
@@ -348,6 +349,19 @@ def cmd_label(args):
     known = len(labels.load_words())
     print(f"word list for the garbled-text filter: {f'{known} words' if known else 'NOT found (/usr/share/dict/words); garbled OCR lines are only partly filtered'}",
           file=sys.stderr)
+    if opts.ping:
+        import time
+        if not provider.available():
+            sys.exit("The `claude` command was not found. Install Claude Code and sign in, then try again.")
+        print(f"asking Claude (model {provider.model}, waits up to {provider.timeout} s)...", flush=True)
+        began = time.time()
+        try:
+            answers, usage = provider.label("THING 1\napp: Notes\nwindow: Shopping list\ntext:\n  \"milk, eggs, bread\"\n", {"1"})
+        except labels.ProviderError as error:
+            sys.exit(f"no good answer after {time.time() - began:.1f} s: {error}")
+        spent = governor.record(usage)
+        print(f"OK in {time.time() - began:.1f} s, {spent} tokens. Claude answered: {answers.get('1', {}).get('summary')!r}")
+        return
     if opts.status:
         waiting = labels.due(items, labels.load_labels())
         print(f"claude command: {'found' if provider.available() else 'NOT found'}")

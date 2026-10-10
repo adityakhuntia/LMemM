@@ -19,6 +19,7 @@ without macOS or a Claude login.
 """
 
 import difflib
+import getpass
 import hashlib
 import json
 import os
@@ -130,12 +131,36 @@ SELF_UI = re.compile(                      # LMemM's own pill/card/log text, and
     r"|using (?-i:(?:[A-Z]\w+ ?){1,3})\s*[:\"'“]"
     r"|with (?-i:[A-Z][\w']+(?: [A-Z][\w']+){0,3})$"
     r"|.*\bpending edits?\b)", re.I)
+UI_NOISE = re.compile(                     # git output, editor status bars, LMemM's own CLI help and cards, tab strips
+    r"^\W*(?:remote:|pack-reused|\d+ files? changed|total \d+|switched to|error:|fatal:|from https?:|updating \w|fast-forward"
+    r"|unpacking|enumerating|counting|compressing|set up to track|your branch|origin/|screen reader optimized|go live"
+    r"|spaces: ?\d|ln \d+|utf-8|lmemm (?:is|&|\()|\(back to it\)|quick:|edit:|won't suggest|brought back|merged \""
+    r"|pick up where you left off|no open notes|nothing left on this project|nothing is being remembered|paused until"
+    r"|all projects ›|notes • \d|\d+ note marked|(?:\d+ )?things? filed|using \S+\s*:|type / to search|type o to search)"
+    r"|.*(?:\.\.\.|…)"
+    r"|.*(?:dictate a note|ctrl-c stops?\b|captures on app|--dry-run|--confirm|grouped by project|pauses after \d+s|else every \d+s"
+    r"|remember what you do|export context|force-save|session that's already running|same as pressing|will show on the project page"
+    r"|created with \d+ things?|note marked|\(back to it\)|is watching|lmemm\.py|python3? \S+\.py)", re.I)
+HOST_FRAGMENT = re.compile(r"\b[0-9a-f]{2}[:.'’][0-9a-f]{2}[:.'’][0-9a-f]{2}\b", re.I)    # a machine name like Unknown_92:9c:42:af
 LONG_ID = re.compile(r"/[A-Za-z0-9_\-]{20,}")
 
 
+def _own_names():
+    try:
+        name = getpass.getuser().lower()
+    except Exception:
+        return ()
+    return (name,) if len(name) >= 4 else ()
+
+
 def private_line(line):
-    """True for a line that must never be sent: secrets, addresses, terminal prompts, phone numbers."""
-    return bool(line) and (bool(EMAIL_OR_PROMPT.search(line)) or bool(PHONE.search(line)) or not redact([line]))
+    """True for a line that must never be sent: secrets, addresses, terminal prompts (also when OCR turned the
+    @ into a letter), this Mac's user name, phone numbers."""
+    if not line:
+        return False
+    lowered = line.lower()
+    return (bool(EMAIL_OR_PROMPT.search(line)) or bool(PHONE.search(line)) or bool(HOST_FRAGMENT.search(line))
+            or any(name in lowered for name in _own_names()) or not redact([line]))
 
 
 SINGLE_LETTER_OK = {"a", "A", "I"}
@@ -179,14 +204,15 @@ def mostly_unreadable(line, words=None):
     checked = [t for t in tokens if len(t) >= 4 and t.isalpha() and not CAMEL_OR_ACRONYM.match(t)]
     if len(checked) < 2:
         return False
-    return sum(1 for t in checked if not _known(t, words)) > 0.5 * len(checked)
+    unknown = sum(1 for t in checked if not _known(t, words))
+    return unknown >= 2 and unknown >= 0.4 * len(checked)
 
 
 def noisy_line(line):
     """True for a line that would only cost tokens: too short, menu chrome, a file name, a log line,
     or text the OCR garbled."""
     words = line.split()
-    if len(line) < 12 or len(words) < 3 or CHROME_LINE.match(line) or FILENAME.match(line) or SELF_UI.match(line):
+    if len(line) < 12 or len(words) < 3 or CHROME_LINE.match(line) or FILENAME.match(line) or SELF_UI.match(line) or UI_NOISE.match(line):
         return True
     if sum(c.isalpha() for c in line) < 0.7 * len(line.replace(" ", "")):
         return True

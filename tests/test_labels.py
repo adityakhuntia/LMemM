@@ -178,6 +178,34 @@ class NoiseTests(unittest.TestCase):
         for fine in ("with three tiers we can launch the plan", "Typing speed tests are useful", "using pytest for the new tests"):
             self.assertFalse(labels.SELF_UI.match(fine), fine)
 
+    def test_git_output_status_bars_lmemm_help_and_card_text_are_dropped(self):
+        for junk in ("remote: Enumerating objects:", "5 files changed,", "pack-reused 0 (from 0)", "Switched to a new branch",
+                     "@ Go Live * Claude Code", "Screen Reader Optimized", "Spaces: 2 UTF-8 LF () Markdown",
+                     "capture + remember what you do; Ctrl-C stops", "review with --dry-run first, then --confirm",
+                     "1 note marked done", "Brought back \"Pricing\"", "All projects › 180DC Decks", "Case Competi...o DC DTU.pdf",
+                     "quick: Outreach Tracker - Google She → no notes yet", "things filed in 180DC Decks",
+                     "Nothing left on this project", "Won't suggest \"Trip\" again Undo"):
+            self.assertTrue(labels.noisy_line(junk), junk)
+
+    def test_real_sentences_that_mention_similar_words_stay(self):
+        for fine in ("Then click the capsule in the menu bar and choose Open LMemM. Stop it with Ctrl-C in the terminal.",
+                     "Using the new plan we can move faster this quarter", "Total revenue grew in the second half of the year"):
+            self.assertFalse(labels.noisy_line(fine), fine)
+
+    def test_a_machine_name_this_users_name_and_ocr_mangled_prompts_are_private(self):
+        import getpass
+        from unittest.mock import patch
+        with patch.object(getpass, "getuser", return_value="adityakhuntia"):
+            self.assertTrue(labels.private_line("o l.venvl Iba5el adityakhuntiaWnknown 92:9c.'42.'af:90..da LMeThll"))
+            self.assertTrue(labels.private_line("cd /Users/adityakhuntia/Desktop/project"))
+            self.assertTrue(labels.private_line("host Unknown_92:9c:42:af:90:da ready"))
+            self.assertFalse(labels.private_line("Pricing section goes here, three tiers"))
+
+    def test_the_word_list_needs_two_unknown_words_and_forty_percent(self):
+        words = {"remind", "allocate", "these", "kids", "edit"}
+        self.assertTrue(labels.mostly_unreadable("I pendLng edit rerntnd to allocate these ktds", words))
+        self.assertFalse(labels.mostly_unreadable("remind Karol to allocate these kids", words))     # one unknown name is fine
+
     def test_the_same_line_read_twice_with_ocr_slips_is_kept_once(self):
         out = self.usable("Not in any project yet. Move it to one and it stays", "Not in ary project yet. Move it to one and it stavs")
         self.assertEqual(len(out), 1)

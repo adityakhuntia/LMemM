@@ -35,16 +35,26 @@ import ax
 from AppKit import NSEvent
 
 import activity
+import apps
 import config
 import dictation
 import identity
 import input_monitor as input_hooks
 import macos
+import menu_model
+import menubar
+import window as main_window
+import window_model
 import notes
+import permissions
+import onboarding
 import resolver
 import retention
 import rules
+import settings_model
 import store
+import suggestions
+import thing_actions
 import understand
 import widget
 from input_events import Aggregator
@@ -73,7 +83,7 @@ def line(t, app, msg):
 
 
 class Tracker:
-    def __init__(self, every=config.EVERY, input_apps=None, input_retention_hours=24, show_widget=True):
+    def __init__(self, every=config.EVERY, input_apps=None, input_retention_hours=24, show_widget=True, trail=True):
         p = config.paths()
         self.every = every
         self.session = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -100,6 +110,11 @@ class Tracker:
         self.note_request = False
         self.waiting = []                    # saved notes whose screen is still being read
         self.skipped_place = None            # (app, window) of the last window we chose not to read
+        self.skip_kind = None                # why: "private" (a private window, a password manager...) or "unwatched" (R11)
+        user = store.load_user() or {}
+        self.watch_apps = apps.clean(user.get("watch_apps"))     # empty: every app (apps.py)
+        config.set_skip_apps(e["id"] for e in apps.clean(user.get("skip_apps")))    # Settings > Privacy
+        config.SCREENSHOT_DAYS = settings_model.keep_days(user)                     # Settings > General
         self.screen_ok, self.screen_checked = True, 0.0
         self.cur_place = None                # (app, window) of the newest timeline event
         self.pill_place = None               # (app, window) the pill last refreshed for
@@ -124,9 +139,21 @@ class Tracker:
         self.last_retention_sweep = 0.0
         self.panel = dictation.NotePanel()
         self.show_widget = show_widget
+        self.use_trail = trail               # the accessibility event trail (trail_mac.py) runs inside this process
+        self.trail = None
         self.widget = None                   # the on-screen pill (widget.py), made in run()
+        self.menubar = None                  # the menu-bar item (menubar.py), made in run()
+        self.main_window = None              # the window (window.py), made the first time it is opened
+        self.page_data_said = False
+        self.menu_refreshed = 0.0
+        self.menu_reported = False
+        self.started_at = time.time()
+        self.quit_requested = False          # "Quit LMemM" in the menu: ends the main loop
+        self.after_exit = None               # what to do once stopped: "restart", "setup" or "delete" (hand_over)
+        self.screen_restart, self.restart_checked = False, 0.0   # screen access is on for a new run, not this one
         self.suggestion = None               # a group offered as one project: {name, ids, reason}
         self.suggest_answers = self.load_answers()
+        self.sug = self.load_sug()           # proposals waiting for an answer (suggestions.py): the pill and the window share them
         self.last_widget_refresh = 0.0
         self.control_file = Path(p.control_file)
         self.status_file = Path(p.status_file)
@@ -202,6 +229,8 @@ class Tracker:
 
         elif doc.get("action") == "suggest":
             self.offer_project(doc.get("name"), doc.get("ids") or [], doc.get("reason", ""))
+        elif doc.get("action") == "suggest_for":
+            self.offer_items(doc.get("project", ""), doc.get("ids") or [], doc.get("reason", ""))
 
     def publish_status(self):
         private_write(self.status_file, {
@@ -336,6 +365,8 @@ class Tracker:
 
     def tick(self):
         """One pass of the main loop (~4x a second)."""
+        if self.quit_requested:
+            raise KeyboardInterrupt
         self.process_control()
         self.poll_input()
         self.maintain()
@@ -347,6 +378,17 @@ class Tracker:
         if self.widget and time.time() - self.last_widget_refresh >= 1:
             self.last_widget_refresh = time.time()
             self.widget.refresh()
+        if self.menubar and time.time() - self.menu_refreshed >= 1:
+            self.menu_refreshed = time.time()
+            if not self.menu_reported and time.time() - self.started_at > 4:
+                self.menu_reported = True               # after the run loop has laid the bar out
+                say(f"Menu-bar item, 4s later: {self.menubar.where()}")
+            status = self.widget_status()
+            self.menubar.update(menu_model.view(status, self.watch_apps, hotkey=dictation.HOTKEY_LABEL))
+            if self.main_window and self.main_window.visible():
+                self.main_window.update(self.window_view(status))
+        if self.main_window:
+            self.main_window.tick()                     # a ticked note's hold and the Undo line follow the clock
         if self.widget:
             self.widget.pulse(self.widget_heard())      # waveform + words while the note window is open
         if self.manual_paused and self.pause_until and time.time() >= self.pause_until:
@@ -372,7 +414,13 @@ class Tracker:
         if self.note_request:
             self.note_request = False
             card_open = bool(self.widget and self.widget.card_open)
-            action = rules.hotkey_action(False, card_open, self.manual_paused)
+            front = macos.front()
+            unwatched = bool(front) and not apps.watched(self.watch_apps, front["bundle_id"])
+            action = rules.hotkey_action(False, card_open, self.manual_paused, unwatched)
+            if action == "show_unwatched":              # R11: say why, with a way out, instead of nothing
+                if self.widget:
+                    self.widget.show_unwatched()
+                return
             if action == "close_card_then_open_note":
                 self.widget.close_card()                # R2
             if action != "ignore":
@@ -463,15 +511,21 @@ class Tracker:
         f = macos.front()
         if f is None:
             return None
+        if not apps.watched(self.watch_apps, f["bundle_id"]):          # R11: before anything is read or grabbed
+            self.skipped_place, self.skip_kind = (f["app"], f["window"]), "unwatched"
+            self.close_interval()
+            return None
         url, tab_title, private = macos.browser_info(f["app"])
         site = re.sub(r"^https?://", "", url or "").split("/")[0] or None
         title = tab_title or f["window"]
 
-        skip = ("password manager" if f["bundle_id"] in config.SKIP_APPS
+        skip = ("password manager" if f["bundle_id"] in config.BUILTIN_SKIP_APPS
+                else "an app you never remember" if f["bundle_id"] in config.SKIP_APPS
                 else "private window" if private or config.SKIP_TITLES.search(title or "")
                 else "sensitive site" if url and config.SKIP_SITES.search(url)
                 else None)
         self.skipped_place = (f["app"], f["window"]) if skip else None     # the pill wears a lock here
+        self.skip_kind = "private" if skip else None
         if skip:
             self.close_interval()
             self.stats["skipped"] += 1
@@ -523,6 +577,9 @@ class Tracker:
             "capture_start_offset_ns": capture_start_ns - self.origin_ns,
             "capture_end_offset_ns": capture_end_ns - self.origin_ns,
         }
+        place = self.trail.chat_place(f["bundle_id"]) if self.trail else None
+        if place:
+            meta["trail_chat"] = place["name"]       # understand.chat() uses it instead of the OCR'd header
         monitor = self.input_monitor
         if monitor and monitor.state == "recording" and not monitor.paused:
             permitted = monitor.context_provider(monitor.allowed_apps)
@@ -574,6 +631,91 @@ class Tracker:
         self.widget_refresh_soon()
         line(at[11:19], (item or {}).get("app", "?"), "note saved" + (" (awaiting context)" if item is None else ""))
 
+    def window_add_note(self, item_id, text):
+        """A note typed in the window, on the thing whose page it is (the same record as ⌃⌥N)."""
+        at = datetime.now().isoformat(timespec="seconds")
+        with self.lock:
+            item = notes.record(self.items, self.frame_item, self.notes, ("item", item_id), text, at)
+            if item is not None:
+                self.save(force=True)
+        line(at[11:19], (item or {}).get("app", "?"), "note saved" if item else "note not saved: that thing is gone")
+
+    def window_project(self, action, args):
+        """A change to the project tree made in the window (project_actions.py). Returns what the
+        window shows and needs for Undo; ValueError says why not, in words."""
+        import project_actions
+        import projects
+        if action in settings_model.ACTIONS:
+            return self.window_settings(action, args.get("value"))
+        with self.lock:
+            reg = projects.load()
+            if action in suggestions.ACTIONS:
+                args = {**args, "sug": self.sug}
+            result = project_actions.do(reg, self.items, action, **args)
+            projects.save(reg)
+            self.save(force=True)
+            if action in suggestions.ACTIONS:
+                self.save_sug()
+                self.sync_pill()
+        line(now_hms(), "", result["message"])
+        return result
+
+    def window_settings(self, action, value):
+        """A change in the Settings window (settings_model.py): saved to the user block of memory.json and
+        applied to the running tracker at once. Returns what the window shows and what Undo needs."""
+        with self.lock:
+            before = store.load_user() or {}
+            result = settings_model.apply(before, action, value)
+            store.save_user(result["user"])
+            self.apply_user(result["user"])
+        line(now_hms(), "", result["message"])
+        return {"message": result["message"], "go": None, "stay": True, "undo": {"settings": before}}
+
+    def apply_user(self, user):
+        """Make a changed user block true now: which apps are watched, which are never remembered,
+        how long screenshots stay. (Name and what you work on are only read from the file.)"""
+        self.watch_apps[:] = apps.clean(user.get("watch_apps"))
+        if self.trail:
+            self.trail.set_watch(self.watch_apps)
+        config.set_skip_apps(e["id"] for e in apps.clean(user.get("skip_apps")))
+        config.SCREENSHOT_DAYS = settings_model.keep_days(user)
+        self.last_retention_sweep = 0.0                  # sweep soon, so a shorter keep time shows its effect
+
+    def settings_view(self, section):
+        """The Settings page for the window. Reads macOS and the data folder only for the section that needs it."""
+        facts = data = None
+        if section == "access":
+            status = self.widget_status()
+            facts = {"screen": status["screen"], "screen_fresh": status["screen"] or status["restart"],
+                     "ax": permissions.accessibility_trusted(),
+                     "mic": "denied" if status["mic_off"] else "granted", "speech": "granted"}
+        elif section == "data":
+            import forget
+            try:
+                data = forget.plan(config.paths().data_dir)
+            except ValueError:
+                data = None
+        return settings_model.view(store.load_user() or {}, section, facts, data, hotkey=dictation.HOTKEY_LABEL)
+
+    def window_project_undo(self, undo):
+        import project_actions
+        import projects
+        if "settings" in undo:
+            with self.lock:
+                store.save_user(undo["settings"])
+                self.apply_user(undo["settings"])
+            line(now_hms(), "", "undone")
+            return
+        with self.lock:
+            reg = projects.load()
+            project_actions.undo(reg, self.items, undo, self.sug)
+            projects.save(reg)
+            self.save(force=True)
+            if undo.get("sug") is not None:
+                self.save_sug()
+                self.sync_pill()
+        line(now_hms(), "", "undone")
+
     def widget_refresh_soon(self):
         self.last_widget_refresh = 0.0
 
@@ -584,11 +726,129 @@ class Tracker:
         if time.time() - self.screen_checked > 5:
             self.screen_ok, self.screen_checked = macos.screen_recording_allowed(request=False), time.time()
         kind = "manual" if self.manual_paused else "away" if self.paused == "idle" else None
+        if self.screen_ok:
+            self.screen_restart = False
+        elif time.time() - self.restart_checked > 15:           # on in System Settings, but only for a new run?
+            self.restart_checked = time.time()
+            threading.Thread(target=self.check_restart, daemon=True).start()   # a child process: never on the UI thread
         now = datetime.now()
         end = datetime.fromtimestamp(self.pause_until) if self.pause_until else None
-        return {"screen": self.screen_ok, "mic_off": dictation.mic_off(),
-                "private": self.skipped_place is not None and self.skipped_place == self.front_sig(),
-                "paused": kind, "pause_view": rules.paused_view(kind, end, now) if kind else None}
+        return {"screen": self.screen_ok, "restart": self.screen_restart, "mic_off": dictation.mic_off(),
+                "private": self.skip_kind == "private" and self.skipped_place == self.front_sig(),
+                "unwatched": self.skip_kind == "unwatched" and self.skipped_place == self.front_sig(),
+                "paused": kind, "pause_view": rules.paused_view(kind, end, now) if kind else None,
+                "suggestions": len(self.sug["projects"]) + len(self.sug["items"])}
+
+    def check_restart(self):
+        self.screen_restart = permissions.screen_allowed_fresh()
+
+    def window_view(self, status):
+        """The window's banner needs the memory's state too: setup not finished shows as such. (A
+        damaged memory file stops LMemM before it gets here, so the window never sees that one.)"""
+        memory = window_model.MEMORY_OK if store.load_user() else window_model.MEMORY_FIRST_RUN
+        return window_model.view(status, memory, self.watch_apps)
+
+    def page_data(self):
+        """What the project page reads: the project tree (a small file) and the remembered things.
+        The page only looks; nothing it does writes to either."""
+        import projects
+        try:
+            reg = projects.load()
+        except ValueError as error:                  # damaged: show no projects, never replace the file
+            if not self.page_data_said:
+                self.page_data_said = True
+                say(str(error))
+            reg = projects.empty()
+        return reg, dict(self.items)               # a copy, so the resolver thread can go on writing
+
+    def adopt_projects(self):
+        """Give every project name older versions filed things under a place in the project tree
+        (projects.adopt; safe to repeat). Writes only when something changed."""
+        import projects
+        try:
+            reg = projects.load()
+            with self.lock:
+                changed = projects.adopt(reg, self.items)
+                if changed:
+                    projects.save(reg)
+                    self.save(force=True)
+            if changed:
+                say(f"Projects: placed {changed} thing(s) in the project tree")
+        except ValueError as error:
+            say(str(error))
+
+    def open_window(self):
+        if self.main_window is None:
+            self.main_window = main_window.MainWindow(self.menu_pick, self.page_data, self.widget_tick, self.window_add_note,
+                                                   self.window_project, self.window_project_undo, self.sug_view,
+                                                      self.settings_view)   # its button sends a menu row id
+        self.adopt_projects()                       # things filed by name since the last time
+        self.main_window.show(self.window_view(self.widget_status()))
+
+    def show_memory_file(self):
+        subprocess.run(["open", "-R", config.paths().items_file], check=False)
+
+    def menu_pick(self, row):
+        """A row of the menu-bar item was clicked (menu_model.view lists the ids)."""
+        kind = menu_model.pause_kind(row)
+        if kind:
+            self.widget_pause(kind)                     # the same Pause as the pill's (R9)
+        elif row == "resume":
+            self.widget_resume()
+        elif row == "add_note":
+            self.note_request = True                    # the same as ⌃⌥N, paused card and all (R9)
+        elif row == "open":
+            self.open_window()
+        elif row == "settings":
+            self.open_window()
+            self.main_window.open_settings()
+        elif row == "access_ax":
+            permissions.MacSystem().open_settings("ax")
+        elif row == "show_file":
+            self.show_memory_file()
+        elif row == "access":
+            self.check_access()
+        elif row in {"restart", "setup", "delete"}:
+            if not self.confirm_leaving(row):
+                return
+            self.after_exit = row
+            self.quit_requested = True
+        elif row == "quit":
+            self.quit_requested = True
+        else:
+            return
+        self.menu_refreshed = 0.0                       # show the new state at the next tick
+        if self.nsapp is not None:
+            macos.wake(self.nsapp)                      # act now, not at the next 0.25 s boundary
+
+    def check_access(self):
+        """"Check access…": open the pane for what is off, or restart when macOS only needs that,
+        or say that all is on."""
+        status = self.widget_status()
+        action = menu_model.access_action(status)
+        if action == "restart":
+            if self.confirm_leaving("restart"):
+                self.after_exit, self.quit_requested = "restart", True
+        elif action in {"screen", "mic"}:
+            permissions.MacSystem().open_settings("screen" if action == "screen" else "voice")
+        elif self.widget:
+            self.widget.flash("All access is on")
+
+    def confirm_leaving(self, row):
+        """Ask before a restart, reopening setup or deleting everything. The words come from
+        menu_model; nothing happens on Cancel."""
+        if row == "delete":
+            import forget
+            try:
+                title, text = menu_model.delete_words(forget.plan(config.paths().data_dir))
+            except ValueError as error:
+                say(str(error))
+                return False
+            return self.menubar.ask(title, text, "Delete everything", careful=True)
+        if row == "setup":
+            title, text = menu_model.setup_words()
+            return self.menubar.ask(title, text, "Reopen setup")
+        return True                                      # a restart has nothing to lose
 
     def widget_pause(self, kind):
         """The pill's Pause row: kind is one of rules.PAUSE_CHOICES."""
@@ -648,18 +908,37 @@ class Tracker:
     def set_now(self, raw, item):
         self.now = {"raw": raw, "item": item, "mono": time.monotonic_ns()}
 
+    def trail_state(self, bundle_id, app):
+        """The chat state the event trail read from the app (exact name), or None."""
+        place = self.trail.chat_place(bundle_id) if self.trail else None
+        if not place:
+            return None
+        host = (place.get("url") or "").split("/")[0]
+        return understand.chat_state(understand.SITES.get(host) or app, place["name"])
+
     def identify_now(self, f):
         """The pill must follow a switch at once, not after the next capture is OCR'd.
         Most places are known from metadata alone (URL, tab title, app: no pixels). When an
         app only shows where you are on screen (a WhatsApp chat), clicks in it start a quick
         read of the window's top strip instead (see on_click). Either way the answer is only
         used until the real capture lands."""
+        if not apps.watched(self.watch_apps, f["bundle_id"]):          # R11: nothing is read from an app you did not choose
+            self.ocr_apps.pop(f["app"], None)
+            with self.lock:
+                self.set_now((f["app"], f["window"]), None)
+            self.last_widget_refresh = 0.0
+            return
         url, tab_title, _private = macos.browser_info(f["app"])
         meta = {"app": f["app"], "bundle_id": f["bundle_id"], "window": f["window"], "url": url,
                 "site": re.sub(r"^https?://", "", url or "").split("/")[0] or None, "tab_title": tab_title,
                 "ts": "quick", "image": "quick", "quick": True}
         st = identity.quick_state(meta)
-        if st is not None:
+        named = self.trail_state(f["bundle_id"], f["app"]) if st is None else None
+        if named is not None:                # the app named the chat: no screen read needed
+            self.ocr_apps.pop(f["app"], None)
+            with self.lock:
+                self.set_now((f["app"], f["window"]), identity.find_item(self.items, named))
+        elif st is not None:
             self.ocr_apps.pop(f["app"], None)
             with self.lock:
                 self.set_now((f["app"], f["window"]), identity.find_item(self.items, st))
@@ -731,14 +1010,30 @@ class Tracker:
         """Every ~0.1 s: ask the app in front where you are (a millisecond, no pixels). Its
         focused input's label names a chat or channel; a browser's page URL names a page.
         When that names an item you've been on, the pill switches to it at once."""
-        last = None
+        last, seen = None, 0
         while self.running:
-            time.sleep(0.1)
+            try:
+                if not self.trail:
+                    raise LookupError
+                seen = self.trail.wait_change(seen, 1.0)    # event-driven: wake when macOS says you moved (1 s at most)
+                time.sleep(0.06)                            # let a burst of changes settle
+            except Exception:
+                time.sleep(0.1)
             try:
                 app = macos.NSWorkspace.sharedWorkspace().frontmostApplication()
                 if app is None:
                     continue
                 pid, name = app.processIdentifier(), app.localizedName()
+                named = self.trail_state(app.bundleIdentifier(), name) if apps.watched(self.watch_apps, app.bundleIdentifier()) else None
+                if named is not None:               # the event trail read the chat's exact name from the app
+                    if (pid, named["target"]) != last:
+                        last = (pid, named["target"])
+                        with self.lock:
+                            self.ax_now = {"pid": pid, "key": None, "item": identity.find_item(self.items, named)}
+                        self.last_widget_refresh = 0.0
+                        if self.nsapp is not None:
+                            macos.wake(self.nsapp)
+                    continue
                 sig = ax.read(pid, name)
                 key = ax.key(name, sig)
                 page = (sig["doc"], sig["title"]) if sig and not key and sig["doc"] and name in config.BROWSERS else None
@@ -793,18 +1088,89 @@ class Tracker:
         except OSError:
             pass
 
+    @property
+    def sug_file(self):
+        return os.path.join(config.paths().memory_dir, "suggestions.json")
+
+    def load_sug(self):
+        try:
+            doc = json.loads(Path(self.sug_file).read_text())
+            if isinstance(doc.get("projects"), list) and isinstance(doc.get("items"), list):
+                return {**suggestions.empty(), **doc}
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass
+        return suggestions.empty()
+
+    def save_sug(self):
+        try:
+            os.makedirs(os.path.dirname(self.sug_file), exist_ok=True)
+            private_write(self.sug_file, self.sug)
+        except OSError:
+            pass
+
+    def sync_pill(self):
+        """The pill shows the first project proposal waiting; answering it anywhere clears it everywhere (S1)."""
+        first = self.sug["projects"][0] if self.sug["projects"] else None
+        self.suggestion = {"name": first["name"], "ids": first["ids"], "reason": first["reason"]} if first else None
+
+    def sug_view(self):
+        """The proposals as the window draws them. Tidies the list first (S3) and keeps the pill in step."""
+        reg, items = self.page_data()
+        with self.lock:
+            before = repr(self.sug)
+            view = suggestions.view(self.sug, reg, items, datetime.now())
+            if repr(self.sug) != before:
+                self.save_sug()
+            self.sync_pill()
+        return view
+
     def offer_project(self, name, ids, reason=""):
         """Offer a group of things as one project. The model will call this; until it
         exists, `lmemm.py suggest [NAME] [ID…]` does. With no ids, the four latest things."""
         with self.lock:
             if not ids:
                 ids = [i["id"] for i in sorted(self.items.values(), key=lambda i: i["last_seen"], reverse=True)[:4]]
-            ids = [i for i in ids if i in self.items]
-            if len(ids) < 2 or notes.was_declined(self.items, ids, name or "Project"):
+            entry = suggestions.offer_project(self.sug, self.items, name, ids, reason)
+            if entry is None:
                 line(now_hms(), "", "no project suggestion: needs two known things you have not refused")
                 return
-            self.suggestion = {"name": name or "Project", "ids": ids, "reason": reason or "Opened together"}
-        line(now_hms(), "", f"suggesting project {self.suggestion['name']} ({len(ids)} things)")
+            self.save_sug()
+            self.sync_pill()
+        line(now_hms(), "", f"suggesting project {entry['name']} ({len(entry['ids'])} things)")
+
+    def offer_items(self, project, ids, reason=""):
+        """Offer things for an existing project (`lmemm.py suggest-for PROJECT [ID…]`). With no ids, the
+        three latest things that are not in it. `project` is a name or a path, as the CLI takes it."""
+        import projects
+        try:
+            reg = projects.load()
+            pid = projects.resolve(reg, project)
+            with self.lock:
+                if not ids:
+                    latest = sorted(self.items.values(), key=lambda i: i["last_seen"], reverse=True)
+                    ids = [i["id"] for i in latest if pid not in projects._members_of(i)][:3]
+                entry = suggestions.offer_items(self.sug, reg, self.items, pid, ids, reason)
+                if entry is not None:
+                    self.save_sug()
+        except ValueError as error:
+            say(str(error))
+            return
+        line(now_hms(), "", f"suggesting {len(entry['ids'])} things for {projects.get(reg, pid)['name']}" if entry
+             else "no suggestion: nothing there that is not already in it or refused")
+
+    def in_tree(self, change):
+        """Run change(reg) on the project tree and save it, so what the pill does and what the window
+        shows agree (thing_actions T6). Called under the memory lock. Returns what change returned,
+        or None when the tree could not be read."""
+        import projects
+        try:
+            reg = projects.load()
+            result = change(reg)
+            projects.save(reg)
+            return result
+        except ValueError as error:
+            say(str(error))
+            return None
 
     def widget_suggestion(self):
         with self.lock:
@@ -814,19 +1180,25 @@ class Tracker:
         """Put things in a project: by accepting a suggestion, or from the picker."""
         with self.lock:
             found = notes.set_project(self.items, ids, name)
+            found = self.in_tree(lambda reg: thing_actions.file_by_name(reg, self.items, ids, name)) or found
             if found:
                 self.save(force=True)
             if self.suggestion and set(self.suggestion["ids"]) & set(found):
-                self.suggestion = None
                 self.count_answer()
+            suggestions.drop_ids(self.sug, found)
+            self.save_sug()
+            self.sync_pill()
         line(now_hms(), "", f"{len(found)} thing{'s' * (len(found) != 1)} filed in {name}")
 
     def widget_decline(self, forever=True):
         with self.lock:
             if self.suggestion and forever:
                 notes.decline_project(self.items, self.suggestion["ids"], self.suggestion["name"])
+                self.in_tree(lambda reg: thing_actions.decline_by_name(reg, self.items, self.suggestion["ids"], self.suggestion["name"]))
                 self.save(force=True)
-            self.suggestion = None
+                self.sug["projects"] = [e for e in self.sug["projects"] if e["ids"] != self.suggestion["ids"]]
+                self.save_sug()
+            self.sync_pill()
             self.count_answer()
 
     def widget_picker(self, item_id, query):
@@ -835,7 +1207,8 @@ class Tracker:
 
     def widget_unfile(self, item_id):
         with self.lock:
-            found = notes.clear_project(self.items, [item_id])
+            found = self.in_tree(lambda reg: thing_actions.unfile_main(reg, self.items, [item_id])) \
+                or notes.clear_project(self.items, [item_id])
             if found:
                 self.save(force=True)
 
@@ -1093,7 +1466,8 @@ class Tracker:
 
     def extend(self, ev, now, t):
         secs = int(now - ev["_start"])
-        self.items[ev["item"]]["seconds"] += secs - ev["seconds"]
+        if ev["item"] in self.items:                 # a thing you forgot from the window is no longer there to add time to
+            self.items[ev["item"]]["seconds"] += secs - ev["seconds"]
         ev["seconds"], ev["to"] = secs, t
 
     def drop_frame(self, image):
@@ -1125,10 +1499,16 @@ class Tracker:
 
     def run(self):
         p = config.paths()
-        if not macos.screen_recording_allowed():
+        set_up = onboarding.load_state(p.onboarding_file)["completed"]
+        allowed = macos.screen_recording_allowed(request=not set_up)      # setup has already asked, calmly
+        if not allowed and not set_up:
             sys.exit("Screen Recording permission is not granted to this terminal.\n"
                      "System Settings -> Privacy & Security -> Screen Recording, enable it,\n"
                      "quit and reopen the terminal, then run again.")
+        if not allowed:                          # you finished setup without it: keep running, the pill says so
+            self.screen_ok, self.screen_checked = False, time.time()
+            say("Screen Recording is off, so LMemM can't see your screen yet. The pill shows a red mark;\n"
+                "turn it on in System Settings -> Privacy & Security -> Screen Recording, then restart LMemM.")
         os.makedirs(p.memory_dir, exist_ok=True)
         with open(p.pidfile, "w") as fh:
             fh.write(str(os.getpid()))
@@ -1157,6 +1537,12 @@ class Tracker:
                                         on_decline=self.widget_decline, picker=self.widget_picker,
                                         on_unfile=self.widget_unfile, busy=lambda: self.panel.open, status=self.widget_status,
                                         on_pause=self.widget_pause, on_resume=self.widget_resume)
+            try:
+                self.menubar = menubar.MenuBar(self.menu_pick)
+                say(f"Menu-bar item: {self.menubar.where()}")
+            except Exception as e:                      # the pill still works; say why the menu is missing
+                self.menubar = None
+                say(f"Menu-bar item could not be made: {e!r}")
         if self.input_monitor:
             self.input_monitor.start(request_permission=True)
             say(f"Input monitoring: {self.input_monitor.status()['state']} · allowed app: VS Code · no key values recorded")
@@ -1168,6 +1554,15 @@ class Tracker:
         self.thread = threading.Thread(target=self.worker, daemon=True)
         self.thread.start()
         threading.Thread(target=self.quick_worker, daemon=True).start()
+        if self.use_trail:
+            try:
+                import trail_mac
+                self.trail = trail_mac.Trail(watch_apps=self.watch_apps,
+                                             paused=lambda: self.manual_paused or self.paused is not None)
+                self.trail.start()
+            except Exception as e:                       # the screenshot tracker must run even if the trail cannot
+                self.trail = None
+                say(f"event trail off ({type(e).__name__}: {e})")
         threading.Thread(target=self.ax_loop, daemon=True).start()
         self.click_monitor = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(1 << 1, self.on_click)
 
@@ -1190,6 +1585,27 @@ class Tracker:
             pass
         finally:
             self.finish()
+        self.hand_over()
+
+    def hand_over(self):
+        """Restart, reopen setup, or delete everything, once LMemM has saved and stopped. A restart
+        replaces this process in place, so macOS sees the same app (permissions.relaunch does the same)."""
+        if not self.after_exit:
+            return
+        python, script = sys.executable, os.path.abspath(sys.argv[0])
+        if self.after_exit == "delete":
+            import forget
+            try:
+                result = forget.delete_all(config.paths().data_dir, None)
+                say(f"deleted {result['files']} file(s). LMemM will ask you to set up again.")
+            except ValueError as error:
+                say(str(error))
+            argv = [python, script, "start"]
+        elif self.after_exit == "setup":
+            argv = [python, script, "setup", "--again"]
+        else:
+            argv = [python] + sys.argv
+        os.execv(python, argv)
 
     def finish(self):
         p = config.paths()
@@ -1198,7 +1614,13 @@ class Tracker:
             self.input_monitor.stop()
         if self.panel.open:
             self.panel.close(save=False)
+        if self.main_window:
+            self.main_window.window.orderOut_(None)
+        if self.menubar:
+            self.menubar.remove()
         say("\nstopping…")
+        if self.trail:
+            self.trail.stop()
         self.q.put(None)
         self.thread.join(timeout=60)
         with self.lock:
@@ -1231,6 +1653,8 @@ class Tracker:
             + (f"  ·  {plural(len(self.notes), 'note')}" if self.notes else "")
             + (f"  ·  {s['skipped']} skipped (sensitive)" if s["skipped"] else "") + "\n")
         for iid, secs in spent.most_common():
+            if iid not in self.items:                    # forgotten from the window during the session
+                continue
             i = self.items[iid]
             extra = "  ·  ".join(x for x in [f"{visits[iid]} visits" if visits[iid] > 1 else "",
                                              i.get("mostly") or "",

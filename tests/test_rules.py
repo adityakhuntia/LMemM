@@ -1,5 +1,6 @@
 """The pill's ground rules (rules.py): who owns the screen, and what each press does."""
 
+import os
 import unittest
 from datetime import datetime
 
@@ -34,6 +35,38 @@ class OwnershipTests(unittest.TestCase):
     def test_clicking_the_pill_while_dictating_does_nothing(self):  # R1
         self.assertEqual(rules.pill_click_action(True), "ignore")
         self.assertEqual(rules.pill_click_action(False), "toggle_card")
+
+
+class UnwatchedTests(unittest.TestCase):
+    """R11: an app you did not choose in setup."""
+
+    def test_the_mark_ranks_below_problems_and_above_the_mic(self):
+        ok = {"screen": True, "private": False, "mic_off": False}
+        self.assertEqual(rules.pill_mark({**ok, "unwatched": True}), "unwatched")
+        self.assertEqual(rules.pill_mark({**ok, "unwatched": True, "mic_off": True}), "unwatched")
+        self.assertEqual(rules.pill_mark({**ok, "unwatched": True, "private": True}), "private")
+        self.assertEqual(rules.pill_mark({**ok, "unwatched": True, "screen": False}), "screen_off")
+        self.assertEqual(rules.pill_mark({**ok, "unwatched": True, "paused": "manual"}), "paused")
+        self.assertIsNone(rules.pill_mark({**ok, "unwatched": False}))
+
+    def test_the_mark_is_neutral_not_red(self):
+        import re
+        with open(os.path.join(os.path.dirname(__file__), "..", "src", "widget.py")) as fh:
+            source = fh.read()
+        entry = re.search(r'"unwatched": \("([^"]+)", (True|False), "([^"]+)"\)', source)
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry.group(2), "False")                       # red is only for a permission that is off
+
+    def test_the_hotkey_explains_instead_of_failing_quietly(self):
+        self.assertEqual(rules.hotkey_action(False, False, False, unwatched=True), "show_unwatched")
+        self.assertEqual(rules.hotkey_action(False, True, False, unwatched=True), "show_unwatched")
+        self.assertEqual(rules.hotkey_action(True, False, False, unwatched=True), "ignore")       # R3 still wins
+        self.assertEqual(rules.hotkey_action(False, False, True, unwatched=True), "show_paused")  # R9 first
+        self.assertEqual(rules.hotkey_action(False, False, False, unwatched=False), "open_note")
+
+    def test_the_pill_shows_the_mark(self):
+        self.assertEqual(rules.pill_state(False, False, False, False, 0, False, mark="unwatched"), "unwatched")
+        self.assertEqual(rules.pill_state(True, False, False, False, 0, False, mark="unwatched"), "rest")   # R1
 
 
 class MarkTests(unittest.TestCase):

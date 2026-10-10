@@ -10,13 +10,22 @@ LMemM - the one command.
     lmemm.py notes [--all] [PROJECT]  pending edits (your ⌃⌥N notes) by project
     lmemm.py notes done ID… | notes reopen ID…
     lmemm.py suggest [NAME] [ID…]     offer things as one project (stands in for the model)
+    lmemm.py suggest-for PROJECT [ID…]
+                                      offer things for an existing project (the three latest not in it, or the ids)
+    lmemm.py projects [--all] | projects new|rename|move|archive|restore|merge|delete …
+                                      look at and shape the project tree (any depth)
     lmemm.py context [SESSION] [--days N]
                                       a clean export for handing to an AI: what you did
                                       and why, grouped by project, with no operational detail
+    lmemm.py trail start|show|places|status|pause|resume|forget|probe
+                                      the event trail: what you are doing, from app events (see docs/specs)
     lmemm.py status | pause | resume  the running tracker
     lmemm.py pin                      force-save the current screen
     lmemm.py note                     open the note window (same as ⌃⌥N)
     lmemm.py delete-session ID (--dry-run | --confirm ID)
+    lmemm.py delete-all (--dry-run | --confirm)
+                                      remove everything LMemM has kept, on this Mac
+    lmemm.py setup [--again]          first-run setup, then LMemM starts (also runs once before `start`)
 
 Any of these also works by number from the menu (`lmemm.py`), which prompts for the
 same arguments shown above when an action takes them.
@@ -44,8 +53,10 @@ import tracker  # noqa: E402
 USAGE = ("usage: lmemm.py [menu] | start [--every N] [--input-events --input-app APP]"
          " | memory [N] [--content] [--events]"
          " | notes [--all] [PROJECT] | notes done|reopen ID…"
+         " | projects [--all] | projects new|rename|move|archive|restore|merge|delete …"
          " | context [SESSION] [--days N]"
-         " | status | pause | resume | pin | note | delete-session ID (--dry-run | --confirm ID)")
+         " | trail … | status | pause | resume | pin | note | delete-session ID (--dry-run | --confirm ID)"
+         " | delete-all (--dry-run | --confirm) | setup [--again] [--no-start]")
 
 
 # ---------------------------------------------------------------- memory
@@ -138,13 +149,64 @@ def cmd_start(args):
     parser.add_argument("--input-app", action="append", default=[])
     parser.add_argument("--input-retention-hours", type=float, default=24)
     parser.add_argument("--no-widget", action="store_true", help="don't show the on-screen pill")
+    parser.add_argument("--no-trail", action="store_true", help="don't run the accessibility event trail")
+    parser.add_argument("--no-setup", action="store_true", help="skip first-run setup (it asks for permissions itself)")
     opts = parser.parse_args(args)
     if opts.every <= 0 or not 0 < opts.input_retention_hours <= 24:
         parser.error("positive capture interval and input retention of at most 24 hours required")
     if opts.input_events != bool(opts.input_app) or not set(opts.input_app) <= SUPPORTED_INPUT_APPS:
         parser.error("input monitoring requires --input-events --input-app com.microsoft.VSCode")
+    if not opts.no_setup and not first_run_setup():
+        sys.exit("Setup isn't finished. Run LMemM again to pick up where you left off.")
     tracker.Tracker(every=opts.every, input_apps=set(opts.input_app) or None,
-                    input_retention_hours=opts.input_retention_hours, show_widget=not opts.no_widget).run()
+                    input_retention_hours=opts.input_retention_hours, show_widget=not opts.no_widget,
+                    trail=not opts.no_trail).run()
+
+
+def first_run_setup(again=False):
+    """Show first-run setup if it has not been finished (or when asked again). True when
+    LMemM can go on; False when the window was closed part-way (it resumes next time)."""
+    import onboarding
+    path = config.paths().onboarding_file
+    state = onboarding.load_state(path)
+    if again:
+        state.update(completed=False, step="welcome")
+        onboarding.save_state(path, state)
+    elif not onboarding.needs_setup(state):
+        return True
+    import onboarding_ui
+    return onboarding_ui.run()
+
+
+def cmd_setup(args):
+    if not set(args) <= {"--again", "--no-start"}:
+        sys.exit("usage: lmemm.py setup [--again] [--no-start]")
+    if not first_run_setup(again="--again" in args):
+        sys.exit("Setup isn't finished. Run  python3 lmemm.py setup  to pick up where you left off.")
+    if "--no-start" in args:
+        print("Setup is done.")
+        return
+    cmd_start(["--no-setup"])                      # setup ends with the pill on screen, not a closed app
+
+
+def cmd_delete_all(args):
+    import forget
+    parser = argparse.ArgumentParser(prog="lmemm.py delete-all")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--dry-run", action="store_true")
+    group.add_argument("--confirm", action="store_true")
+    opts = parser.parse_args(args)
+    data_dir = config.paths().data_dir
+    try:
+        if opts.dry_run:
+            result = forget.plan(data_dir)
+            print(json.dumps(result, indent=2))
+            print("\nNothing was deleted. Run with --confirm to delete all of this.")
+        else:
+            result = forget.delete_all(data_dir, tracker.running_pid())
+            print(f"deleted {result['files']} file(s) from {data_dir}. Next start runs setup again.")
+    except ValueError as error:
+        sys.exit(str(error))
 
 
 def cmd_memory(args):
@@ -166,6 +228,20 @@ def cmd_suggest(args):
     if not tracker.send_control("suggest", name=name, ids=args[1:], reason="Opened together"):
         sys.exit("LMemM isn't running.")
     print(f"offered '{name}' on the pill.")
+
+
+def cmd_suggest_for(args):
+    """Offer things for a project on the pill's window. With no ids, the three latest things not in it."""
+    if not args:
+        sys.exit("usage: lmemm.py suggest-for PROJECT [ID…]")
+    import projects
+    try:
+        pid = projects.resolve(projects.load(), args[0])          # say now if there is no such project
+    except ValueError as error:
+        sys.exit(str(error))
+    if not tracker.send_control("suggest_for", project=args[0], ids=args[1:], reason="Looks like it belongs here"):
+        sys.exit("LMemM isn't running.")
+    print(f"offered things for '{projects.get(projects.load(), pid)['name']}'. Open LMemM and look on that project's page.")
 
 
 def cmd_notes(args):
@@ -369,6 +445,18 @@ def interactive_menu(read=input, write=print):
         write(menu_text())
 
 
+def cmd_projects(args):
+    import projects_cli
+
+    def save(items):
+        record_offline_change(items)
+        store.save_memory(items)
+    try:
+        projects_cli.run(args, running=tracker.running_pid() is not None, save_items=save)
+    except ValueError as error:
+        sys.exit(str(error))
+
+
 def main():
     args = sys.argv[1:]
     if not args:
@@ -386,14 +474,25 @@ def main():
         cmd_notes(rest)
     elif cmd == "suggest":
         cmd_suggest(rest)
+    elif cmd == "suggest-for":
+        cmd_suggest_for(rest)
+    elif cmd == "projects":
+        cmd_projects(rest)
     elif cmd in {"status", "pause", "resume"}:
         cmd_control(cmd)
+    elif cmd == "trail":
+        import trail_cli
+        trail_cli.main(sys.argv[2:])
     elif cmd == "pin":
         tracker.pin()
     elif cmd == "note":
         tracker.note()
     elif cmd == "delete-session":
         cmd_delete_session(rest)
+    elif cmd == "delete-all":
+        cmd_delete_all(rest)
+    elif cmd == "setup":
+        cmd_setup(rest)
     elif cmd == "context":
         cmd_context(rest)
     else:

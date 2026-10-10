@@ -1,7 +1,20 @@
 # LMemM — current context
 
-Updated 2026-10-09, America/New_York. Historical context and handover are in
+Updated 2026-10-10, America/New_York. Historical context and handover are in
 `docs/history/`. This file records current decisions and verification limits.
+
+## Main integration — 2026-10-10
+
+Integrated all ten new origin/main commits through `42d7f0e` into the semantic feature.
+Adds onboarding/permission setup, accessibility event trail (enabled by default with
+normal start; `--no-trail` disables it), menu-bar controls, project tree and management,
+assignment/suggestions, Settings, resizable accessible window and keyboard navigation.
+The sole conflict in config.Paths preserves semantic_file, trail_dir and projects_file.
+Fixed upstream macOS deletion guard rejecting real system temp directories; CLI tests
+mock interactive onboarding. Verification: 689 Python tests and 6 Node tests pass.
+New merged UI has not been manually accepted here. Semantic pilot remains separate;
+general model acceptance and MCP remain open. Root main/local context edits and the
+untracked .env canary are unchanged. Backup: backup/semantic-before-main-20261010.
 
 ## Main integration — 2026-10-09
 

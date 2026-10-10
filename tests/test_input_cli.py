@@ -29,7 +29,7 @@ class InputCliTests(unittest.TestCase):
         class Capture:
             def __init__(self, **kwargs): created.append(kwargs)
             def run(self): pass
-        with patch.object(tracker, "Tracker", Capture), patch("sys.argv", ["lmemm.py", "--input-events", "--input-app", "com.microsoft.VSCode"]):
+        with patch.object(lmemm, "first_run_setup", return_value=True), patch.object(tracker, "Tracker", Capture), patch("sys.argv", ["lmemm.py", "--input-events", "--input-app", "com.microsoft.VSCode"]):
             lmemm.main()
         self.assertEqual(created[0]["input_apps"], {"com.microsoft.VSCode"})
 

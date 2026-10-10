@@ -33,6 +33,19 @@ RETENTION_SWEEP = 3600      # seconds between screenshot-expiry sweeps
 RSS_WARN_MB = 800           # warn in the terminal when LMemM itself uses more memory than this
 CPU_WARN_PCT = 60           # ...or more than this share of one core over the last 30 s
 
+# ---------------------------------------------------------------- event trail (trail_*.py)
+
+TRAIL_RETENTION_HOURS = 48      # raw events stay on this Mac this long, then are deleted
+TRAIL_MAX_MB = 50               # hard cap on the trail folder; oldest day goes first
+TRAIL_READ_FIELD_TEXT = False   # read the text INSIDE the focused text box (an editor's document)? off: only that one exists
+TRAIL_TEXT_EVERY = 2.0          # seconds: least time between two text reads of one place
+TRAIL_FULL_MS = 90              # a full tree read stops after this long (Chromium apps cost ~0.5 ms a node)
+TRAIL_SETTLE_MS = 150           # a shaky place must hold this long before it counts as a switch
+TRAIL_POLL = 1.0                # seconds: the cheap fallback check when an app sends no notifications
+TRAIL_IDLE = 60                 # no input for this long -> idle event, reads slow right down
+TRAIL_VISION = True             # fall back to a screenshot read when an app exposes too little text
+TRAIL_VISION_EVERY = 20         # seconds: least time between screenshot reads of one place
+
 # ---------------------------------------------------------------- memory
 
 KEEP_TEXT = 15          # newest lines kept per activity category on an item
@@ -47,11 +60,22 @@ SKIP_APPS = {
     "com.apple.keychainaccess", "com.apple.Passwords", "com.lastpass.LastPass",
     "com.dashlane.dashlanephonefinal", "org.keepassxc.keepassxc", "com.nordpass.macos.NordPass",
 }
+BUILTIN_SKIP_APPS = frozenset(SKIP_APPS)          # always skipped; the Privacy settings add the user's own on top
+
+
+def set_skip_apps(extra=()):
+    """SKIP_APPS = the built-in apps plus the ones you chose to never remember. Changed in place, so
+    everything holding the set (the event trail's gate) sees it at once."""
+    SKIP_APPS.clear()
+    SKIP_APPS.update(BUILTIN_SKIP_APPS)
+    SKIP_APPS.update(i for i in extra if isinstance(i, str) and i)
+
+
 SKIP_SITES = re.compile(
     r"bank|netbanking|onlinesbi|hdfc|icici|axisbank|kotak|paypal\.|wise\.com|stripe\.com"
     r"|razorpay\.com/(app|dashboard)|paytm|phonepe|zerodha|groww|coinbase|binance"
     r"|accounts\.google\.com|appleid\.apple\.com|/login|/signin|password", re.I)
-SKIP_TITLES = re.compile(r"private browsing|incognito|inprivate|password", re.I)
+SKIP_TITLES = re.compile(r"private browsing|incognito|inprivate|password|\bprivate (?:tab|window)\b|\(private\)", re.I)
 LOCK_APPS = {"loginwindow", "ScreenSaverEngine"}   # frontmost while locked / screensaver
 
 
@@ -75,8 +99,20 @@ class Paths:
         return os.path.join(self.memory_dir, "semantic.sqlite3")
 
     @property
+    def trail_dir(self):          # the event trail: one JSONL file per day
+        return os.path.join(self.data_dir, "trail")
+
+    @property
+    def projects_file(self):      # the project tree (projects.py); small, so it is read fresh each time
+        return os.path.join(self.memory_dir, "projects.json")
+
+    @property
     def sessions_dir(self):
         return os.path.join(self.memory_dir, "sessions")
+
+    @property
+    def onboarding_file(self):    # where first-run setup stands (step, answers); beside the pid file's data
+        return os.path.join(self.data_dir, "onboarding.json")
 
     @property
     def control_file(self):

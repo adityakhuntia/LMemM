@@ -84,6 +84,7 @@ PROJECT_EXPLAINER = ("A project keeps related things and your notes together, so
 MARKS = {"paused": ("pause.fill", False, "Paused"),
          "screen_off": ("eye.slash", True, "Screen access is off"),
          "private": ("lock", False, "Private window"),
+         "unwatched": ("circle.slash", False, "Not watching this app"),
          "mic_off": ("mic.slash", True, "Mic is off"),
          "fresh": ("square.and.pencil", False, "No notes yet"),
          "caught": ("checkmark", False, "All caught up"),
@@ -171,9 +172,31 @@ class _Tap(_Flipped):
             NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(self.bounds(), 10, 10).fill()
 
     def mouseDown_(self, event):
+        if self.window() is not None:
+            self.window().makeFirstResponder_(None)             # a text box lets go, so the arrow keys work on the page
         self.callback()
 
     def acceptsFirstMouse_(self, event):
+        return True
+
+    # VoiceOver: a tap area reads as a button named by the words drawn inside it.
+    def isAccessibilityElement(self):
+        return True
+
+    def accessibilityRole(self):
+        return "AXButton"
+
+    def accessibilityLabel(self):
+        words = []
+        for sub in self.subviews():
+            try:
+                words.append(str(sub.stringValue()))
+            except Exception:
+                pass
+        return getattr(self, "label", None) or ", ".join(w for w in words if w) or "button"
+
+    def accessibilityPerformPress(self):
+        self.callback()
         return True
 
 
@@ -194,6 +217,10 @@ class _Fields(NSObject):
             return True
         if selector == "cancelOperation:":
             self.cancel()
+            return True
+        arrow = getattr(self, "arrow", None)                  # Up/Down in a field hand the keyboard to the list
+        if arrow and selector in ("moveDown:", "moveUp:"):
+            arrow(125 if selector == "moveDown:" else 126)
             return True
         return False
 
@@ -714,7 +741,7 @@ class Widget:
             y = self._done(body, y)
         elif self.mode == "finished":
             y = self._finished(body, y)
-        elif self.mode == "here" and self._mark() in ("screen_off", "private"):
+        elif self.mode == "here" and self._mark() in ("screen_off", "private", "unwatched"):
             y = self._problem(body, y)
         elif view.get("empty"):
             y = self._empty(body, y)
@@ -843,6 +870,10 @@ class Widget:
         if not self.card_open:
             self.toggle_card()
 
+    def show_unwatched(self):
+        """⌃⌥N in an app you did not choose: open the card that says so (rules.py R11)."""
+        self.show_paused()
+
     def _done_row(self, body, y, count):
         """"Done  3  ›": this thing's finished notes."""
         tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(6, y + 2, CARD_W - 12, 28), lambda: self._go("finished"))
@@ -968,6 +999,9 @@ class Widget:
                             "LMemM can’t see what you’re working on.")
             self._button(body, (8, y, CARD_W - 16, 33), "Open System Settings", self._open_settings, primary=True)
             return y + 41
+        if self._mark() == "unwatched":
+            return self._state(body, y, "circle.slash", "soft", "Not watching this app",
+                               "You chose where LMemM looks, and this isn’t one of those apps.")
         return self._state(body, y, "lock", "soft", "Private window", "Nothing is remembered from here.")
 
     def _open_settings(self):

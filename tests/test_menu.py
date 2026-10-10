@@ -136,7 +136,7 @@ class MenuFlowTests(unittest.TestCase):
 
     def test_start_is_reachable_from_the_menu_without_actually_starting_capture(self):
         calls = []
-        with patch.object(tracker, "Tracker", lambda **kw: calls.append(kw) or type("T", (), {"run": lambda self: None})()):
+        with patch.object(lmemm, "first_run_setup", return_value=True), patch.object(tracker, "Tracker", lambda **kw: calls.append(kw) or type("T", (), {"run": lambda self: None})()):
             run(["1", "--every 10 --no-widget", "0"])
         self.assertEqual(calls[0]["every"], 10)
         self.assertFalse(calls[0]["show_widget"])

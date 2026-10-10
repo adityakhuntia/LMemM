@@ -455,6 +455,36 @@ class EngineTests(unittest.TestCase):
             self.e.step({"place"}, i)
         self.assertEqual(len(self.store.read(kinds={"gap"})), 1)
 
+    def test_writing_is_off_by_default_and_opt_in_records_only_what_is_new(self):
+        box = Node("AXTextArea", Value="Hi Maria. The invoice is attached.", PlaceholderValue="Type a message to Mum")
+        win = Node("AXWindow", [box], Title="WhatsApp")
+        self.assertEqual(collect(win, focus=box).focus_text, "")
+        old = config.TRAIL_WRITING
+        config.TRAIL_WRITING = True
+        try:
+            self.assertEqual(collect(win, focus=box).focus_text, "Hi Maria. The invoice is attached.")
+            self.reader.full.focus_text = "Hi Maria. The invoice is attached."
+            self.e.step({"place", "text"}, 0)
+            self.reader.full.focus_text = "Hi Maria. The invoice is attached. Please pay by Friday. password: abc"
+            self.e.step({"place", "text"}, 3)
+            wrote = self.store.read(kinds={"write"})
+            self.assertEqual(wrote[0]["added"], ["Hi Maria.", "The invoice is attached."])
+            self.assertEqual(wrote[1]["added"], ["Please pay by Friday."])     # only the new sentence; the secret is dropped
+            self.assertNotIn("password", str(wrote))
+        finally:
+            config.TRAIL_WRITING = old
+
+    def test_a_password_box_or_a_secret_label_is_never_read_even_when_writing_is_on(self):
+        old = config.TRAIL_WRITING
+        config.TRAIL_WRITING = True
+        try:
+            pw = Node("AXTextField", Subrole="AXSecureTextField", Value="hunter2")
+            self.assertEqual(collect(Node("AXWindow", [pw]), focus=pw).focus_text, "")
+            pin = Node("AXTextField", Value="1234", PlaceholderValue="Enter your PIN")
+            self.assertEqual(collect(Node("AXWindow", [pin]), focus=pin).focus_text, "")
+        finally:
+            config.TRAIL_WRITING = old
+
     def test_secure_focus_logs_nothing_from_the_page(self):
         self.reader.light = snap(title="Sign in", focus_secure=True)
         self.e.step({"place", "text"}, 0)

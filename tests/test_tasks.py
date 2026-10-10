@@ -91,11 +91,99 @@ class TaskTests(TmpPaths):
         self.assertEqual(tasks.parse("not json", 3), {"tasks": [], "other": []})
         self.assertEqual(tasks.parse('{"tasks": "x"}', 3), {"tasks": [], "other": []})
 
-    def test_off_limits_apps_never_enter_the_story(self):
+    def test_mail_and_messages_are_read_for_now_unless_switched_off(self):
         w = world()
         w["chatgpt"]["app"] = "WhatsApp"
-        _p, ids = tasks.payload_for(doc(), w)
+        _p, ids = tasks.payload_for(doc(), w, events=[])
+        self.assertIn("chatgpt", ids)
+        old = config.TASK_OFF_APPS
+        config.TASK_OFF_APPS = {"WhatsApp"}
+        try:
+            _p, ids = tasks.payload_for(doc(), w, events=[])
+        finally:
+            config.TASK_OFF_APPS = old
         self.assertNotIn("chatgpt", ids)
+
+    def test_lmemms_own_terminal_text_stays_out(self):
+        w = world()
+        w["script"]["content"]["excerpts"] = [excerpt(
+            "tasks: the garbled-text word-list filter was added to lmemm.py today, tick p95 is down")]
+        payload, _ = tasks.payload_for(doc(), w, events=[])
+        self.assertNotIn("garbled", payload)
+        w["sheet"].update(app="Terminal", title="python3 lmemm.py tasks")
+        _p, ids = tasks.payload_for(doc(), w, events=[])
+        self.assertNotIn("sheet", ids)
+
+    def test_addresses_in_screen_text_are_kept_but_secrets_are_not(self):
+        w = world()
+        w["chatgpt"]["content"]["excerpts"] = [excerpt(
+            "Please send the proposal to maria.lopez@example.com before Friday evening"),
+            excerpt("the api key sk-abcdefghijklmnopqrstuvwxyz123456 should go in the vault today")]
+        payload, _ = tasks.payload_for(doc(), w, events=[])
+        self.assertIn("maria.lopez@example.com", payload)
+        self.assertNotIn("sk-abcdef", payload)
+
+
+def ev(kind, t, **kw):
+    return {"t": t, "kind": kind, **kw}
+
+
+class WritingTests(TmpPaths):
+    def at(self, hms):
+        """A UTC timestamp for that local clock time on the session's day."""
+        from datetime import datetime
+        return datetime.strptime("20261010 " + hms, "%Y%m%d %H:%M:%S").astimezone().astimezone(
+            __import__("datetime").timezone.utc).isoformat(timespec="milliseconds")
+
+    def events(self):
+        return [ev("write", self.at("16:05:00"), added=["Hi team, the reminder should go out after seven days."], app="ChatGPT"),
+                ev("write", self.at("16:06:00"), added=["Hi team, the reminder should go out after seven days.",
+                                                         "password: hunter2 is the login"], app="ChatGPT"),
+                ev("typing", self.at("16:07:00"), n=240), ev("typing", self.at("16:08:00"), n=60),
+                ev("write", self.at("16:25:00"), added=["function sendDrafts() sets the trigger to eight o'clock."], app="Chrome"),
+                ev("write", self.at("12:00:00"), added=["written outside the session"], app="Notes")]
+
+    def test_writing_lands_on_the_thing_open_at_that_moment_and_is_deduplicated(self):
+        proof = tasks.evidence(doc(), world(), self.events())
+        self.assertEqual(proof["chatgpt"]["wrote"], ["Hi team, the reminder should go out after seven days."])
+        self.assertEqual(proof["chatgpt"]["keys"], 300)
+        self.assertEqual(proof["script"]["wrote"], ["function sendDrafts() sets the trigger to eight o'clock."])
+        self.assertNotIn("outside the session", json.dumps(proof))
+        self.assertNotIn("hunter2", json.dumps(proof))
+
+    def test_the_payload_says_what_was_written_and_how_much_typing(self):
+        payload, _ = tasks.payload_for(doc(), world(), events=self.events())
+        self.assertIn("wrote:", payload)
+        self.assertIn("the reminder should go out after seven days", payload)
+        self.assertIn("~300 keystrokes", payload)
+
+    def test_the_payload_shrinks_to_fit_the_ceiling(self):
+        big = [ev("write", self.at("16:05:00"), added=[f"Sentence number {n} about the follow up system and its triggers."
+                                                       for n in range(60)], app="ChatGPT")]
+        full, _ = tasks.payload_for(doc(), world(), events=big, ceiling=10 ** 6)
+        small, _ = tasks.payload_for(doc(), world(), events=big, ceiling=300)
+        self.assertLess(len(small), len(full))
+        self.assertIn("THING 1", small)          # the story is never dropped, only the evidence
+
+    def test_writing_is_capped_per_thing(self):
+        row = {"wrote": [f"Line {n} " + "x" * 100 for n in range(30)]}
+        got = tasks.wrote_lines(row, tasks.WROTE_CHARS)
+        self.assertLessEqual(sum(len(w) for w in got), tasks.WROTE_CHARS)
+        self.assertTrue(got[-1].startswith("Line 29"))        # the newest is kept
+
+    def test_an_unchanged_stretch_costs_nothing_the_second_time(self):
+        ask = FakeAsk(REPLY)
+        first = tasks.run(doc(), world(), ask, events=[])
+        second = tasks.run(doc(), world(), ask, events=[])
+        self.assertEqual(len(ask.calls), 1)
+        self.assertTrue(second.get("cached"))
+        self.assertEqual(len(second["tasks"]), len(first["tasks"]))
+        tasks.run(doc(), world(), ask, events=[], force=True)
+        self.assertEqual(len(ask.calls), 2)
+
+    def test_the_estimate_is_reported(self):
+        result = tasks.run(doc(), world(), FakeAsk(REPLY), dry_run=True, events=[])
+        self.assertGreater(result["estimate"], labels.OVERHEAD_TOKENS)
 
 
 if __name__ == "__main__":

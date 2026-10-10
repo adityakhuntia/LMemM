@@ -154,8 +154,13 @@ def cmd_start(args):
     parser.add_argument("--no-trail", action="store_true", help="don't run the accessibility event trail")
     parser.add_argument("--labels", action="store_true",
                         help="label settled things in the background with your Claude (limited to %d tokens a day)" % config.LABEL_DAILY_TOKENS)
+    parser.add_argument("--writing", action="store_true",
+                        help="OPT-IN: also read what you write in any text box (documents, chats, notes) so `tasks` can say what you did. "
+                             "Passwords and secure fields are never read; stays on this Mac; deleted after 48 h")
     parser.add_argument("--no-setup", action="store_true", help="skip first-run setup (it asks for permissions itself)")
     opts = parser.parse_args(args)
+    if opts.writing:
+        config.TRAIL_WRITING = True
     if opts.every <= 0 or not 0 < opts.input_retention_hours <= 24:
         parser.error("positive capture interval and input retention of at most 24 hours required")
     if opts.input_events != bool(opts.input_app) or not set(opts.input_app) <= SUPPORTED_INPUT_APPS:
@@ -428,6 +433,7 @@ def cmd_tasks(args):
     parser.add_argument("--session", help="a session id (default: the latest)")
     parser.add_argument("--dry-run", action="store_true", help="print what would be sent; send nothing")
     parser.add_argument("--show", action="store_true", help="print the tasks found by earlier runs")
+    parser.add_argument("--force", action="store_true", help="ask again even if nothing changed since the last run")
     opts = parser.parse_args(args)
     try:
         items = store.load_items()
@@ -468,15 +474,20 @@ def cmd_tasks(args):
     if not opts.dry_run:
         print("asking Claude (this can take up to a minute)...", flush=True)
     try:
-        result = tasks.run(doc, items, provider, governor, minutes=opts.minutes, dry_run=opts.dry_run)
+        result = tasks.run(doc, items, provider, governor, minutes=opts.minutes, dry_run=opts.dry_run, force=opts.force)
     except labels.ProviderError as error:
         sys.exit(str(error))
     if opts.dry_run:
         print(result["payload"] or f"nothing to send: {result['stopped']}")
+        if result["payload"]:
+            print(f"\n(about {result['estimate']} tokens for this call, {config.LABEL_DAILY_TOKENS - governor.used} left today)")
         return
     if result["stopped"]:
         sys.exit("Stopped: " + result["stopped"])
     show(result, opts.minutes)
+    if result.get("cached"):
+        print("(nothing new since the last run: no call made, 0 tokens. Use --force to ask again.)")
+        return
     print(f"({result['things']} things read, {result['tokens']} tokens; today {governor.used} of {governor.cap}."
           f" `python3 lmemm.py label --last` shows the exact prompt and reply.)")
 

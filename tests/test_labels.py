@@ -133,7 +133,47 @@ class BlockTests(unittest.TestCase):
         self.assertNotIn("old content", block)
 
 
+class NoiseTests(unittest.TestCase):
+    def usable(self, *lines):
+        return labels._usable_lines(list(lines))
+
+    def test_the_real_text_survives_and_the_noise_goes(self):
+        out = self.usable("Department Allocation Spreadsheet", "File Edit View Insert Format Data", "Pricing tiers are Starter and Team",
+                          "20261009-143420.jpg", "() 20261009-143420.json", "D8kWbYW)tAkx*tiM Sp_ here",
+                          "NDcw rthainthL4prolect LArtwOtW(*).", "399 KB • Done")
+        self.assertEqual(out, ["Department Allocation Spreadsheet", "Pricing tiers are Starter and Team"])
+
+    def test_addresses_prompts_and_phone_numbers_are_dropped(self):
+        out = self.usable("(base) aditya@Unknown_92:9c LMemM python3 lmemm.py start now", "write to dtu@180dc.org about the plan",
+                          "call me on +91 98765 43210 about the plan", "the plan for Q3 pricing is ready")
+        self.assertEqual(out, ["the plan for Q3 pricing is ready"])
+
+    def test_a_line_inside_a_longer_line_and_repeats_are_dropped(self):
+        out = self.usable("Cheapest fare is 18400 via Doha", "Cheapest fare is 18400 via Doha, two stops", "cheapest fare is 18400 via doha")
+        self.assertEqual(out, ["Cheapest fare is 18400 via Doha, two stops"])
+
+    def test_lmemms_own_card_text_is_dropped(self):
+        self.assertEqual(self.usable("In the chat with ADMIN TNP 2027", "All caught up on everything", "Moved \"Decks\" into \"Juniors\" Undo",
+                                     "Quarterly planning notes for the team"), ["Quarterly planning notes for the team"])
+
+    def test_one_short_line_does_not_hide_the_ones_after_it(self):
+        item = thing(excerpts=[excerpt("ok\nthe second line is long enough to keep\nanother perfectly useful line here")])
+        block = labels.thing_block(1, item)
+        self.assertIn("second line", block)
+        self.assertIn("another perfectly", block)
+
+    def test_page_ids_are_not_sent(self):
+        item = thing(excerpts=[excerpt("some real content for the page", url="https://chatgpt.com/c/6ac93113-4f28-83ec-93fe-df65497e1f93")])
+        self.assertIn("page: chatgpt.com/c/<id>", labels.thing_block(1, item))
+        self.assertNotIn("6ac93113", labels.thing_block(1, item))
+
+
 class DueTests(unittest.TestCase):
+    def test_a_thing_with_only_menu_chrome_is_not_sent(self):
+        items = {"a": thing(excerpts=[excerpt("File Edit View Insert\nSaved to Drive")])}
+        self.assertEqual(labels.due(items, {}, NOW), [])
+
+
     def test_settled_things_with_text_are_due(self):
         items = {"a": thing(excerpts=[excerpt("something real to label")])}
         self.assertEqual([i["id"] for i in labels.due(items, {}, NOW)], ["a"])

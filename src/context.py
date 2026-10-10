@@ -25,15 +25,9 @@ from pathlib import Path
 
 import config
 import labels as labels_mod
+from memory_content import CHROME_LINE   # menu bars and other UI chrome that slips past the content filter
 import notes as notes_mod
 import store
-
-# menu bars and other UI chrome that slips past memory_content's content filter
-CHROME_LINE = re.compile(
-    r"^(?:file\s+edit\s+view|edit\s+view\s+insert|view\s+insert\s+format|"
-    r"insert\s+format\s+tools)\b.*$|"
-    r"^(?:file|edit|view|insert|format|tools|window|help|extensions|share|comment)"
-    r"(?:\s+(?:file|edit|view|insert|format|tools|window|help|extensions|share|comment))+$", re.I)
 
 
 def _clean(text):

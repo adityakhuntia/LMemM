@@ -31,6 +31,7 @@ from urllib.parse import urlsplit
 import config
 import notes as notes_mod
 import store
+from memory_content import CHROME_LINE
 from trail_engine import redact
 
 INSTRUCTION = (
@@ -112,12 +113,53 @@ def _page(item):
         url = (excerpt.get("source") or {}).get("url")
         if url:
             parts = urlsplit(url if "//" in url else "//" + url)
-            return (parts.netloc + parts.path.rstrip("/"))[:120] or None
+            path = LONG_ID.sub("/<id>", parts.path.rstrip("/"))
+            return (parts.netloc + path)[:120] or None
     return None
 
 
+EMAIL_OR_PROMPT = re.compile(r"\S+@\S+")                                   # addresses, and terminal prompts (user@host)
+PHONE = re.compile(r"(?:\+\d{1,3}[\s-]?)?\(?\d{3,5}\)?[\s-]?\d{3,5}[\s-]?\d{3,5}")
+FILENAME = re.compile(r"^\W*(?:\w{1,3}\W+)?[\w.\-]+\.(?:json|jpe?g|png|py|md|txt|csv|pdf|xlsx?)\b\W*\w{0,2}\W*$", re.I)
+GARBLED_WORD = re.compile(r"[A-Za-z][\d*•(){}\[\]$&%#@~^|\\/<>=+][A-Za-z]")     # a digit or symbol sandwiched in a word: bad OCR
+SELF_UI = re.compile(r"^(?:in the chat with|all caught up|no notes yet|things you work on|nothing here yet|\d+ things?\b"
+                     r"|moved \"|added to |saved to drive|all changes saved|.*\bpending edits?\b)", re.I)       # LMemM's own pill/card text, and status lines of common apps
+LONG_ID = re.compile(r"/[A-Za-z0-9_\-]{20,}")
+
+
+def private_line(line):
+    """True for a line that must never be sent: secrets, addresses, terminal prompts, phone numbers."""
+    return bool(line) and (bool(EMAIL_OR_PROMPT.search(line)) or bool(PHONE.search(line)) or not redact([line]))
+
+
+def noisy_line(line):
+    """True for a line that would only cost tokens: too short, menu chrome, a file name, a log line,
+    or text the OCR garbled."""
+    words = line.split()
+    if len(line) < 12 or len(words) < 3 or CHROME_LINE.match(line) or FILENAME.match(line) or SELF_UI.match(line):
+        return True
+    if sum(c.isalpha() for c in line) < 0.7 * len(line.replace(" ", "")):
+        return True
+    return sum(1 for w in words if GARBLED_WORD.search(w)) >= max(1, len(words) // 4)
+
+
 def _clean_lines(lines):
-    return [l for l in redact([re.sub(r"\s+", " ", x).strip() for x in lines]) if l]
+    """Private lines out, whitespace squashed. (The text near the pointer goes through just this.)"""
+    squashed = [re.sub(r"\s+", " ", x).strip() for x in lines]
+    return [l for l in squashed if l and not private_line(l)]
+
+
+def _usable_lines(lines):
+    """_clean_lines, then noise out, then lines already contained in a longer one out."""
+    kept = [l for l in _clean_lines(lines) if not noisy_line(l)]
+    keys = [re.sub(r"[^a-z0-9]", "", l.lower()) for l in kept]
+    out, seen = [], set()
+    for line, key in zip(kept, keys):
+        if key in seen or any(key != other and key in other for other in keys):
+            continue
+        seen.add(key)
+        out.append(line)
+    return out
 
 
 def _defang(text):
@@ -133,7 +175,7 @@ def new_text(item, label):
         if excerpt["id"] in seen:
             continue
         out.extend(excerpt["text"].split("\n"))
-    unique = list(dict.fromkeys(_clean_lines(out)))
+    unique = _usable_lines(out)
     return unique, ids
 
 
@@ -178,7 +220,7 @@ def thing_block(number, item, label=None):
         if budget - len(line) < 0:
             line = line[:max(budget, 0)]
         if len(line) < 12:
-            break
+            continue
         kept.append(f'  "{line}"')
         budget -= len(line) + 6
     if kept:
@@ -214,7 +256,7 @@ def due(items, labels, now=None):
     now = now or datetime.now()
     out = []
     for item in items.values():
-        if off_limits(item) or not (item.get("content") or open_notes(item)):
+        if off_limits(item) or not (new_text(item, None)[0] or open_notes(item)):
             continue
         try:
             idle = (now - datetime.fromisoformat(item["last_seen"])).total_seconds()

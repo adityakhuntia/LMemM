@@ -1721,6 +1721,10 @@ class Tracker:
         say(f"      {c['captures']} captures: {c['skipped_ocr_unchanged']} unchanged (no OCR), "
             f"{c['ocr']['fast']} fast OCR, {c['ocr']['accurate']} accurate OCR; "
             f"avg capture {ms['capture']} ms, fast OCR {ms['ocr_fast']} ms, accurate OCR {ms['ocr_accurate']} ms")
+        loop, lookups = c["main_loop_ms"], c["browser_lookups"]
+        say(f"      main loop: tick p95 {loop['tick_p95']} ms (max {loop['tick_max']}), capture on main thread p95 "
+            f"{loop['capture_p95']} ms (max {loop['capture_max']}); browser lookups {lookups['asked']} asked, {lookups['saved']} saved")
+        say(f"      labels: {c['labels'] if isinstance(c['labels'], str) else c['labels']['last']}")
         say(f"\nsaved to {os.path.relpath(config.paths().items_file)}")
 
 

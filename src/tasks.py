@@ -32,14 +32,16 @@ INSTRUCTION = (
     "what they are making or deciding and, only if the evidence shows it, what for), stage (exploring, planning, "
     "building, testing, reviewing, waiting or other), things (the THING numbers), open (the next step or open "
     "question if the evidence shows one, else null), project_guess (a name that appears in the titles, else null). "
-    "A thing belongs to at most one task. Glances at unrelated things (social media, news, system dialogs) go in "
-    "other. Never guess beyond the evidence; if a task is unclear, say so in its goal. "
+    "A thing belongs to at most one task. A thing marked 'brief' (a short visit with nothing written there) goes in "
+    "other unless its title or text names the same subject as a task. Glances at unrelated things (social media, news, "
+    "system dialogs) go in other. Never guess beyond the evidence; if a task is unclear, say so in its goal. "
     'Reply with JSON only, no prose: {"tasks":[{"title":"","goal":"","stage":"","things":[1,2],"open":null,'
     '"project_guess":null}],"other":[3]}.')
 
 MAX_PAYLOAD_TOKENS = 5000  # hard ceiling on what one call may carry (the CLI adds ~2.5k of its own on top)
 WROTE_CHARS = 700          # per thing: the newest of what the person wrote there
 WRITE_BUDGET = 5000        # characters of writing in a whole payload
+BRIEF_SECONDS = 30         # shorter than this, with nothing written and no note: marked 'brief' for Claude
 MIN_SECONDS = 8            # a thing glanced at for less than this is left out of the story
 MAX_THINGS = 40
 LINES_PER_THING = 3
@@ -237,7 +239,8 @@ def block(number, item, row, proof=None, lines=LINES_PER_THING, wrote_chars=WROT
         lines_out.append(f"page: {page}")
     lines_out.append(f"when: {row['first'][:5]}-{row['last'][:5]}, {_minutes(row['seconds'])} over {row['visits']} visit(s)"
                      + (f", mostly {row['mostly']}" if row.get("mostly") else "")
-                     + (f", ~{proof['keys']} keystrokes" if proof and proof.get("keys") >= 20 else ""))
+                     + (f", ~{proof['keys']} keystrokes" if proof and proof.get("keys") >= 20 else "")
+                     + (", brief" if row["seconds"] < BRIEF_SECONDS and not (proof and proof.get("wrote")) and not open_notes_of(item) else ""))
     for note in open_notes_of(item)[:2]:
         lines_out.append(f'open note: "{labels._defang(note)}"')
     wrote = wrote_lines(proof, wrote_chars) if wrote_chars else []

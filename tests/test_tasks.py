@@ -56,6 +56,15 @@ class TaskTests(TmpPaths):
         self.assertIn('open note: "ask how triggers run"', payload)
         self.assertNotIn("Instagram", payload)             # 5 s: a glance, left out
 
+    def test_a_short_visit_with_nothing_written_is_marked_brief_but_a_written_one_is_not(self):
+        d = doc()
+        d["timeline"].append({"from": "17:06:00", "to": "17:06:12", "seconds": 12, "item": "sheet", "activity": {}})
+        d["timeline"][2]["seconds"] = 0
+        w = world()
+        payload, _ = tasks.payload_for(d, w, events=[])
+        self.assertIn(", brief", payload)
+        self.assertIn("'brief'", tasks.INSTRUCTION)
+
     def test_nothing_to_ask_with_fewer_than_two_things(self):
         d = {"session": "s", "timeline": doc()["timeline"][:1]}
         self.assertEqual(tasks.payload_for(d, world()), (None, []))

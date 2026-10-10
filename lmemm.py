@@ -338,6 +338,8 @@ def cmd_label(args):
     parser = argparse.ArgumentParser(prog="lmemm.py label")
     parser.add_argument("--dry-run", action="store_true", help="show what would be sent and its token estimate; send nothing")
     parser.add_argument("--status", action="store_true", help="today's tokens, what is waiting, whether `claude` is found")
+    parser.add_argument("--last", nargs="?", const=1, type=int, metavar="N",
+                        help="print the last N calls to Claude word for word: the instruction, the prompt, the reply, the tokens")
     parser.add_argument("--show", action="store_true", help="list the labels Claude wrote, one readable line per thing")
     parser.add_argument("--ping", action="store_true", help="one tiny call (about 2.5k tokens) to check Claude answers, and how fast")
     parser.add_argument("--limit", type=int, help="label at most this many things")
@@ -350,6 +352,20 @@ def cmd_label(args):
     known = len(labels.load_words())
     print(f"word list for the garbled-text filter: {f'{known} words' if known else 'NOT found (/usr/share/dict/words); garbled OCR lines are only partly filtered'}",
           file=sys.stderr)
+    if opts.last:
+        log = labels.read_log()
+        if not log:
+            sys.exit("No calls recorded yet (they are recorded from now on). Run `python3 lmemm.py label` first.")
+        for call in log[-opts.last:]:
+            usage = call.get("usage") or {}
+            print(f"==== {call['at']}  model {call['model']}  tokens in {usage.get('input_tokens', 0)}"
+                  f" (+{usage.get('cache_creation_input_tokens', 0)} cached write, {usage.get('cache_read_input_tokens', 0)} cached read)"
+                  f", out {usage.get('output_tokens', 0)} ====")
+            print("---- instruction (system prompt) ----\n" + call["system_prompt"])
+            print("---- prompt (everything else Claude was sent) ----\n" + call["prompt"])
+            print("---- Claude's reply ----\n" + call["reply"] + "\n")
+        print(f"(the last {labels.LOG_KEEP} calls are kept in {os.path.relpath(labels.log_path())}; delete that file to erase them)")
+        return
     if opts.show:
         found = labels.load_labels()
         rows = [(i, found[i["id"]]) for i in items.values() if i["id"] in found]

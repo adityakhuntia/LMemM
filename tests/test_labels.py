@@ -442,6 +442,24 @@ class ContextTests(TmpPaths):
 
 
 
+class LogTests(TmpPaths):
+    def test_calls_are_logged_word_for_word_and_trimmed(self):
+        for n in range(labels.LOG_KEEP + 3):
+            labels.log_exchange({"at": str(n), "prompt": f"p{n}", "reply": "r", "system_prompt": "s", "model": "m", "usage": {}})
+        log = labels.read_log()
+        self.assertEqual(len(log), labels.LOG_KEEP)
+        self.assertEqual(log[-1]["prompt"], f"p{labels.LOG_KEEP + 2}")
+
+    def test_run_records_what_the_provider_exchanged(self):
+        class Recording(FakeProvider):
+            def label(self, payload, wanted):
+                self.last_exchange = {"at": "t", "model": "m", "system_prompt": "s", "prompt": payload, "reply": "{}", "usage": {}}
+                return super().label(payload, wanted)
+        items = {"a": thing("a", seconds=300, excerpts=[excerpt("A real sentence about the pricing plan that is long enough")])}
+        labels.run(items, Recording(), labels.Governor(cap=50000), now=datetime(2026, 10, 7))
+        self.assertIn("THING 1", labels.read_log()[-1]["prompt"])
+
+
 class GroundTests(TmpPaths):
     def test_unsupported_names_addresses_and_questions_are_dropped(self):
         item = thing("g", title="Auto Send - Project Editor - Apps Script", excerpts=[excerpt("function sendDrafts() sends the first email")])

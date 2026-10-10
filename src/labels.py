@@ -517,6 +517,9 @@ class ClaudeCli:
         if doc.get("is_error"):
             said = str(doc.get("result"))
             raise ProviderError(LOGIN_HELP if LOGIN_WORDS.search(said) else "claude reported an error: " + said[:200])
+        self.last_exchange = {"at": datetime.now().isoformat(timespec="seconds"), "model": self.model,
+                              "system_prompt": INSTRUCTION, "prompt": payload, "reply": str(doc.get("result")),
+                              "usage": doc.get("usage") or {}}
         return parse_labels(doc.get("result"), wanted_ids), doc.get("usage") or {}
 
 
@@ -568,6 +571,41 @@ def _project_names():
         return []
 
 
+LOG_KEEP = 20          # exchanges kept on disk: each holds the text that was sent
+
+
+def log_path():
+    return os.path.join(config.paths().memory_dir, "labels_log.jsonl")
+
+
+def log_exchange(exchange):
+    """Append one call (exactly what was sent and what came back); only the newest LOG_KEEP stay."""
+    if not exchange:
+        return
+    lines = read_log_lines()[-(LOG_KEEP - 1):] + [json.dumps(exchange, ensure_ascii=False)]
+    os.makedirs(os.path.dirname(log_path()), exist_ok=True)
+    with open(log_path(), "w", encoding="utf-8") as fh:
+        fh.write("\n".join(lines) + "\n")
+
+
+def read_log_lines():
+    try:
+        with open(log_path(), encoding="utf-8") as fh:
+            return [l for l in fh.read().split("\n") if l.strip()]
+    except OSError:
+        return []
+
+
+def read_log():
+    out = []
+    for line in read_log_lines():
+        try:
+            out.append(json.loads(line))
+        except ValueError:
+            continue
+    return out
+
+
 def plan_batches(candidates, labels, governor):
     """Split candidates into batches that fit the cap. Returns [(items, payload, est_tokens)]."""
     mode = governor.mode()
@@ -615,6 +653,7 @@ def run(items, provider, governor=None, limit=None, dry_run=False, now=None):
         except ProviderError as error:
             result["stopped"] = str(error)
             break
+        log_exchange(getattr(provider, "last_exchange", None))
         result["tokens"] += governor.record(usage)
         result["calls"] += 1
         result["sent"] += len(chunk)

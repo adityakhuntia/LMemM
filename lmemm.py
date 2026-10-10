@@ -338,6 +338,7 @@ def cmd_label(args):
     parser = argparse.ArgumentParser(prog="lmemm.py label")
     parser.add_argument("--dry-run", action="store_true", help="show what would be sent and its token estimate; send nothing")
     parser.add_argument("--status", action="store_true", help="today's tokens, what is waiting, whether `claude` is found")
+    parser.add_argument("--show", action="store_true", help="list the labels Claude wrote, one readable line per thing")
     parser.add_argument("--ping", action="store_true", help="one tiny call (about 2.5k tokens) to check Claude answers, and how fast")
     parser.add_argument("--limit", type=int, help="label at most this many things")
     opts = parser.parse_args(args)
@@ -349,6 +350,20 @@ def cmd_label(args):
     known = len(labels.load_words())
     print(f"word list for the garbled-text filter: {f'{known} words' if known else 'NOT found (/usr/share/dict/words); garbled OCR lines are only partly filtered'}",
           file=sys.stderr)
+    if opts.show:
+        found = labels.load_labels()
+        rows = [(i, found[i["id"]]) for i in items.values() if i["id"] in found]
+        if not rows:
+            sys.exit("No labels yet. Run `python3 lmemm.py label` or start with --labels.")
+        for item, label in sorted(rows, key=lambda r: r[1].get("at", ""), reverse=True):
+            print(f"{item['app'][:16]:16} {(item.get('title') or item.get('doing') or '')[:50]}")
+            print(f"    {label.get('summary')}")
+            extra = [f"kind: {label.get('kind')}" if label.get("kind") else "",
+                     f"project: {label['project_guess']}" if label.get("project_guess") else "",
+                     f"entities: {', '.join(label['entities'])}" if label.get("entities") else "",
+                     f"question: {label['open_question']}" if label.get("open_question") else ""]
+            print("    " + "  |  ".join(x for x in extra if x) + f"  |  {label.get('at', '')[11:16]}")
+        return
     if opts.ping:
         import time
         if not provider.available():

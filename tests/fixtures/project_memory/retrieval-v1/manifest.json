@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "description": "Synthetic, hand-labelled project memory retrieval suite. Freeze before model selection; do not tune on held-out queries.",
+  "corpus_sha256": "4d68b68b0e1935710b87ea62d787e7d71cc13fc0d6924007686b749b36ea0c4c",
+  "development_sha256": "3d5dec92960b8e8a23ded462376c99858273da7f0fbf056095168169d209d52e",
+  "held_out_sha256": "cfa85fbf43a83a2fad9401788b083af81d6c1c5b24803693410c955e588f27d2",
+  "projects": {
+    "alpha": "/synthetic/alpha/repo",
+    "beta": "/synthetic/beta/repo"
+  },
+  "files": {
+    "corpus": "corpus.json",
+    "development": "development.json",
+    "held_out": "held-out.json"
+  }
+}

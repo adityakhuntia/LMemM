@@ -45,7 +45,7 @@ class ForgetTests(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(self.root, "onboarding.json")))
 
     def test_it_refuses_directories_that_are_not_lmemms(self):
-        for bad in ("/", os.path.expanduser("~"), os.path.join(self.tmp.name, "nope"), self.outside, "/tmp"):
+        for bad in ("/", os.path.expanduser("~"), os.path.join(self.tmp.name, "nope"), self.outside, "/tmp", os.path.realpath("/tmp"), tempfile.gettempdir()):
             with self.assertRaises(ValueError, msg=bad):
                 forget.delete_all(bad)
         self.assertTrue(os.path.exists(self.outside))

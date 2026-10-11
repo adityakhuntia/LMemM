@@ -16,6 +16,8 @@ resolver thread, and turns resolved screens into memory and a timeline.
 Run it through lmemm.py:   python3 lmemm.py          (Ctrl-C to stop)
 """
 
+import copy
+import readable
 import hashlib
 import json
 import os
@@ -40,6 +42,7 @@ import config
 import dictation
 import identity
 import input_monitor as input_hooks
+import capture_plan
 import labels
 import macos
 import menu_model
@@ -84,7 +87,7 @@ def line(t, app, msg):
 
 
 class Tracker:
-    def __init__(self, every=config.EVERY, input_apps=None, input_retention_hours=24, show_widget=True, trail=True):
+    def __init__(self, every=config.EVERY, input_apps=None, input_retention_hours=24, show_widget=True, trail=True, live_labels=False):
         p = config.paths()
         self.every = every
         self.session = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -133,6 +136,23 @@ class Tracker:
         self.last_save = 0.0
         self.dirty = False
         self.metrics = Counter()             # work done and time spent, shown by `status`
+        self.tick_times = capture_plan.Timings(400)      # how long each main-loop pass blocked (p95 in `status`)
+        self.capture_times = capture_plan.Timings(200)   # ... and each capture on the main thread
+        self.last_place_key = None           # the trail's place, to notice a move inside one window
+        self.live_labels = live_labels
+        self.recall_doc = self.load_recall()
+        self.earlier_cands, self.found_cache = [], (0.0, [])
+        self.demo_seeded = False
+        self.text_state = {"state": "idle"}
+        self.ask_state, self.pending_flash = {"state": "idle"}, None
+        self.recall_at = time.time() + config.RECALL_FIRST_AFTER - config.RECALL_EVERY    # first look soon after start
+        self.labeller = None                 # labels.LiveLabeller, made in run() when asked for
+        self.sections = {}                   # main-loop part -> capture_plan.Timings (see mark())
+        self._tick_mark = 0.0
+        self.capture_q = queue.Queue(maxsize=1)      # one capture waiting at most; the loop never queues a second
+        self.capture_lock = threading.Lock()         # one capture at a time (the worker's, or the note hotkey's)
+        self.capture_busy = False
+        self.capture_thread = None
         self.started = time.time()
         self.cpu_started = time.process_time()
         self.resources = {}
@@ -144,6 +164,9 @@ class Tracker:
         self.trail = None
         self.widget = None                   # the on-screen pill (widget.py), made in run()
         self.menubar = None                  # the menu-bar item (menubar.py), made in run()
+        self.memory_client = None
+        self.memory_events = []
+        self.memory_controller = None
         self.main_window = None              # the window (window.py), made the first time it is opened
         self.page_data_said = False
         self.menu_refreshed = 0.0
@@ -185,6 +208,8 @@ class Tracker:
 
     def set_manual_pause(self, paused, until=None):
         self.manual_paused = paused
+        if self.memory_client and (paused or not any(self.flags.values())):
+            self.memory_client.request("pause" if paused else "resume", {}, "lifecycle")
         self.pause_until = until if paused else None
         self.pending = None
         self.pin = False
@@ -218,7 +243,9 @@ class Tracker:
             self.control_file.unlink(missing_ok=True)
 
     def apply_control(self, doc):
-        if doc.get("action") in {"pause", "resume"}:
+        if doc.get("action") == "open":
+            self.open_window()
+        elif doc.get("action") in {"pause", "resume"}:
             self.set_manual_pause(doc["action"] == "pause")
         elif doc.get("action") == "notes_done" and isinstance(doc.get("ids"), list):
             with self.lock:
@@ -285,7 +312,23 @@ class Tracker:
             "avg_ms": {"capture": avg("capture"), "ocr_fast": avg("ocr_fast"), "ocr_accurate": avg("ocr_accurate"),
                        "handle": avg("handle"), "save": avg("save")},
             "capture_interval_s": round(self.current_interval(time.time(), quiet=True)),
+            "main_loop_ms": {"tick_p95": self.tick_times.p95(), "tick_max": self.tick_times.max(),
+                             "capture_p95": self.capture_times.p95(), "capture_max": self.capture_times.max()},
+            "slowest_parts_ms": {k: [v.p95(), v.max()] for k, v in sorted(
+                self.sections.items(), key=lambda kv: -(kv[1].p95() or 0))},
+            "browser_lookups": {"asked": macos._BROWSER_CACHE.misses, "saved": macos._BROWSER_CACHE.hits},
+            "labels": self.labels_report(),
         }
+
+    def labels_report(self):
+        if not self.labeller:
+            return "off (started with --no-labels, or no `claude` command)"
+        last = self.labeller.last or {}
+        if not self.labeller.last:
+            return {"running": self.labeller.busy, "last": "no run yet"}
+        said = last.get("stopped") or (f"{last.get('waiting', 0)} ready, waiting for more" if not last.get("sent")
+                                       else f"{last.get('labelled', 0)} labelled")
+        return {"running": self.labeller.busy, "last": said}
 
     # ------------------------------------------------------------ input timeline
 
@@ -357,6 +400,8 @@ class Tracker:
 
     def set_flag(self, k, v):
         self.flags[k] = v
+        if v and self.memory_client:
+            self.memory_client.request("pause", {"reason": "System " + k}, "system-pause")
         if v:
             self.close_interval()
             if self.input_monitor:
@@ -368,9 +413,21 @@ class Tracker:
         """One pass of the main loop (~4x a second)."""
         if self.quit_requested:
             raise KeyboardInterrupt
+        self._tick_mark = time.perf_counter()
         self.process_control()
+        if self.memory_client:
+            events=self.memory_client.poll()
+            if self.memory_controller:
+                self.memory_controller.poll(events)
+            else:self.memory_events.extend(events)
         self.poll_input()
         self.maintain()
+        self.mark("housekeeping")
+        if time.time() - self.recall_at >= config.RECALL_EVERY:
+            self.refresh_recall()
+        if self.pending_flash and self.widget:
+            text, self.pending_flash = self.pending_flash, None
+            self.widget.flash(text)
         if self.widget:
             here = self.front_sig()
             if here != self.pill_place:             # you switched tab or app: update the pill now, not within a second
@@ -401,6 +458,7 @@ class Tracker:
             self.note_request = False                   # R9: say why, with a way out, instead of nothing
             if self.widget:
                 self.widget.show_paused()
+        self.mark("pill and menu")
         if self.manual_paused:
             return
         if any(self.flags.values()):
@@ -432,13 +490,14 @@ class Tracker:
             return                      # the card is open: don't capture it into memory
         now = time.time()
         f = macos.front()
+        self.mark("window lookup")
 
         reason = next((k for k, v in self.flags.items() if v), None)
         if reason is None and f and f["app"] in config.LOCK_APPS:
             reason = "locked"
         if reason is None and self.pin:          # a pin wakes us even when idle
             self.pin = False
-            self.capture("pin", pinned=True)
+            self.capture_later("pin", pinned=True)
             return
         if reason is None and macos.idle_seconds() > config.IDLE:
             reason = "idle"
@@ -467,19 +526,30 @@ class Tracker:
                 self.start_read(f, clear=False)      # keyboard, notifications and redraws don't click
             if f and self.last_sig and any(f[k] != self.last_sig[k] for k in ("pid", "win_id", "window")):
                 self.identify_now(f)                 # a new app, window or tab
+            place = self.trail.place_key(f["bundle_id"]) if (f and self.trail) else None
+            if place and self.last_place_key and place != self.last_place_key:
+                self.trigger("place_change")         # another chat/channel in the same window
+            self.last_place_key = place
             self.last_sig = f or self.last_sig
 
+        self.mark("poll and identify")
         if self.pending and now >= self.pending[1]:
             if now - self.last_capture >= config.MIN_GAP:
                 why = self.pending[0]
                 self.pending = None
-                self.capture(why)
+                self.capture_later(why)
         elif now - self.last_capture >= self.current_interval(now):
             if self.q.qsize() < config.MAX_QUEUE:
-                self.capture("timer")
+                self.capture_later("timer")
             else:
                 self.last_capture = now
                 self.stats["backlog_skip"] += 1
+
+    def mark(self, name):
+        """Time since the last mark, filed under `name`: shows which part of the main loop is slow."""
+        now = time.perf_counter()
+        self.sections.setdefault(name, capture_plan.Timings(400)).add((now - self._tick_mark) * 1000)
+        self._tick_mark = now
 
     def current_interval(self, now, quiet=False):
         """Seconds until the next timer capture. Fast (`every`) while you're active; each
@@ -506,6 +576,39 @@ class Tracker:
 
     def capture(self, trigger, pinned=False):
         """Screenshot the front window's display and queue it. Returns its metadata."""
+        with self.capture_lock:
+            began = time.perf_counter()
+            try:
+                return self._capture(trigger, pinned)
+            finally:
+                self.capture_times.add((time.perf_counter() - began) * 1000)
+
+    def capture_later(self, trigger, pinned=False):
+        """What the main loop calls: hand the capture (window lookups, the accessibility read, the screenshot,
+        ~100-250 ms in all) to the capture thread so the pill and menu never wait for it. Without the thread
+        (tests) it simply captures. A capture already running or waiting means this one is not needed."""
+        if self.capture_thread is None:
+            return self.capture(trigger, pinned)
+        self.last_capture = time.time()
+        try:
+            self.capture_q.put_nowait((trigger, pinned))
+        except queue.Full:
+            self.stats["capture_busy"] += 1
+
+    def capture_worker(self):
+        while True:
+            job = self.capture_q.get()
+            if job is None:
+                return
+            self.capture_busy = True
+            try:
+                self.capture(*job)
+            except Exception as error:               # one bad capture must not end capturing
+                say(f"capture failed ({type(error).__name__}: {error})")
+            finally:
+                self.capture_busy = False
+
+    def _capture(self, trigger, pinned=False):
         if self.manual_paused or any(self.flags.values()):
             return None
         self.last_capture = time.time()
@@ -516,7 +619,7 @@ class Tracker:
             self.skipped_place, self.skip_kind = (f["app"], f["window"]), "unwatched"
             self.close_interval()
             return None
-        url, tab_title, private = macos.browser_info(f["app"])
+        url, tab_title, private = macos.browser_info_cached(f["app"], (f["win_id"], f["window"]))
         site = re.sub(r"^https?://", "", url or "").split("/")[0] or None
         title = tab_title or f["window"]
 
@@ -782,9 +885,28 @@ class Tracker:
         if self.main_window is None:
             self.main_window = main_window.MainWindow(self.menu_pick, self.page_data, self.widget_tick, self.window_add_note,
                                                    self.window_project, self.window_project_undo, self.sug_view,
-                                                      self.settings_view)   # its button sends a menu row id
+                                                      self.settings_view, recall=self.widget_recall, on_recall=self.widget_recall_answer,
+                                                      ask=self.widget_ask, ask_state=self.widget_ask_state,
+                                                      ask_reset=self.widget_ask_reset, text=self.window_text,
+                                                      text_state=self.window_text_state, text_reset=self.window_text_reset,
+                                                      copy=self.window_copy, on_memory=self.window_memory_action,
+                                                      memory_view=self.window_memory_view)   # its button sends a menu row id
         self.adopt_projects()                       # things filed by name since the last time
         self.main_window.show(self.window_view(self.widget_status()))
+
+    def _memory_controller(self):
+        if self.memory_controller is None:
+            from memory_controller import MemoryController
+            self.memory_controller=MemoryController(self.start_memory,lambda:self.items,lambda:self.save(force=True))
+        return self.memory_controller
+
+    def window_memory_view(self,pid):
+        controller=self._memory_controller();controller.select(pid)
+        if self.memory_client is None:controller.poll([])
+        return controller.view()
+
+    def window_memory_action(self,action,payload):
+        with self.lock:self._memory_controller().action(action,payload)
 
     def show_memory_file(self):
         subprocess.run(["open", "-R", config.paths().items_file], check=False)
@@ -1393,7 +1515,7 @@ class Tracker:
             return
         item["resurfaced_at"] = meta["iso"]
         event["resurfaced"] = [notes.note_id(n) for n in due]
-        what = item.get("title") or item["doing"]
+        what = readable.show(item)
         count = f"{len(due)} pending edit{'s' * (len(due) != 1)}"
         line(hms(meta["ts"]), "", f"  📝 {count}: " + " · ".join(n["text"][:60] for n in due[:3]))
         macos.notify(f"LMemM · {count}", f"{what[:60]} — " + " · ".join(n["text"] for n in due[:3]))
@@ -1529,6 +1651,8 @@ class Tracker:
         signal.signal(signal.SIGUSR2, lambda *_: setattr(self, "note_request", True))
         app = dictation.start_app()
         self.nsapp = app
+        if (Path(p.semantic_dir) / "memory.sqlite").exists():
+            self.start_memory()
         hotkey_ok = dictation.register_hotkey(lambda: setattr(self, "note_request", True))
         dictation.ensure_listener()        # build the speech helper now, not on first ⌃⌥N
         if self.show_widget:
@@ -1538,7 +1662,10 @@ class Tracker:
                                         suggestion=self.widget_suggestion, on_project=self.widget_project,
                                         on_decline=self.widget_decline, picker=self.widget_picker,
                                         on_unfile=self.widget_unfile, busy=lambda: self.panel.open, status=self.widget_status,
-                                        on_pause=self.widget_pause, on_resume=self.widget_resume)
+                                        on_pause=self.widget_pause, on_resume=self.widget_resume,
+                                        recall=self.widget_recall, on_recall=self.widget_recall_answer,
+                                        on_action=self.widget_action, ask=self.widget_ask, ask_state=self.widget_ask_state,
+                                        ask_reset=self.widget_ask_reset)
             try:
                 self.menubar = menubar.MenuBar(self.menu_pick)
                 say(f"Menu-bar item: {self.menubar.where()}")
@@ -1556,6 +1683,9 @@ class Tracker:
         self.thread = threading.Thread(target=self.worker, daemon=True)
         self.thread.start()
         threading.Thread(target=self.quick_worker, daemon=True).start()
+        threading.Thread(target=self.earlier_worker, daemon=True).start()
+        self.capture_thread = threading.Thread(target=self.capture_worker, daemon=True)
+        self.capture_thread.start()
         if self.use_trail:
             try:
                 import trail_mac
@@ -1574,6 +1704,8 @@ class Tracker:
         say((f"{dictation.HOTKEY_LABEL} dictate a note" if hotkey_ok
              else f"(couldn't register {dictation.HOTKEY_LABEL}: use  python3 lmemm.py note)")
             + "  ·  Ctrl-C stop\n")
+        if self.live_labels:
+            self.start_labels()
         self.last_sig = macos.front()
         if self.last_sig:
             self.identify_now(self.last_sig)     # so the app you start in is followed too
@@ -1582,16 +1714,256 @@ class Tracker:
         try:
             while True:
                 macos.next_event(app)
+                began = time.perf_counter()
                 self.tick()
+                self.tick_times.add((time.perf_counter() - began) * 1000)
+                if self.labeller:
+                    self.labeller.poll()
         except KeyboardInterrupt:
             pass
         finally:
             self.finish()
         self.hand_over()
 
+    @staticmethod
+    def load_recall():
+        try:
+            import nextsteps
+            return nextsteps.load()
+        except Exception:
+            return {"version": 1, "n": 0, "steps": []}
+
+    def widget_recall(self):
+        """The pill's recall list: pick up, left open and next step, in that order (nextsteps.view)."""
+        try:
+            import nextsteps
+            with self.lock:
+                steps = nextsteps.view(self.recall_doc, self.items)["steps"]
+            return [s for s in steps if s["kind"] in rules.RECALL_KINDS]
+        except Exception:
+            return []
+
+    def widget_recall_answer(self, sid, state):
+        """You ticked a box (done) or pressed × (dismissed): it does not come back today. Ticking "from earlier"
+        copies the line first."""
+        try:
+            import nextsteps
+            with self.lock:
+                step = next((s for s in self.recall_doc["steps"] if s["id"] == sid and s["kind"] == "earlier"), None)
+                if step and state == "done" and (step.get("detail") or {}).get("copy"):
+                    self.copy_text(step["detail"]["copy"], "Copied")
+                nextsteps.answer(self.recall_doc, sid, state)
+                nextsteps.save(self.recall_doc)
+        except ValueError as error:
+            say(str(error))
+
+    def refresh_recall(self):
+        """Every RECALL_EVERY seconds: what to pick up and what was left hanging (nextsteps.py). Local and cheap: no
+        model, one pass over the things under the lock, one small file."""
+        self.recall_at = time.time()
+        try:
+            import nextsteps
+            import tasks
+            book = tasks.load_tasks()
+            with self.lock:
+                front = (self.last_frame or {}).get("item")
+                doc = self.recall_doc
+                added = nextsteps.refresh(doc, self.items, book, front_id=front, extra=self.earlier_cands)
+                if config.DEMO and not self.demo_seeded and self.items:
+                    self.demo_seeded = bool(nextsteps.demo(doc, self.items))
+                nextsteps.save(doc)
+            if added:
+                say("pill: " + ", ".join(sorted({a["kind"] for a in added})) + f"  ({len(added)} new)  ·  open the pill to see them")
+        except Exception as error:
+            say(f"recall skipped: {type(error).__name__}: {error}")
+
+    # -- what LMemM does for you: a ready brief, a recap, your memory answered, a line from earlier (memory_search.py)
+
+    @staticmethod
+    def copy_text(text, said):
+        try:
+            subprocess.run(["pbcopy"], input=text.encode("utf-8"), timeout=5, check=True)
+        except (OSError, subprocess.SubprocessError):
+            say("couldn't copy to the clipboard")
+            return False
+        say(f"{said} ({len(text)} characters)")
+        return True
+
+    def found(self, max_age=45):
+        """Everything searchable, from disk, cached for max_age seconds. Call from a worker thread, never the main loop."""
+        import memory_search
+        import tasks
+        at, found = self.found_cache
+        if time.time() - at < max_age and found:
+            return found
+        with self.lock:
+            items = copy.deepcopy(self.items)
+        found = memory_search.gather(items, tasks.load_tasks())
+        self.found_cache = (time.time(), found)
+        return found
+
+    def earlier_worker(self):
+        """Every 30 s: is what you just wrote something you saw or wrote before? Sets the "from earlier" step."""
+        import memory_search
+        import nextsteps
+        while True:
+            time.sleep(30)
+            try:
+                if self.manual_paused or self.paused is not None or not config.TRAIL_WRITING:
+                    continue
+                front = (self.last_frame or {}).get("item")
+                if not front:
+                    continue
+                with self.lock:
+                    items = copy.deepcopy(self.items)
+                hit = memory_search.earlier(self.found(max_age=25), items, front)
+                cand = nextsteps.earlier_candidate(hit, items)
+                changed = [cand] if cand else []
+                if changed != self.earlier_cands:
+                    self.earlier_cands = changed
+                    self.refresh_recall()
+            except Exception as error:
+                say(f"from earlier skipped: {type(error).__name__}: {error}")
+
+    def make_text(self, name):
+        """The text for "brief" (Claude writes it from your last 25 minutes) or "recap" (today's tasks, no model).
+        Call from a worker thread. '' when there is nothing to say."""
+        import brief
+        import recap
+        import tasks
+        book = tasks.load_tasks()
+        if name == "brief":
+            with self.lock:
+                items, front = copy.deepcopy(self.items), (self.last_frame or {}).get("item")
+            provider = labels.ClaudeCli()
+            if provider.available():
+                text, spent = brief.compose(items, book, front, self.found(), provider, labels.Governor())
+                say(f"brief written by Claude: {spent} tokens" if spent else f"brief built locally ({brief.LAST['mode']}; no tokens)")
+                return text
+            say("brief built locally (the claude command is not available)")
+            return brief.build(items, book, front, self.found())
+        return recap.build(book, days=1)
+
+    def widget_action(self, name):
+        """A row on the pill's card: copy the brief or the recap at once. Runs off the main loop and confirms on the pill."""
+        def work():
+            try:
+                text = self.make_text(name)
+                if not text:
+                    self.flash_later("Nothing to brief yet" if name == "brief" else "Nothing to recap yet")
+                elif self.copy_text(text, "Copied the brief" if name == "brief" else "Copied the recap"):
+                    self.flash_later("Copied: paste it in Claude" if name == "brief" else "Copied the recap")
+            except Exception as error:
+                say(f"{name} skipped: {type(error).__name__}: {error}")
+        threading.Thread(target=work, daemon=True).start()
+
+    def window_text(self, name):
+        """The window's brief or recap: written first, shown in the side card, copied when you press Copy."""
+        if self.text_state.get("state") == "working":
+            return
+        self.text_state = {"name": name, "state": "working"}
+
+        def work():
+            try:
+                self.text_state = {"name": name, "state": "done", "text": self.make_text(name)}
+            except Exception as error:
+                say(f"{name} failed: {type(error).__name__}: {error}")
+                self.text_state = {"name": name, "state": "done", "text": ""}
+        threading.Thread(target=work, daemon=True).start()
+
+    def window_text_state(self):
+        return self.text_state
+
+    def window_text_reset(self):
+        if self.text_state.get("state") != "working":
+            self.text_state = {"state": "idle"}
+
+    def window_copy(self, text):
+        return self.copy_text(text, "Copied")
+
+    def flash_later(self, text):
+        self.pending_flash = text                  # shown by the main loop (AppKit is not touched from a thread)
+
+    def widget_ask(self, question):
+        """Ask your memory: one question, answered from what was seen and written (ask.py). One Claude call at most."""
+        question = " ".join((question or "").split())[:300]
+        if not question or self.ask_state.get("state") == "working":
+            return
+        self.ask_state = {"state": "working", "question": question}
+
+        def work():
+            try:
+                import ask
+                provider = labels.ClaudeCli()
+                if not provider.available():
+                    raise RuntimeError("the `claude` command was not found")
+                result = ask.answer(question, self.found(max_age=20), provider, labels.Governor())
+                self.ask_state = {"state": "done", "question": question, **result}
+                say(f"asked memory: {len(result['sources'])} source(s), {result['tokens']} tokens")
+                self.flash_later("Your answer is ready")
+            except Exception as error:
+                say(f"ask failed: {type(error).__name__}: {error}")
+                self.ask_state = {"state": "done", "question": question, "answer": "That didn't work. Try again.", "sources": []}
+        threading.Thread(target=work, daemon=True).start()
+
+    def widget_ask_state(self):
+        return self.ask_state
+
+    def widget_ask_reset(self):
+        if self.ask_state.get("state") != "working":
+            self.ask_state = {"state": "idle"}
+
+    def on_tasks(self, result):
+        """What a tasks run leaves for the pill: the safe next steps (nextsteps.py) and, for a task that names
+        a project, the offer to make it one (the pill already shows those). Never raises into the tasks thread."""
+        try:
+            import nextsteps
+            with self.lock:
+                doc = self.recall_doc
+                added = nextsteps.ingest(doc, result, self.items)
+                nextsteps.save(doc)
+            if added:
+                say("pill: " + ", ".join(sorted({a["kind"] for a in added})) + f"  ({len(added)} new)  ·  open the pill to see them")
+            import tasks as task_rules
+            for t in result.get("tasks") or []:
+                name = t.get("project_guess")                 # only the model's own name for it: no name, no offer
+                ids = [i for i in t.get("items", []) if i in self.items and task_rules.readable_title(self.items[i])]
+                if name and len(ids) >= 2:
+                    self.offer_project(name, ids, f"You moved between these {len(ids)} while working on “{t['title']}”.")
+        except Exception as error:
+            say(f"next steps skipped: {type(error).__name__}: {error}")
+
+    def start_labels(self):
+        """--labels: label settled things in the background with the laptop's Claude (labels.py)."""
+        provider = labels.ClaudeCli()
+        if not provider.available():
+            say("labels off: the `claude` command was not found (install Claude Code and log in)")
+            return
+
+        def snapshot():
+            with self.lock:
+                return copy.deepcopy(self.items)
+        def run_tasks(items, governor):
+            import context
+            import tasks
+            doc = context.find_session_doc(self.session)
+            if doc is None:
+                return None
+            result = tasks.run(doc, items, provider, governor, minutes=config.TASK_MINUTES)
+            if not result.get("cached"):
+                self.on_tasks(result)
+            return result
+        self.labeller = labels.LiveLabeller(snapshot, provider, say=lambda m: line(now_hms(), "", m), tasker=run_tasks,
+                                            paused=lambda: bool(self.manual_paused or self.paused or any(self.flags.values())
+                                                                or self.panel.open))
+        say(f"labels on  ·  first run in {round(self.labeller.first_after / 60)} min, then every "
+            f"{round(self.labeller.every / 60)} min  ·  tasks after {round(config.TASK_FIRST_AFTER / 60)} min, then every "
+            f"{round(config.TASK_EVERY / 60)} min  ·  at most {config.LABEL_DAILY_TOKENS} tokens a day")
+
     def hand_over(self):
         """Restart, reopen setup, or delete everything, once LMemM has saved and stopped. A restart
-        replaces this process in place, so macOS sees the same app (permissions.relaunch does the same)."""
+        uses a fresh process: replacing a launched AppKit process in place can leave
+        its status item unregistered with macOS even though floating panels work."""
         if not self.after_exit:
             return
         python, script = sys.executable, os.path.abspath(sys.argv[0])
@@ -1607,10 +1979,19 @@ class Tracker:
             argv = [python, script, "setup", "--again"]
         else:
             argv = [python] + sys.argv
-        os.execv(python, argv)
+        subprocess.Popen(argv)
+
+    def start_memory(self):
+        if self.memory_client is None:
+            from memory_client import MemoryClient
+            self.memory_client = MemoryClient(config.paths().semantic_dir)
+            self.memory_client.start()
+        return self.memory_client
 
     def finish(self):
         p = config.paths()
+        if self.memory_client:
+            self.memory_client.stop()
         if self.input_monitor:
             self.poll_input()
             self.input_monitor.stop()
@@ -1623,6 +2004,12 @@ class Tracker:
         say("\nstopping…")
         if self.trail:
             self.trail.stop()
+        if self.capture_thread:
+            try:
+                self.capture_q.put_nowait(None)
+            except queue.Full:
+                pass
+            self.capture_thread.join(timeout=5)
         self.q.put(None)
         self.thread.join(timeout=60)
         with self.lock:
@@ -1671,6 +2058,12 @@ class Tracker:
         say(f"      {c['captures']} captures: {c['skipped_ocr_unchanged']} unchanged (no OCR), "
             f"{c['ocr']['fast']} fast OCR, {c['ocr']['accurate']} accurate OCR; "
             f"avg capture {ms['capture']} ms, fast OCR {ms['ocr_fast']} ms, accurate OCR {ms['ocr_accurate']} ms")
+        loop, lookups = c["main_loop_ms"], c["browser_lookups"]
+        say(f"      main loop: tick p95 {loop['tick_p95']} ms (max {loop['tick_max']}), capture (background thread) p95 "
+            f"{loop['capture_p95']} ms (max {loop['capture_max']}); browser lookups {lookups['asked']} asked, {lookups['saved']} saved")
+        say("      slowest parts of the loop (p95 / max ms): "
+            + ", ".join(f"{k} {v[0]}/{v[1]}" for k, v in c["slowest_parts_ms"].items()))
+        say(f"      labels: {c['labels'] if isinstance(c['labels'], str) else c['labels']['last']}")
         say(f"\nsaved to {os.path.relpath(config.paths().items_file)}")
 
 

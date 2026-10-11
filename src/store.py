@@ -14,6 +14,7 @@ Writes are atomic (temp file + rename). Schema 3; every newer field is additive.
 """
 
 import json
+import readable as titles
 import os
 from collections import Counter
 from datetime import datetime
@@ -105,7 +106,7 @@ def readable(i):
             entry["text"] = a["text"][-8:]
         acts[c] = entry
     out = {"id": i["id"], "app": i["app"], "project": notes.project_of(i),
-           "what": i.get("title") or i["doing"], "doing": i["doing"]}
+           "what": titles.show(i), "doing": i["doing"]}
     if i.get("notes"):
         out["your_notes"] = [{"id": notes.note_id(n), "at": nice_time(n["at"]), "text": n["text"],
                               "status": "done" if notes.is_done(i, n) else "open"} for n in i["notes"]]
@@ -199,14 +200,18 @@ def save_memory(items):
     """Write the one memory file: the readable view first, the full items after. Clears
     out any pre-schema-3 .index.json / pending.json left over from before they merged."""
     memory_dir = config.paths().memory_dir
-    ordered = sorted(items.values(), key=lambda i: i["last_seen"], reverse=True)
-    write_json(config.paths().items_file, {
-        "schema_version": SCHEMA,
-        "updated": nice_time(datetime.now().isoformat(timespec="seconds")),
-        **({"user": load_user()} if load_user() else {}),
-        "things": [readable(i) for i in ordered],
-        "items": ordered,
-    })
+    from memory_notes import prepare_native_sync, commit_native_sync, native_sync_lock
+    with native_sync_lock(config.paths().semantic_dir):
+        marker = prepare_native_sync(items, config.paths().semantic_dir)
+        ordered = sorted(items.values(), key=lambda i: i["last_seen"], reverse=True)
+        write_json(config.paths().items_file, {
+            "schema_version": SCHEMA,
+            "updated": nice_time(datetime.now().isoformat(timespec="seconds")),
+            **({"user": load_user()} if load_user() else {}),
+            "things": [readable(i) for i in ordered],
+            "items": ordered,
+        })
+        commit_native_sync(config.paths().semantic_dir, marker)
     for stale in (".index.json", "pending.json"):
         try:
             os.remove(os.path.join(memory_dir, stale))

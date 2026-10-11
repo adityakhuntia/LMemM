@@ -7,7 +7,8 @@ you did there (typing, reading, receiving, focus) and what it was about. Press
 **pending edit** that comes back when you reopen that thing.
 
 Everything runs on your Mac: capture, OCR (Apple Vision), activity rules and speech
-recognition. No model or server is involved.
+recognition. Normal tracking uses no model or server. The experimental semantic
+benchmark is separate and remains disabled in capture.
 
 ## Setup (once)
 
@@ -319,8 +320,34 @@ docs/           architecture, specs, plans, history
 ## Develop
 
 ```bash
-./scripts/test.sh      # 159 tests, incl. real on-device OCR
+./scripts/test.sh      # includes native OCR and semantic-memory tests
 ```
 
 [docs/architecture.md](docs/architecture.md) covers how the modules fit and where to extend it.
 [docs/](docs/) has specs, plans and the development history.
+
+## Project Memory MVP
+
+The implementation is now on `main`. Each project has **Overview** and **Memory**
+tabs. Enable Memory for one workspace to retain new approved visible VS Code
+excerpts and intentional project notes. Search combines keyword matching with
+local MiniLM embeddings; decisions, reasons and tasks come from explicit notes
+and link to exact retained sources. Inspect a source to distinguish its snapshot
+from today's file. No repository crawl or historical import is performed.
+
+The supervised private service supports pause/resume, deletion, scoped revocable
+agent access and an official SDK read-only MCP adapter. Local model installation
+and disclosure to Codex require separate explicit setup. Previewing context does
+not send it to an agent.
+
+Start from this checkout with `.venv/bin/python lmemm.py start`, then open a
+project → **Memory** → **Enable Memory**. Follow the
+[setup and testing runbook](docs/hybrid-memory-runbook.md).
+
+Independent review findings were addressed with regression tests. Frozen synthetic
+held-out recall was 20/20 at five results; the 10k-chunk synthetic warm-search
+probe measured 0.251 seconds p95. These are limited measurements, not launch
+acceptance. Original shutdown/sleep/lock testing, the paired 30-minute native
+resource workload, real extension enrollment and three external testers remain
+pending. See [current context](docs/current-context.md) and
+[acceptance evidence](docs/benchmarks/project-memory/hybrid-mvp/acceptance.md).

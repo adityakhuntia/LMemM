@@ -248,5 +248,30 @@ class FinishFlowTests(unittest.TestCase):                           # R10
         self.assertEqual(rules.pill_state(**kw, cleared=True, mark="paused"), "paused")
 
 
+class RecallPillTests(unittest.TestCase):
+    base = dict(note_open=False, saved=False, hover=False, card_open=False, count=0, has_suggestion=False)
+
+    def st(self, **kw):
+        return rules.pill_state(**{**self.base, **kw})
+
+    def test_a_recall_kind_gives_its_own_mark(self):
+        for kind in ("earlier", "resume", "hanging", "next"):
+            self.assertEqual(self.st(recall=kind), "r_" + kind)
+
+    def test_notes_and_problems_and_the_note_card_still_come_first(self):
+        self.assertEqual(self.st(recall="resume", count=2), "count")
+        self.assertEqual(self.st(recall="resume", mark="paused"), "paused")
+        self.assertEqual(self.st(recall="resume", note_open=True), "rest")
+        self.assertEqual(self.st(recall="resume", saved=True), "saved")
+
+    def test_a_recall_mark_beats_a_project_suggestion_and_hover_shows_the_words(self):
+        self.assertEqual(self.st(recall="next", has_suggestion=True), "r_next")
+        self.assertEqual(self.st(recall="next", hover=True), "peek")
+
+    def test_an_unknown_kind_is_ignored(self):
+        self.assertEqual(self.st(recall="link"), "rest")
+        self.assertEqual(self.st(recall="link", has_suggestion=True), "suggest")
+
+
 if __name__ == "__main__":
     unittest.main()

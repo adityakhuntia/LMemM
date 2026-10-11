@@ -82,6 +82,9 @@ class BannerTests(unittest.TestCase):
         self.assertNotEqual(a, wm.signature(wm.view(status(mic_off=True))))
         self.assertNotEqual(wm.signature(wm.view(paused())), wm.signature(wm.view(paused("away"))))
 
+    def test_a_window_drawn_before_the_first_status_does_not_crash(self):
+        self.assertEqual(wm.signature(None), wm.signature(None))
+
     def test_the_tracker_answers_every_button_the_window_can_send(self):
         import ast
         import os

@@ -8,12 +8,15 @@ that is not clearly LMemM's own (the root, a home folder, or one that does not e
 
 import os
 import shutil
+import tempfile
+from pathlib import Path
 
 
 def _safe(data_dir):
     real = os.path.realpath(data_dir)
     home = os.path.realpath(os.path.expanduser("~"))
-    return os.path.isdir(real) and real not in ("/", home) and len(real.split(os.sep)) > 2
+    protected = {os.path.realpath(path) for path in ("/", home, "/tmp", "/var/tmp", tempfile.gettempdir())}
+    return os.path.isdir(real) and real not in protected and len(Path(real).parts) > 3
 
 
 def plan(data_dir):

@@ -182,3 +182,9 @@ class WiringTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class MemoryEntryTests(unittest.TestCase):
+    def test_general_explains_project_enrollment_and_agent_connection(self):
+        view=sm.view({},'general')
+        self.assertIn('Memory',view['general']['memory']['title'])
+        self.assertIn('agent',view['general']['memory']['line'])

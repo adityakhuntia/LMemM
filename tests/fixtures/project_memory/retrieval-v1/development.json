@@ -1,0 +1,252 @@
+[
+  {
+    "id": "q-01-exact",
+    "split": "development",
+    "kind": "exact",
+    "project": "alpha",
+    "text": "Which database was chosen?",
+    "gold_occurrence_ids": [
+      "evidence-45a1547dcd9ecaa2f90681d8"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-01-paraphrase",
+    "split": "development",
+    "kind": "paraphrase",
+    "project": "alpha",
+    "text": "Why did we pick an embedded database instead of a hosted service?",
+    "gold_occurrence_ids": [
+      "evidence-45a1547dcd9ecaa2f90681d8"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-02-exact",
+    "split": "development",
+    "kind": "exact",
+    "project": "beta",
+    "text": "Which database was chosen?",
+    "gold_occurrence_ids": [
+      "evidence-e19fdd1be62ffd3bf6f5d65f"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-02-paraphrase",
+    "split": "development",
+    "kind": "paraphrase",
+    "project": "beta",
+    "text": "What handles simultaneous writes on the server?",
+    "gold_occurrence_ids": [
+      "evidence-e19fdd1be62ffd3bf6f5d65f"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-03-exact",
+    "split": "development",
+    "kind": "exact",
+    "project": "alpha",
+    "text": "What remains for retry_upload?",
+    "gold_occurrence_ids": [
+      "evidence-54ea990559a921a3781a2790"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-03-paraphrase",
+    "split": "development",
+    "kind": "paraphrase",
+    "project": "alpha",
+    "text": "What needs fixing before the demonstration?",
+    "gold_occurrence_ids": [
+      "evidence-54ea990559a921a3781a2790"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-04-exact",
+    "split": "development",
+    "kind": "exact",
+    "project": "beta",
+    "text": "What remains for password_reset?",
+    "gold_occurrence_ids": [
+      "evidence-b2b7fb4583fe750ea8f9c990"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-04-paraphrase",
+    "split": "development",
+    "kind": "paraphrase",
+    "project": "beta",
+    "text": "How should we protect account recovery from repeated requests?",
+    "gold_occurrence_ids": [
+      "evidence-b2b7fb4583fe750ea8f9c990"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-05-exact",
+    "split": "development",
+    "kind": "exact",
+    "project": "alpha",
+    "text": "What is the capture queue limit?",
+    "gold_occurrence_ids": [
+      "evidence-430454bd59262b0843870f78"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-05-paraphrase",
+    "split": "development",
+    "kind": "paraphrase",
+    "project": "alpha",
+    "text": "How much pending observation work can we keep?",
+    "gold_occurrence_ids": [
+      "evidence-430454bd59262b0843870f78"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-06-exact",
+    "split": "development",
+    "kind": "exact",
+    "project": "beta",
+    "text": "How many email delivery retries?",
+    "gold_occurrence_ids": [
+      "evidence-242ef1f61dab2eabab0b9005"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-06-paraphrase",
+    "split": "development",
+    "kind": "paraphrase",
+    "project": "beta",
+    "text": "What happens when an outgoing message fails?",
+    "gold_occurrence_ids": [
+      "evidence-242ef1f61dab2eabab0b9005"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-07-exact",
+    "split": "development",
+    "kind": "exact",
+    "project": "alpha",
+    "text": "What do source citations refer to?",
+    "gold_occurrence_ids": [
+      "evidence-cae1fb7811c2ffa8007aa57c"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-07-paraphrase",
+    "split": "development",
+    "kind": "paraphrase",
+    "project": "alpha",
+    "text": "Can I inspect the old evidence even if the file changed?",
+    "gold_occurrence_ids": [
+      "evidence-cae1fb7811c2ffa8007aa57c"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-08-exact",
+    "split": "development",
+    "kind": "exact",
+    "project": "beta",
+    "text": "When are invoice PDFs rendered?",
+    "gold_occurrence_ids": [
+      "evidence-d8af09e9fa62903cc8c7b04f"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-08-paraphrase",
+    "split": "development",
+    "kind": "paraphrase",
+    "project": "beta",
+    "text": "Does receipt generation happen before money is recorded?",
+    "gold_occurrence_ids": [
+      "evidence-d8af09e9fa62903cc8c7b04f"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-09-exact",
+    "split": "development",
+    "kind": "exact",
+    "project": "alpha",
+    "text": "What did we decide about sleep?",
+    "gold_occurrence_ids": [
+      "evidence-d7373097b3319814b7bbac67"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-09-paraphrase",
+    "split": "development",
+    "kind": "paraphrase",
+    "project": "alpha",
+    "text": "Why stop semantic processing when the laptop closes?",
+    "gold_occurrence_ids": [
+      "evidence-d7373097b3319814b7bbac67"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-10-exact",
+    "split": "development",
+    "kind": "exact",
+    "project": "beta",
+    "text": "Why cache product images?",
+    "gold_occurrence_ids": [
+      "evidence-baf18090766dd5e63b0860e8"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-10-paraphrase",
+    "split": "development",
+    "kind": "paraphrase",
+    "project": "beta",
+    "text": "Why save catalog pictures on the device?",
+    "gold_occurrence_ids": [
+      "evidence-baf18090766dd5e63b0860e8"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "none-alpha",
+    "split": "development",
+    "kind": "no_evidence",
+    "project": "alpha",
+    "text": "What is the private soufflé recipe?",
+    "gold_occurrence_ids": [],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  }
+]

@@ -12,6 +12,8 @@ Two kinds of proposal wait in a small list until you answer them:
     S3  A proposal never offers what makes no sense: fewer than two things for a new project, a thing
         already in the project, a thing kept out of it, a thing that is gone, an archived project.
         The list tidies itself every time it is read.
+    S6  A proposal never shows garbled titles: things whose title is debris (readable.py) are left out, and a
+        project proposal with a long machine-written reason is dropped.
     S4  Answers are the same actions as everything else in the window: one sentence, and Undo.
     S5  Where proposals come from is a separate matter. `lmemm.py suggest` and `suggest-for` stand in
         for the model until it exists; this file only holds, tidies and answers them.
@@ -19,10 +21,12 @@ Two kinds of proposal wait in a small list until you answer them:
 
 import notes
 import page_model
+import readable
 import projects
 
 ACTIONS = ("accept_project", "dismiss_project", "accept_items", "reject_items")
 FOR_PROJECT_MIN, NEW_PROJECT_MIN = 1, 2
+MAX_REASON = 110
 
 
 def empty():
@@ -71,8 +75,9 @@ def tidy(sug, reg, items):
     before = repr(sug)
     keep = []
     for e in sug["projects"]:
-        e["ids"] = [i for i in e["ids"] if i in items]
-        if len(e["ids"]) >= NEW_PROJECT_MIN and not notes.was_declined(items, e["ids"], e["name"]):
+        e["ids"] = [i for i in e["ids"] if i in items and readable.readable(items[i].get("title") or items[i].get("doing"))]
+        long_note = len(e.get("reason") or "") > MAX_REASON                 # an old model note about "the person", not a sentence to you
+        if len(e["ids"]) >= NEW_PROJECT_MIN and not long_note and not notes.was_declined(items, e["ids"], e["name"]):
             keep.append(e)
     sug["projects"] = keep
     keep = []

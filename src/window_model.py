@@ -73,5 +73,7 @@ def view(status, memory=MEMORY_OK, watch_apps=()):
 
 def signature(v):
     """Changes only when the window would look different, so it is rebuilt only then."""
+    if not v:                                       # the window is drawn before the first status arrives
+        return repr(None)
     b = v["banner"]
     return repr((v["heading"], v["line"], b and (b["kind"], b["tone"], b["title"], b["line"], b["button"] and b["button"]["title"])))

@@ -224,7 +224,7 @@ class HomeAndNeedsTests(unittest.TestCase):
     def test_home_lists_top_level_projects_and_needs_you(self):
         v, reg, items, ids = view()
         main = v["main"]
-        self.assertEqual((main["kind"], main["title"]), ("home", "All projects"))
+        self.assertEqual((main["kind"], main["title"]), ("home", "Home"))
         self.assertEqual([c["name"] for c in main["cards"]], ["Work", "Home"])
         self.assertEqual(main["needs"]["count"], 2)
         self.assertEqual([r["title"] for r in main["needs"]["rows"]], ["Q3 deck", "Garden plan"])

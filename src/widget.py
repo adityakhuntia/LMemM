@@ -19,6 +19,12 @@
               It opens a picker: your projects, search, "+ New project", and a tick to file the
               other things open lately along with this one.
 
+    recall    LMemM brings things back (nextsteps.py): "Pick up" (a return arrow: you are back at a task you
+              left), "Left open" (an unfinished ring: a draft, a note, a question) and "Next step" (a
+              forward arrow). The pill wears the most important one's icon when no note count is up; the
+              card shows one box per thing (own colour, dashed when unfinished), tick a box or press ×
+              and it does not come back today. A project offer stays one quiet line under the boxes.
+
     marks     the pill wears an icon when something is wrong (screen access off, a private window,
               the mic off) or, on hover, when there is nothing to show (no notes yet, all done,
               no projects yet). The rules are in rules.py (R8).
@@ -44,6 +50,7 @@ import subprocess
 import time
 from datetime import datetime
 
+import app_look
 import objc
 from Foundation import NSObject, NSPointInRect
 from AppKit import (NSApplication, NSBackingStoreBuffered, NSBezierPath, NSColor, NSEvent, NSImage,
@@ -60,6 +67,7 @@ COLLECTION = 1 | 16 | 256 | 64
 FLOATING = 25                       # NSStatusWindowLevel: above normal windows
 
 CARD_W, CARD_MAX_H, PAD = 272, 360, 14
+NOTE_LINES, NOTE_LINES_H = 3, 51                      # a note shows this many lines on the card; the rest opens in full
 PILL_MARGIN = (10, 6)               # hit area around the drawn capsule
 PILL_BOTTOM = 6
 TRACK = 1 | 128 | 512               # mouseEnteredAndExited | activeAlways | inVisibleRect
@@ -77,11 +85,23 @@ ICONS = {"code_file": ("chevron.left.forwardslash.chevron.right", (0.48, 0.35, 0
 DEFAULT_ICON = ("square.on.square", (0.45, 0.45, 0.5))
 DONE_SECONDS = 1.5                  # "Pricing created." stays this long, then the card closes
 SUGGEST_WORDS = "Group these?"
+# the boxes on the card, one look per kind: label, SF Symbol, colour, whether the edge is dashed (unfinished)
+# (Apple's system purple, blue, orange and green; only the small icon square wears the colour)
+RECALL = {"earlier": ("From earlier", "doc.on.doc", (0.69, 0.32, 0.87), False),
+          "resume": ("Pick up", "arrow.uturn.backward", (0.04, 0.52, 1.0), False),
+          "hanging": ("Left open", "circle.dotted", (1.0, 0.58, 0.0), False),
+          "next": ("Next step", "arrow.right", (0.19, 0.73, 0.31), False)}
+ROW_H = 50
+RECALL_GLYPH = {"earlier": "❝", "resume": "↩", "hanging": "◌", "next": "→"}       # on the pill's hover line
 SAVED_SECONDS = 1.8                 # "Saved to Q3 plan" stays on the pill this long
 PROJECT_EXPLAINER = ("A project keeps related things and your notes together, so you can pick up "
                      "where you left off. You can change this any time.")
 # the marks: an SF Symbol, and whether it is neutral or red (a permission that is off)
-MARKS = {"paused": ("pause.fill", False, "Paused"),
+MARKS = {"r_earlier": ("doc.on.doc", False, "A line from earlier"),
+         "r_resume": ("arrow.uturn.backward", False, "Pick up where you left off"),
+         "r_hanging": ("circle.dotted", False, "Something left open"),
+         "r_next": ("arrow.right", False, "A next step"),
+         "paused": ("pause.fill", False, "Paused"),
          "screen_off": ("eye.slash", True, "Screen access is off"),
          "private": ("lock", False, "Private window"),
          "unwatched": ("circle.slash", False, "Not watching this app"),
@@ -103,6 +123,11 @@ def _dark():
 
 def _text_width(text, font):
     return NSAttributedString.alloc().initWithString_attributes_(text, {NSFontAttributeName: font}).size().width
+
+
+def _short(text, n):
+    text = " ".join(str(text).split())
+    return text if len(text) <= n else text[:n - 1].rstrip() + "…"
 
 
 def _label(text, size=11, bold=False, color=None, frame=(0, 0, 10, 10), wrap=False, strike=False):
@@ -242,8 +267,12 @@ class _Tile(_Flipped):
     """An app icon square: a symbol for the kind of thing, white on a colour."""
 
     def initWithKind_size_(self, kind, size):
+        return self.initWithKind_app_size_(kind, None, size)
+
+    def initWithKind_app_size_(self, kind, app, size):
+        """A known web app (Gmail, Google Docs ...) wears its own colour and symbol; anything else, its kind's."""
         self = objc.super(_Tile, self).initWithFrame_(NSMakeRect(0, 0, size, size))
-        self.symbol, self.rgb = ICONS.get(kind, DEFAULT_ICON)
+        self.symbol, self.rgb = app_look.look(app) or ICONS.get(kind, DEFAULT_ICON)
         self.size = size
         image = NSImage.imageWithSystemSymbolName_accessibilityDescription_(self.symbol, None)
         if image is not None:
@@ -300,6 +329,28 @@ class _Dashed(_Flipped):
         path.stroke()
 
 
+class _Box(_Flipped):
+    """One recall box on the card: a soft tinted rounded rectangle, or a dashed outline for something left open."""
+
+    def initWithTone_dashed_(self, rgb, dashed):
+        self = objc.super(_Box, self).initWithFrame_(NSMakeRect(0, 0, 10, 10))
+        self.rgb, self.dashed = rgb, dashed
+        return self
+
+    def drawRect_(self, rect):
+        size = self.bounds().size
+        path = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+            NSMakeRect(0.75, 0.75, size.width - 1.5, size.height - 1.5), 12, 12)
+        if self.dashed:
+            NSColor.tertiaryLabelColor().setStroke()
+            path.setLineWidth_(1.5)
+            path.setLineDash_count_phase_([5.0, 4.0], 2, 0)
+            path.stroke()
+        else:
+            NSColor.colorWithRed_green_blue_alpha_(*self.rgb, 0.13).setFill()
+            path.fill()
+
+
 class _Ring(_Flipped):
     """The round tick box: an outline, filled orange with a tick once done."""
 
@@ -326,6 +377,132 @@ class _Ring(_Flipped):
             NSColor.tertiaryLabelColor().setStroke()
             circle.setLineWidth_(1.5)
             circle.stroke()
+
+
+class _Group(_Flipped):
+    """An inset list, as in Settings: one soft rounded rectangle, hairlines between the rows."""
+
+    def initWithRows_(self, rows):
+        self = objc.super(_Group, self).initWithFrame_(NSMakeRect(0, 0, 10, 10))
+        self.rows = rows
+        return self
+
+    def drawRect_(self, rect):
+        size = self.bounds().size
+        NSColor.labelColor().colorWithAlphaComponent_(0.06).setFill()
+        NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(self.bounds(), 12, 12).fill()
+        NSColor.separatorColor().setFill()
+        for i in range(1, self.rows):
+            NSBezierPath.fillRect_(NSMakeRect(50, i * ROW_H, size.width - 50, 0.5))
+
+
+class _Chip(_Flipped):
+    """The small coloured rounded square that carries a kind's icon."""
+
+    def initWithRgb_symbol_(self, rgb, symbol):
+        self = objc.super(_Chip, self).initWithFrame_(NSMakeRect(0, 0, 28, 28))
+        self.rgb = rgb
+        image = _symbol(symbol)
+        if image is not None:
+            holder = NSImageView.alloc().initWithFrame_(NSMakeRect(6, 6, 16, 16))
+            holder.setImage_(image)
+            holder.setContentTintColor_(NSColor.whiteColor())
+            self.addSubview_(holder)
+        return self
+
+    def drawRect_(self, rect):
+        NSColor.colorWithRed_green_blue_alpha_(*self.rgb, 1.0).setFill()
+        NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(self.bounds(), 7, 7).fill()
+
+
+class _Round(_Flipped):
+    """A round button face: a soft circle behind a symbol."""
+
+    def initWithSymbol_(self, symbol):
+        self = objc.super(_Round, self).initWithFrame_(NSMakeRect(0, 0, 34, 34))
+        image = _symbol(symbol)
+        if image is not None:
+            holder = NSImageView.alloc().initWithFrame_(NSMakeRect(9, 9, 16, 16))
+            holder.setImage_(image)
+            holder.setContentTintColor_(NSColor.systemBlueColor())
+            self.addSubview_(holder)
+        return self
+
+    def drawRect_(self, rect):
+        NSColor.labelColor().colorWithAlphaComponent_(0.08).setFill()
+        NSBezierPath.bezierPathWithOvalInRect_(self.bounds()).fill()
+
+
+class _Card(_Tap):
+    """One step's own box: a soft rounded tile with a thin edge in its kind's colour."""
+
+    def drawRect_(self, rect):
+        path = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+            NSMakeRect(0.5, 0.5, self.bounds().size.width - 1, self.bounds().size.height - 1), 14, 14)
+        NSColor.labelColor().colorWithAlphaComponent_(0.06).setFill()
+        path.fill()
+        NSColor.colorWithRed_green_blue_alpha_(*self.rgb, 0.28).setStroke()
+        path.setLineWidth_(1)
+        path.stroke()
+
+
+BOX_H = 56
+
+
+def recall_boxes(steps, w, on_open, on_answer, cols=1, gap=8):
+    """The steps as separate boxes (`cols` to a row): a coloured icon square, the kind in small coloured type, one line
+    of text. The box opens the full card; only the circle (a copy mark for "from earlier") answers it. -> (view, height)."""
+    rows = (len(steps) + cols - 1) // cols
+    height = rows * BOX_H + (rows - 1) * gap
+    holder = _Flipped.alloc().initWithFrame_(NSMakeRect(0, 0, w, height))
+    cw = (w - gap * (cols - 1)) / cols
+    for i, step in enumerate(steps):
+        label, symbol, rgb, _dashed = RECALL[step["kind"]]
+        x, y = (i % cols) * (cw + gap), (i // cols) * (BOX_H + gap)
+        tone = NSColor.colorWithRed_green_blue_alpha_(*rgb, 1.0)
+        card = _Card.alloc().initWithFrame_callback_(NSMakeRect(x, y, cw, BOX_H), lambda sid=step["id"]: on_open(sid))
+        card.rgb = rgb
+        card.label = "Open: " + step["text"]
+        chip = _Chip.alloc().initWithRgb_symbol_(rgb, symbol)
+        chip.setFrame_(NSMakeRect(12, 14, 28, 28))
+        card.addSubview_(chip)
+        card.addSubview_(_label(label.upper(), 10, bold=True, color=tone, frame=(50, 10, cw - 50 - 44, 13))[0])
+        title = _label(_short(step["text"], 70), 13.5, color=NSColor.labelColor(), frame=(50, 26, cw - 50 - 44, 17))[0]
+        title.setLineBreakMode_(4)
+        card.addSubview_(title)
+        holder.addSubview_(card)
+        mark = _Tap.alloc().initWithFrame_callback_(NSMakeRect(x + cw - 42, y, 42, BOX_H), lambda sid=step["id"]: on_answer(sid))
+        mark.label = ("Copy: " if step["kind"] == "earlier" else "Done: ") + step["text"]
+        if step["kind"] == "earlier":                    # the mark copies the line: a copy mark, not a tick
+            glyph = NSImageView.alloc().initWithFrame_(NSMakeRect(10, 19, 17, 17))
+            copy_image = _symbol("doc.on.doc")
+            if copy_image is not None:
+                glyph.setImage_(copy_image)
+                glyph.setContentTintColor_(NSColor.secondaryLabelColor())
+        else:
+            glyph = _Ring.alloc().initWithChecked_(False)
+            glyph.setFrame_(NSMakeRect(10, 19, 17, 17))
+        mark.addSubview_(glyph)
+        holder.addSubview_(mark)
+    return holder, height
+
+
+def round_actions(items, w):
+    """Round buttons with a small blue label under each: items are (symbol, text, callback). -> (view, height)."""
+    height = 60
+    holder = _Flipped.alloc().initWithFrame_(NSMakeRect(0, 0, w, height))
+    cell = w / len(items)
+    for i, (symbol, text, callback) in enumerate(items):
+        tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(i * cell, 0, cell, height), callback)
+        tap.label = text
+        face = _Round.alloc().initWithSymbol_(symbol)
+        face.setFrame_(NSMakeRect((cell - 34) / 2, 4, 34, 34))
+        tap.addSubview_(face)
+        name = _label(text, 11, color=NSColor.systemBlueColor(), frame=(0, 41, cell, 14))[0]
+        name.setAlignment_(1)
+        tap.addSubview_(name)
+        holder.addSubview_(tap)
+    return holder, height
 
 
 class _PillView(NSView):
@@ -365,7 +542,9 @@ class _PillView(NSView):
             else:
                 self._link(PILL_MARGIN[0] + cw / 2, mid, on_ink)
         elif state == "peek":
-            if w.count or not w.sug:
+            if not w.count and w.recall:
+                self._text(RECALL_GLYPH.get(w.recall[0]["kind"], "•"), 13, True, on_ink, NSMakeRect(PILL_MARGIN[0] + 7, 0, 14, bh))
+            elif w.count or not w.sug:
                 self._dot(PILL_MARGIN[0] + 11, mid, lit=bool(w.count))
             else:
                 self._link(PILL_MARGIN[0] + 14, mid, on_ink)
@@ -453,7 +632,18 @@ class Widget:
 
     def __init__(self, provider, on_tick, on_add=None, heard=None, hotkey="⌃⌥N",
                  suggestion=None, on_project=None, on_decline=None, picker=None, on_unfile=None,
-                 busy=None, status=None, on_pause=None, on_resume=None):
+                 busy=None, status=None, on_pause=None, on_resume=None, recall=None, on_recall=None,
+                 on_action=None, ask=None, ask_state=None, ask_reset=None):
+        self.on_action = on_action or (lambda name: None)       # "brief" / "recap": copy it (tracker.widget_action)
+        self.ask_fn = ask or (lambda question: None)             # ask your memory (ask.py)
+        self.ask_state_fn = ask_state or (lambda: {"state": "idle"})
+        self.ask_reset = ask_reset or (lambda: None)
+        self.note_open, self.note_back = None, "here"                # the note open in full on the card
+        self.detail, self.detail_back = None, "here"           # the recall step open in full, and where Back goes
+        self.ask_seen = None                                      # the question whose answer you have seen
+        self.recall_fn = recall or (lambda: [])       # nextsteps: pick up / left open / next step, most important first
+        self.on_recall = on_recall or (lambda sid, state: None)
+        self.recall = []
         self.on_pause = on_pause or (lambda kind: None)
         self.on_resume = on_resume or (lambda: None)
         self.status_fn = status or (lambda: {})
@@ -475,7 +665,7 @@ class Widget:
         self.fields = _Fields.alloc().initWithChange_submit_cancel_(self._typed, self._submitted, self._cancelled)
         self.hotkey = hotkey
         self.card_open = False
-        self.mode = "here"                  # "here" | "project" | "suggest" | "pick" | "done"
+        self.mode = "here"                  # "here" | "project" | "suggest" | "pick" | "ask" | "done"
         self.show_done = False
         self.flow = rules.FinishFlow()      # finished notes: hold, fold, clear, undo (rules.py R10)
         self.celebrate_now = False          # play the big check once, on the render after a clear
@@ -506,7 +696,7 @@ class Widget:
             return "listening"
         return rules.pill_state(self.busy(), bool(self.saved), self.pill_view.hover, self.card_open,
                                 self.count, bool(self.sug), self._mark(), self._empty_kind(),
-                                time.time() < self.cleared_until)
+                                time.time() < self.cleared_until, self.recall[0]["kind"] if self.recall else None)
 
     def _mark(self):
         return rules.pill_mark(self.status, self.count, bool(self.sug))
@@ -514,7 +704,7 @@ class Widget:
     def _empty_kind(self):
         if self.card_open and self.mode == "pick":
             return "noproj" if self.pick_empty else None
-        if self.count or self.sug or self.data is None:
+        if self.count or self.sug or self.recall or self.data is None:
             return None
         return rules.empty_kind(notes.card_view(self.data, "here", self.show_done, self._holding()))
 
@@ -526,6 +716,9 @@ class Widget:
         return len(self.data["left"]) if self.data else 0
 
     def peek_text(self):
+        if not self.count and self.recall:
+            text = self.recall[0]["text"]
+            return text if len(text) <= 32 else text[:31] + "…"
         if not self.count:
             return self.sug["peek"] if self.sug else "No notes here"
         text = self.first.replace("\n", " ")
@@ -635,8 +828,12 @@ class Widget:
         count, first = notes.pill_summary(self.data)
         sug = self.suggestion()
         status = self.status_fn()
-        if (count, first, sug, status) != (self.count, self.first, self.sug, self.status):
-            self.count, self.first, self.sug, self.status = count, first, sug, status
+        try:
+            recall = self.recall_fn()
+        except Exception:
+            recall = []
+        if (count, first, sug, status, recall) != (self.count, self.first, self.sug, self.status, self.recall):
+            self.count, self.first, self.sug, self.status, self.recall = count, first, sug, status, recall
             self.layout()
         if self.mode == "done" and self.card_open and time.time() >= self.close_at:
             self.toggle_card()
@@ -653,8 +850,12 @@ class Widget:
         self.card_open = not self.card_open
         if self.card_open:
             self.saved = None               # R5: the card replaces the confirmation
+            quiet = not self.count and not self.status.get("paused")
             self.mode, self.show_done, self.scroll = (
-                "suggest" if self.sug and not self.count and not self.status.get("paused") else "here"), False, None
+                "recall" if self.recall and quiet else "suggest" if self.sug and quiet else "here"), False, None
+            ask = self.ask_state_fn()
+            if ask.get("state") in ("working", "done") and ask.get("question") != self.ask_seen:
+                self.mode = "ask"           # an answer you have not seen yet comes first
             self.query, self.also = "", True
             self.celebrate_now = False      # opening it later shows the calm state, never the celebration
             self.data = self.provider()
@@ -715,15 +916,22 @@ class Widget:
     # -- the card
 
     def _key(self):
+        if self.mode == "ask":                        # rebuilt when the answer arrives, never under the typing
+            return repr((self.mode, self.ask_state_fn().get("state"), self.ask_state_fn().get("question")))
         if self.mode in ("pick", "suggest"):          # fields in use: don't rebuild under the typing
             return repr((self.mode, self.sug))
-        return repr((self.data, self.mode, self.show_done, self.flow.signature(time.time()), self.sug, self.done_text, self.status))
+        return repr((self.detail if self.mode == "detail" else None, self.note_open if self.mode == "note" else None, self.data, self.mode, self.show_done, self.flow.signature(time.time()), self.sug, self.done_text, self.status,
+                     [(r["id"], r["text"]) for r in self.recall]))
 
     def render(self):
         self._flow_step()                   # a clear that is due shows in this very render
         self.shown = self._key()
         if self.mode == "suggest" and not self.sug:
             self.mode = "here"
+        if self.mode == "detail" and not any(r["id"] == self.detail for r in self.recall):
+            self.mode = self.detail_back if self.detail_back != "recall" or self.recall else "here"
+        if self.mode == "recall" and not self.recall:
+            self.mode = "suggest" if self.sug and not self.count else "here"
         view = notes.card_view(self.data, self.mode if self.mode == "project" else "here", self.show_done,
                               self._holding())
         kept = self.scroll.contentView().bounds().origin.y if self.scroll is not None else 0
@@ -733,10 +941,18 @@ class Widget:
             y = self._paused(body, y)
         elif self.mode == "pause":
             y = self._pause_menu(body, y)
+        elif self.mode == "recall":
+            y = self._recall(body, y)
         elif self.mode == "suggest":
             y = self._suggest(body, y)
         elif self.mode == "pick":
             y = self._pick(body, y)
+        elif self.mode == "ask":
+            y = self._ask(body, y)
+        elif self.mode == "detail":
+            y = self._detail(body, y)
+        elif self.mode == "note":
+            y = self._note_full(body, y)
         elif self.mode == "done":
             y = self._done(body, y)
         elif self.mode == "finished":
@@ -774,7 +990,7 @@ class Widget:
         self.celebrate_now = False          # played once, never on a re-render
         self.card_height = height
         self._place_card()
-        if self.mode == "pick":
+        if self.mode == "pick" or (self.mode == "ask" and self.search is not None):
             self._focus(self.search)
         self.layout()                           # the pill's mark follows what the card shows
 
@@ -802,20 +1018,57 @@ class Widget:
         text_w = CARD_W - 2 * PAD - 28
         color = NSColor.secondaryLabelColor() if row["done"] else NSColor.labelColor()
         field, h = _label(row["text"], 14, color=color, frame=(28 + 8, 0, text_w, 17), wrap=True, strike=row["done"])
+        long = h > NOTE_LINES_H                                  # a long note shows its first lines; its text opens it in full
+        if long:
+            field.setMaximumNumberOfLines_(NOTE_LINES)
+            field.setLineBreakMode_(4)
+            h = NOTE_LINES_H
         height = h + 14
         folding = self.flow.phase(row["id"], time.time()) == "fold"
-        tap = _Tap.alloc().initWithFrame_callback_(
-            NSMakeRect(6, y, CARD_W - 12, height),
+        fade = (lambda t: t.setAlphaValue_(FOLD_ALPHA)) if folding else (lambda t: None)
+        # only the circle ticks; the words open the whole note (a tap on words never ticks it by accident)
+        mark = _Tap.alloc().initWithFrame_callback_(
+            NSMakeRect(6, y, 40, height),
             (lambda: None) if folding else (lambda nid=row["id"], done=row["done"]: self.ticked(nid, not done)))
-        if folding:
-            tap.setAlphaValue_(FOLD_ALPHA)
+        mark.label = ("Reopen: " if row["done"] else "Done: ") + row["text"]
+        fade(mark)
         ring = _Ring.alloc().initWithChecked_(row["done"])
         ring.setFrame_(NSMakeRect(PAD - 6 + 2, 8, 17, 17))
-        field.setFrame_(NSMakeRect(PAD - 6 + 2 + 17 + 11, 7, text_w - 4, h))
-        tap.addSubview_(ring)
-        tap.addSubview_(field)
-        body.addSubview_(tap)
+        mark.addSubview_(ring)
+        body.addSubview_(mark)
+        words = _Tap.alloc().initWithFrame_callback_(
+            NSMakeRect(46, y, CARD_W - 12 - 40, height), (lambda: None) if folding else (lambda nid=row["id"]: self._open_note(nid)))
+        words.label = "Read: " + row["text"]
+        fade(words)
+        field.setFrame_(NSMakeRect(PAD - 6 + 2 + 17 + 11 - 40, 7, text_w - 4, h))
+        words.addSubview_(field)
+        if long:
+            words.addSubview_(_label("›", 14, color=NSColor.tertiaryLabelColor(), frame=(CARD_W - 12 - 40 - 16, 7, 12, 17))[0])
+        body.addSubview_(words)
         return y + height
+
+    def _open_note(self, nid):
+        self.note_open, self.note_back = nid, "here"
+        self._go("note")
+
+    def _note_full(self, body, y):
+        """One note in full: all of its words, and the one thing you can do with it."""
+        row = next((r for r in notes.card_view(self.data, "here", self.show_done, self._holding()).get("rows", [])
+                    if r["id"] == self.note_open), None)
+        if row is None:
+            return self._empty(body, y)
+        back = _Tap.alloc().initWithFrame_callback_(NSMakeRect(PAD - 4, y - 4, 120, 16), lambda: self._go("here"))
+        back.addSubview_(_label("‹ Back", 12, color=NSColor.secondaryLabelColor(), frame=(4, 0, 110, 16))[0])
+        body.addSubview_(back)
+        y += 26
+        text, h = _label(row["text"], 15, color=NSColor.secondaryLabelColor() if row["done"] else NSColor.labelColor(),
+                         frame=(PAD, y, CARD_W - 2 * PAD, 20), wrap=True, strike=row["done"])
+        body.addSubview_(text)
+        y += h + 16
+        nid, done = row["id"], row["done"]
+        self._button(body, (8, y, CARD_W - 16, 33), "Reopen" if done else "Mark done",
+                     lambda: (self.ticked(nid, not done), self._go("here")), primary=True)
+        return y + 41
 
     def _link(self, body, y, left, right, callback):
         tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(6, y, CARD_W - 12, 24), callback)
@@ -1012,6 +1265,7 @@ class Widget:
         if kind == "fresh":
             y = self._state(body, y, "square.and.pencil", "soft", "No notes yet",
                             f"Press {self.hotkey} and say what to remember.")
+            y = self._actions(body, y)
             return self._pause_row(body, y)
         if kind == "caught":
             n = view["done_here"]
@@ -1019,6 +1273,7 @@ class Widget:
                             celebrate=self.celebrate_now)
             y = self._add_row(body, y - 4)       # caught up with the past, not with the future (F6)
             y = self._done_row(body, y, n)
+            y = self._actions(body, y)
             y = self._pause_row(body, y)
             return self._toast(body, y)
         y = self._header(body, y, view["title"], view["caption"])
@@ -1037,8 +1292,164 @@ class Widget:
             y = self._link(body, y, left, "›", lambda: self._go("pick"))
         if view["done_here"]:
             y = self._done_row(body, y, view["done_here"])
+        if self.recall:
+            y = self._recall_boxes(body, y + 6)
+        y = self._actions(body, y + 4)
         y = self._pause_row(body, y)
         return self._toast(body, y)
+
+    # -- what LMemM does for you: copy a brief, copy a recap, ask your memory
+
+    def _actions(self, body, y):
+        row, h = round_actions([("sparkles", "Brief", lambda: self._act("brief")),
+                                ("text.alignleft", "Recap", lambda: self._act("recap")),
+                                ("magnifyingglass", "Ask", self._open_ask)], CARD_W - 16)
+        row.setFrameOrigin_((8, y + 2))
+        body.addSubview_(row)
+        return y + h + 4
+
+    def _action(self, body, y, symbol, text, callback):
+        tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(6, y, CARD_W - 12, 28), callback)
+        mute = NSColor.secondaryLabelColor()
+        image = _symbol(symbol)
+        if image is not None:
+            holder = NSImageView.alloc().initWithFrame_(NSMakeRect(PAD - 6, 7, 14, 14))
+            holder.setImage_(image)
+            holder.setContentTintColor_(mute)
+            tap.addSubview_(holder)
+        tap.addSubview_(_label(text, 13, color=NSColor.labelColor(), frame=(PAD - 6 + 22, 5, CARD_W - 80, 17))[0])
+        body.addSubview_(tap)
+        return y + 28
+
+    def _act(self, name):
+        self.on_action(name)
+        self.close_card()
+        self.flash("Working on it…")
+
+    def _open_ask(self):
+        self.ask_reset()
+        self.search = None
+        self._go("ask")
+
+    def _ask(self, body, y):
+        """The question box; then "looking…"; then the answer with where it came from."""
+        st = self.ask_state_fn()
+        y = self._header(body, y, "Ask your memory", "", back=("Back", lambda: self._go("here")))
+        if st.get("state") == "idle":
+            box = _Tap.alloc().initWithFrame_callback_(NSMakeRect(8, y - 6, CARD_W - 16, 34), lambda: None)
+            box.fill = True
+            self.search = _field("", "What was that figure from the sheet?", 13, False, (12, 8, CARD_W - 16 - 24, 18), self.fields)
+            box.addSubview_(self.search)
+            body.addSubview_(box)
+            y += 36
+            hint, h = _label("Answered from what you’ve seen and written. Return to ask.", 11,
+                             color=NSColor.tertiaryLabelColor(), frame=(PAD, y + 2, CARD_W - 2 * PAD, 14), wrap=True)
+            body.addSubview_(hint)
+            return y + h + 6
+        q, qh = _label(_short(st.get("question", ""), 120), 12, color=NSColor.secondaryLabelColor(),
+                       frame=(PAD, y - 4, CARD_W - 2 * PAD, 16), wrap=True)
+        body.addSubview_(q)
+        y += qh + 4
+        if st.get("state") == "working":
+            body.addSubview_(_label("Looking through what you’ve seen…", 13, frame=(PAD, y, CARD_W - 2 * PAD, 18))[0])
+            return y + 28
+        self.ask_seen = st.get("question")
+        text, h = _label(st.get("answer", ""), 14, frame=(PAD, y, CARD_W - 2 * PAD, 18), wrap=True)
+        body.addSubview_(text)
+        y += h + 10
+        for src in st.get("sources") or []:
+            box = _Box.alloc().initWithTone_dashed_((0.45, 0.36, 0.78), False)
+            line, lh = _label(_short(src["text"], 110), 12, frame=(12, 8, CARD_W - 16 - 24, 15), wrap=True)
+            line.setMaximumNumberOfLines_(2)
+            line.setLineBreakMode_(4)
+            lh = min(lh, 31)
+            line.setFrame_(NSMakeRect(12, 8, CARD_W - 16 - 24, lh))
+            box.addSubview_(line)
+            box.addSubview_(_label(_short(src["line"], 60), 11, color=NSColor.tertiaryLabelColor(),
+                                   frame=(12, 8 + lh + 3, CARD_W - 16 - 24, 14))[0])
+            box.setFrame_(NSMakeRect(8, y, CARD_W - 16, lh + 8 + 3 + 14 + 8))
+            body.addSubview_(box)
+            y += lh + 8 + 3 + 14 + 8 + 6
+        y = self._action(body, y + 2, "magnifyingglass", "Ask something else", self._open_ask)
+        return y
+
+    # -- what LMemM brings back: pick up, left open, next step (nextsteps.py)
+
+    def _recall(self, body, y):
+        """The card when the pill wears a recall mark: one box per thing, then the project offer if there is one."""
+        n = len(self.recall)
+        y = self._header(body, y, f"{n} thing{'s' * (n != 1)}", "Since you were last here")
+        y = self._recall_boxes(body, y - 6)
+        if self.sug:
+            y = self._link(body, y + 2, f"Part of a project? {self.sug['peek']}", "›", lambda: self._go("suggest"))
+        y = self._actions(body, y + 4)
+        return self._pause_row(body, y)
+
+    def _recall_boxes(self, body, y):
+        group, h = recall_boxes(self.recall[:4], CARD_W - 16, self._open_detail,
+                                lambda sid: self._recall_answer(sid, "done"))
+        group.setFrameOrigin_((8, y + 4))
+        body.addSubview_(group)
+        return y + 4 + h + 4
+
+    def _open_detail(self, sid):
+        self.detail, self.detail_back = sid, "recall" if self.mode == "recall" else "here"
+        self._go("detail")
+
+    def _detail(self, body, y):
+        """One step in full: the whole sentence, every line of detail, where it comes from, and what you can do."""
+        step = next((r for r in self.recall if r["id"] == self.detail), None)
+        if step is None:
+            return self._empty(body, y)
+        label, symbol, rgb, _dashed = RECALL[step["kind"]]
+        tone = NSColor.colorWithRed_green_blue_alpha_(*rgb, 1.0)
+        back = _Tap.alloc().initWithFrame_callback_(NSMakeRect(PAD - 4, y - 4, 120, 16), lambda: self._go(self.detail_back))
+        back.addSubview_(_label("‹ Back", 12, color=NSColor.secondaryLabelColor(), frame=(4, 0, 110, 16))[0])
+        body.addSubview_(back)
+        y += 24
+        image = _symbol(symbol)
+        if image is not None:
+            icon = NSImageView.alloc().initWithFrame_(NSMakeRect(PAD, y + 1, 14, 14))
+            icon.setImage_(image)
+            icon.setContentTintColor_(tone)
+            body.addSubview_(icon)
+        body.addSubview_(_label(label.upper(), 10.5, bold=True, color=tone, frame=(PAD + 20, y, 160, 14))[0])
+        y += 24
+        text, h = _label(step["text"], 15, bold=True, frame=(PAD, y, CARD_W - 2 * PAD, 20), wrap=True)
+        body.addSubview_(text)
+        y += h + 12
+        detail = step.get("detail") or {}
+        for key, name in (("goal", "Making"), ("last_wrote", "Last wrote"), ("open", "Open"), ("from", "From")):
+            if detail.get(key):
+                body.addSubview_(_label(name.upper(), 10, bold=True, color=NSColor.tertiaryLabelColor(),
+                                        frame=(PAD, y, CARD_W - 2 * PAD, 13))[0])
+                y += 15
+                line, lh = _label(detail[key], 13, frame=(PAD, y, CARD_W - 2 * PAD, 17), wrap=True)
+                body.addSubview_(line)
+                y += lh + 12
+        things = step.get("things") or detail.get("things") or []
+        if things:
+            body.addSubview_(_label("WHERE", 10, bold=True, color=NSColor.tertiaryLabelColor(),
+                                    frame=(PAD, y, CARD_W - 2 * PAD, 13))[0])
+            y += 15
+            for t in things[:6]:
+                line, lh = _label(" · ".join(x for x in (t.get("app"), t.get("title")) if x), 12,
+                                  color=NSColor.secondaryLabelColor(), frame=(PAD, y, CARD_W - 2 * PAD, 16), wrap=True)
+                body.addSubview_(line)
+                y += lh + 4
+            y += 8
+        sid = step["id"]
+        primary = "Copy" if step["kind"] == "earlier" else "Mark done"
+        self._button(body, (8, y, CARD_W - 16, 33), primary,
+                     lambda: (self._recall_answer(sid, "done"), self._go(self.detail_back)), primary=True)
+        y += 39
+        self._button(body, (8, y, CARD_W - 16, 30), "Not now",
+                     lambda: (self._recall_answer(sid, "dismissed"), self._go(self.detail_back)))
+        return y + 34
+
+    def _recall_answer(self, sid, state):
+        self.on_recall(sid, state)
+        self.refresh()                      # the box goes at once; the pill's mark follows
 
     # -- projects: the suggestion, the picker, and the confirmation
 
@@ -1060,7 +1471,11 @@ class Widget:
             self.render()
 
     def _submitted(self, text):
-        if self.mode == "pick" and text.strip():
+        if self.mode == "ask" and text.strip():
+            self.ask_fn(text)
+            self.search = None
+            self.render()
+        elif self.mode == "pick" and text.strip():
             self._file(" ".join(text.split()))
         elif self.mode == "suggest":
             self._accept()
@@ -1120,7 +1535,7 @@ class Widget:
         shown = sug["things"][:4]
         for i, thing in enumerate(shown):
             x = PAD + i * 63
-            tile = _Tile.alloc().initWithKind_size_(thing["kind"], 34)
+            tile = _Tile.alloc().initWithKind_app_size_(thing["kind"], thing.get("app"), 34)
             tile.setFrame_(NSMakeRect(x + 11, y, 34, 34))
             body.addSubview_(tile)
             name = _label(thing["title"], 11, color=NSColor.secondaryLabelColor(), frame=(x, y + 38, 56, 14))[0]
@@ -1161,7 +1576,7 @@ class Widget:
         body.addSubview_(small)
         y += h + 12
         box = _Dashed.alloc().initWithFrame_(NSMakeRect(PAD, y, CARD_W - 2 * PAD, 62))
-        tile = _Tile.alloc().initWithKind_size_(view.get("kind", ""), 34)
+        tile = _Tile.alloc().initWithKind_app_size_(view.get("kind", ""), view.get("app"), 34)
         tile.setFrame_(NSMakeRect(14, 14, 34, 34))
         box.addSubview_(tile)
         box.addSubview_(_label(thing, 14, bold=True, frame=(58, 12, CARD_W - 2 * PAD - 70, 18))[0])

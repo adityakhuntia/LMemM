@@ -32,6 +32,7 @@ draws it and forwards presses to `press()`; it decides nothing.
 """
 
 import functools
+import readable
 import unicodedata
 from datetime import datetime
 
@@ -100,7 +101,7 @@ def group_of(iso, now):
 
 
 def title_of(item):
-    return item.get("title") or item.get("doing") or item.get("app") or "Untitled"
+    return readable.show(item)
 
 
 HUES = 8                              # the window has eight calm colours (never red: red is for a permission that is off)
@@ -246,7 +247,8 @@ def _count_line(c, subs=0):
 
 def side(reg, items, state, counts, now):
     needs = needs_you(items)
-    return {"needs": {"count": len(needs), "rows": [_thing(reg, i, now) for i in needs[:NEEDS_SIDE]]},
+    return {"home": {"selected": state["view"] == "home"},
+            "needs": {"count": len(needs), "rows": [_thing(reg, i, now) for i in needs[:NEEDS_SIDE]]},
             "tree": tree_rows(reg, state, counts),
             "unplaced": len(projects.unassigned(items)), "archived": len(archived_roots(reg))}
 
@@ -336,7 +338,7 @@ def home(reg, items, counts, now, sugg=None):
         empty = {"title": "No projects yet", "line": "Your things are saved. Projects you make will appear here."}
     else:
         empty = None
-    return {"kind": "home", "title": "All projects", "meta": plural(len(top), "project"),
+    return {"kind": "home", "title": "Home", "meta": plural(len(top), "project"),
             "needs": {"count": len(needs), "rows": [_thing(reg, i, now, with_notes=True) for i in needs[:NEEDS_HOME]]},
             "cards": cards, "unplaced": len(projects.unassigned(items)), "empty": empty,
             "suggest": _suggest_home(sugg)}

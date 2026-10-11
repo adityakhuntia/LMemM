@@ -47,8 +47,8 @@ CTRL, SHIFT, OPT, CMD = 1 << 18, 1 << 17, 1 << 19, 1 << 20
 
 def front():
     app = macos.NSWorkspace.sharedWorkspace().frontmostApplication()
-    if app is None:
-        return None
+    if app is None or app.processIdentifier() == os.getpid():
+        return None                         # never inspect our own UI from a worker
     return {"app": app.localizedName(), "bundle_id": app.bundleIdentifier(), "pid": app.processIdentifier()}
 
 
@@ -96,6 +96,8 @@ class AXReader:
         return time.monotonic() - self.enabled_at.get(pid, -1e9) < seconds
 
     def read(self, front, full):
+        if front["pid"] == os.getpid():
+            return None                     # own-process AX can invoke AppKit off the main thread
         if not self.trusted():
             return None
         el = self.app_element(front["pid"], front["bundle_id"])
@@ -233,6 +235,8 @@ class Tap:
 
 def click_target(reader, x, y):
     """What was clicked: its role and, for buttons/links/tabs/rows, its name. Never a text field's contents."""
+    if front() is None:
+        return None, None                   # own window/menu: no background AX hit-testing
     AS = reader.AS
     err, el = AS.AXUIElementCopyElementAtPosition(AS.AXUIElementCreateSystemWide(), x, y, None)
     if err != 0 or el is None:
@@ -332,6 +336,15 @@ class Trail:
                 and not cur["key"].endswith(":?") and cur.get("name")):
             return dict(cur)
         return None
+
+    def place_key(self, bundle_id=None):
+        """A short string naming the place the trail is sure of (a chat, a channel), or None. It changes when the
+        user moves inside one window, which the window title and the screenshot poll do not notice."""
+        cur = self.engine.tracker.current
+        if (not cur or cur.get("confidence", 0) < 0.7 or cur.get("conflict") or cur["key"].endswith(":?")
+                or (bundle_id and cur.get("bundle_id") != bundle_id)):
+            return None
+        return cur["key"]
 
     def paused(self):
         return bool(self.flags & {"asleep", "display_off", "locked"}) or bool(self.external_pause()) or os.path.exists(

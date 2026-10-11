@@ -1,0 +1,1135 @@
+{
+  "model_id": "all-minilm:22m",
+  "model_digest": "1b226e2802dbb772b5fc32a58f103ca1804ef7501331012de126ab22f67475ef",
+  "dimension": 384,
+  "fixture": {
+    "version": 1,
+    "description": "Synthetic, hand-labelled project memory retrieval suite. Freeze before model selection; do not tune on held-out queries.",
+    "corpus_sha256": "4d68b68b0e1935710b87ea62d787e7d71cc13fc0d6924007686b749b36ea0c4c",
+    "development_sha256": "3d5dec92960b8e8a23ded462376c99858273da7f0fbf056095168169d209d52e",
+    "held_out_sha256": "cfa85fbf43a83a2fad9401788b083af81d6c1c5b24803693410c955e588f27d2",
+    "projects": {
+      "alpha": "/synthetic/alpha/repo",
+      "beta": "/synthetic/beta/repo"
+    },
+    "files": {
+      "corpus": "corpus.json",
+      "development": "development.json",
+      "held_out": "held-out.json"
+    }
+  },
+  "split": "development",
+  "summary": {
+    "all": {
+      "count": 20,
+      "keyword": {
+        "recall_at_5": 0.65,
+        "mrr": 0.5725
+      },
+      "vector": {
+        "recall_at_5": 1.0,
+        "mrr": 1.0
+      },
+      "hybrid": {
+        "recall_at_5": 0.95,
+        "mrr": 0.8362499999999999
+      }
+    },
+    "exact": {
+      "count": 10,
+      "keyword": {
+        "recall_at_5": 0.8,
+        "mrr": 0.8
+      },
+      "vector": {
+        "recall_at_5": 1.0,
+        "mrr": 1.0
+      },
+      "hybrid": {
+        "recall_at_5": 1.0,
+        "mrr": 1.0
+      }
+    },
+    "paraphrase": {
+      "count": 10,
+      "keyword": {
+        "recall_at_5": 0.5,
+        "mrr": 0.34500000000000003
+      },
+      "vector": {
+        "recall_at_5": 1.0,
+        "mrr": 1.0
+      },
+      "hybrid": {
+        "recall_at_5": 0.9,
+        "mrr": 0.6725000000000001
+      }
+    }
+  },
+  "details": [
+    {
+      "id": "q-01-exact",
+      "kind": "exact",
+      "gold_count": 1,
+      "scores": {
+        "keyword": {
+          "recall_at_5": 0.0,
+          "mrr": 0.0
+        },
+        "vector": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "hybrid": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        }
+      },
+      "rankings": {
+        "keyword": [],
+        "vector": [
+          "evidence-45a1547dcd9ecaa2f90681d8",
+          "evidence-52c351ab4b3633cfa1732ee6",
+          "evidence-a114c9df652fe779b9a13f60",
+          "evidence-eec6b3b62ac7090955723aa9",
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-d7373097b3319814b7bbac67",
+          "evidence-430454bd59262b0843870f78",
+          "evidence-c3822ba988a48d2810a5d2c6",
+          "evidence-7c7d18c36908677b6a6fbe28"
+        ],
+        "hybrid": [
+          "evidence-45a1547dcd9ecaa2f90681d8",
+          "evidence-52c351ab4b3633cfa1732ee6",
+          "evidence-a114c9df652fe779b9a13f60",
+          "evidence-eec6b3b62ac7090955723aa9",
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-d7373097b3319814b7bbac67",
+          "evidence-430454bd59262b0843870f78",
+          "evidence-c3822ba988a48d2810a5d2c6",
+          "evidence-7c7d18c36908677b6a6fbe28"
+        ]
+      }
+    },
+    {
+      "id": "q-01-paraphrase",
+      "kind": "paraphrase",
+      "gold_count": 1,
+      "scores": {
+        "keyword": {
+          "recall_at_5": 1.0,
+          "mrr": 0.2
+        },
+        "vector": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "hybrid": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        }
+      },
+      "rankings": {
+        "keyword": [
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-eec6b3b62ac7090955723aa9",
+          "evidence-52c351ab4b3633cfa1732ee6",
+          "evidence-d7373097b3319814b7bbac67",
+          "evidence-45a1547dcd9ecaa2f90681d8",
+          "evidence-a114c9df652fe779b9a13f60"
+        ],
+        "vector": [
+          "evidence-45a1547dcd9ecaa2f90681d8",
+          "evidence-d7373097b3319814b7bbac67",
+          "evidence-52c351ab4b3633cfa1732ee6",
+          "evidence-eec6b3b62ac7090955723aa9",
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-430454bd59262b0843870f78",
+          "evidence-a114c9df652fe779b9a13f60",
+          "evidence-7c7d18c36908677b6a6fbe28",
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-c3822ba988a48d2810a5d2c6"
+        ],
+        "hybrid": [
+          "evidence-45a1547dcd9ecaa2f90681d8",
+          "evidence-d7373097b3319814b7bbac67",
+          "evidence-eec6b3b62ac7090955723aa9",
+          "evidence-52c351ab4b3633cfa1732ee6",
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-a114c9df652fe779b9a13f60",
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-430454bd59262b0843870f78",
+          "evidence-7c7d18c36908677b6a6fbe28",
+          "evidence-c3822ba988a48d2810a5d2c6"
+        ]
+      }
+    },
+    {
+      "id": "q-02-exact",
+      "kind": "exact",
+      "gold_count": 1,
+      "scores": {
+        "keyword": {
+          "recall_at_5": 0.0,
+          "mrr": 0.0
+        },
+        "vector": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "hybrid": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        }
+      },
+      "rankings": {
+        "keyword": [],
+        "vector": [
+          "evidence-e19fdd1be62ffd3bf6f5d65f",
+          "evidence-77dc7bdf4899c6f6357438d4",
+          "evidence-0704137976515f4a5e73ab96",
+          "evidence-354ae29257a149ba6d70fdba",
+          "evidence-242ef1f61dab2eabab0b9005",
+          "evidence-baf18090766dd5e63b0860e8",
+          "evidence-50e3553fe5349f11e476b2cc",
+          "evidence-d8af09e9fa62903cc8c7b04f",
+          "evidence-b2b7fb4583fe750ea8f9c990",
+          "evidence-f2a8038f3768ec6f38c01690"
+        ],
+        "hybrid": [
+          "evidence-e19fdd1be62ffd3bf6f5d65f",
+          "evidence-77dc7bdf4899c6f6357438d4",
+          "evidence-0704137976515f4a5e73ab96",
+          "evidence-354ae29257a149ba6d70fdba",
+          "evidence-242ef1f61dab2eabab0b9005",
+          "evidence-baf18090766dd5e63b0860e8",
+          "evidence-50e3553fe5349f11e476b2cc",
+          "evidence-d8af09e9fa62903cc8c7b04f",
+          "evidence-b2b7fb4583fe750ea8f9c990",
+          "evidence-f2a8038f3768ec6f38c01690"
+        ]
+      }
+    },
+    {
+      "id": "q-02-paraphrase",
+      "kind": "paraphrase",
+      "gold_count": 1,
+      "scores": {
+        "keyword": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "vector": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "hybrid": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        }
+      },
+      "rankings": {
+        "keyword": [
+          "evidence-e19fdd1be62ffd3bf6f5d65f",
+          "evidence-d8af09e9fa62903cc8c7b04f",
+          "evidence-50e3553fe5349f11e476b2cc",
+          "evidence-242ef1f61dab2eabab0b9005",
+          "evidence-baf18090766dd5e63b0860e8",
+          "evidence-77dc7bdf4899c6f6357438d4"
+        ],
+        "vector": [
+          "evidence-e19fdd1be62ffd3bf6f5d65f",
+          "evidence-d8af09e9fa62903cc8c7b04f",
+          "evidence-77dc7bdf4899c6f6357438d4",
+          "evidence-50e3553fe5349f11e476b2cc",
+          "evidence-354ae29257a149ba6d70fdba",
+          "evidence-0704137976515f4a5e73ab96",
+          "evidence-242ef1f61dab2eabab0b9005",
+          "evidence-baf18090766dd5e63b0860e8",
+          "evidence-b2b7fb4583fe750ea8f9c990",
+          "evidence-f2a8038f3768ec6f38c01690"
+        ],
+        "hybrid": [
+          "evidence-e19fdd1be62ffd3bf6f5d65f",
+          "evidence-d8af09e9fa62903cc8c7b04f",
+          "evidence-50e3553fe5349f11e476b2cc",
+          "evidence-77dc7bdf4899c6f6357438d4",
+          "evidence-242ef1f61dab2eabab0b9005",
+          "evidence-baf18090766dd5e63b0860e8",
+          "evidence-354ae29257a149ba6d70fdba",
+          "evidence-0704137976515f4a5e73ab96",
+          "evidence-b2b7fb4583fe750ea8f9c990",
+          "evidence-f2a8038f3768ec6f38c01690"
+        ]
+      }
+    },
+    {
+      "id": "q-03-exact",
+      "kind": "exact",
+      "gold_count": 1,
+      "scores": {
+        "keyword": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "vector": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "hybrid": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        }
+      },
+      "rankings": {
+        "keyword": [
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-7c7d18c36908677b6a6fbe28"
+        ],
+        "vector": [
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-430454bd59262b0843870f78",
+          "evidence-7c7d18c36908677b6a6fbe28",
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-c3822ba988a48d2810a5d2c6",
+          "evidence-eec6b3b62ac7090955723aa9",
+          "evidence-45a1547dcd9ecaa2f90681d8",
+          "evidence-a114c9df652fe779b9a13f60",
+          "evidence-d7373097b3319814b7bbac67",
+          "evidence-52c351ab4b3633cfa1732ee6"
+        ],
+        "hybrid": [
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-7c7d18c36908677b6a6fbe28",
+          "evidence-430454bd59262b0843870f78",
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-c3822ba988a48d2810a5d2c6",
+          "evidence-eec6b3b62ac7090955723aa9",
+          "evidence-45a1547dcd9ecaa2f90681d8",
+          "evidence-a114c9df652fe779b9a13f60",
+          "evidence-d7373097b3319814b7bbac67",
+          "evidence-52c351ab4b3633cfa1732ee6"
+        ]
+      }
+    },
+    {
+      "id": "q-03-paraphrase",
+      "kind": "paraphrase",
+      "gold_count": 1,
+      "scores": {
+        "keyword": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "vector": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "hybrid": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        }
+      },
+      "rankings": {
+        "keyword": [
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-c3822ba988a48d2810a5d2c6",
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-430454bd59262b0843870f78",
+          "evidence-7c7d18c36908677b6a6fbe28",
+          "evidence-eec6b3b62ac7090955723aa9"
+        ],
+        "vector": [
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-c3822ba988a48d2810a5d2c6",
+          "evidence-430454bd59262b0843870f78",
+          "evidence-d7373097b3319814b7bbac67",
+          "evidence-eec6b3b62ac7090955723aa9",
+          "evidence-7c7d18c36908677b6a6fbe28",
+          "evidence-52c351ab4b3633cfa1732ee6",
+          "evidence-a114c9df652fe779b9a13f60",
+          "evidence-45a1547dcd9ecaa2f90681d8",
+          "evidence-cae1fb7811c2ffa8007aa57c"
+        ],
+        "hybrid": [
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-c3822ba988a48d2810a5d2c6",
+          "evidence-430454bd59262b0843870f78",
+          "evidence-7c7d18c36908677b6a6fbe28",
+          "evidence-eec6b3b62ac7090955723aa9",
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-d7373097b3319814b7bbac67",
+          "evidence-52c351ab4b3633cfa1732ee6",
+          "evidence-a114c9df652fe779b9a13f60",
+          "evidence-45a1547dcd9ecaa2f90681d8"
+        ]
+      }
+    },
+    {
+      "id": "q-04-exact",
+      "kind": "exact",
+      "gold_count": 1,
+      "scores": {
+        "keyword": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "vector": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "hybrid": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        }
+      },
+      "rankings": {
+        "keyword": [
+          "evidence-b2b7fb4583fe750ea8f9c990",
+          "evidence-f2a8038f3768ec6f38c01690",
+          "evidence-0704137976515f4a5e73ab96",
+          "evidence-354ae29257a149ba6d70fdba"
+        ],
+        "vector": [
+          "evidence-b2b7fb4583fe750ea8f9c990",
+          "evidence-50e3553fe5349f11e476b2cc",
+          "evidence-242ef1f61dab2eabab0b9005",
+          "evidence-77dc7bdf4899c6f6357438d4",
+          "evidence-baf18090766dd5e63b0860e8",
+          "evidence-354ae29257a149ba6d70fdba",
+          "evidence-e19fdd1be62ffd3bf6f5d65f",
+          "evidence-f2a8038f3768ec6f38c01690",
+          "evidence-0704137976515f4a5e73ab96",
+          "evidence-d8af09e9fa62903cc8c7b04f"
+        ],
+        "hybrid": [
+          "evidence-b2b7fb4583fe750ea8f9c990",
+          "evidence-f2a8038f3768ec6f38c01690",
+          "evidence-354ae29257a149ba6d70fdba",
+          "evidence-0704137976515f4a5e73ab96",
+          "evidence-50e3553fe5349f11e476b2cc",
+          "evidence-242ef1f61dab2eabab0b9005",
+          "evidence-77dc7bdf4899c6f6357438d4",
+          "evidence-baf18090766dd5e63b0860e8",
+          "evidence-e19fdd1be62ffd3bf6f5d65f",
+          "evidence-d8af09e9fa62903cc8c7b04f"
+        ]
+      }
+    },
+    {
+      "id": "q-04-paraphrase",
+      "kind": "paraphrase",
+      "gold_count": 1,
+      "scores": {
+        "keyword": {
+          "recall_at_5": 0.0,
+          "mrr": 0.0
+        },
+        "vector": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "hybrid": {
+          "recall_at_5": 1.0,
+          "mrr": 0.2
+        }
+      },
+      "rankings": {
+        "keyword": [
+          "evidence-e19fdd1be62ffd3bf6f5d65f",
+          "evidence-baf18090766dd5e63b0860e8",
+          "evidence-0704137976515f4a5e73ab96",
+          "evidence-354ae29257a149ba6d70fdba"
+        ],
+        "vector": [
+          "evidence-b2b7fb4583fe750ea8f9c990",
+          "evidence-0704137976515f4a5e73ab96",
+          "evidence-242ef1f61dab2eabab0b9005",
+          "evidence-e19fdd1be62ffd3bf6f5d65f",
+          "evidence-77dc7bdf4899c6f6357438d4",
+          "evidence-354ae29257a149ba6d70fdba",
+          "evidence-50e3553fe5349f11e476b2cc",
+          "evidence-baf18090766dd5e63b0860e8",
+          "evidence-f2a8038f3768ec6f38c01690",
+          "evidence-d8af09e9fa62903cc8c7b04f"
+        ],
+        "hybrid": [
+          "evidence-e19fdd1be62ffd3bf6f5d65f",
+          "evidence-0704137976515f4a5e73ab96",
+          "evidence-baf18090766dd5e63b0860e8",
+          "evidence-354ae29257a149ba6d70fdba",
+          "evidence-b2b7fb4583fe750ea8f9c990",
+          "evidence-242ef1f61dab2eabab0b9005",
+          "evidence-77dc7bdf4899c6f6357438d4",
+          "evidence-50e3553fe5349f11e476b2cc",
+          "evidence-f2a8038f3768ec6f38c01690",
+          "evidence-d8af09e9fa62903cc8c7b04f"
+        ]
+      }
+    },
+    {
+      "id": "q-05-exact",
+      "kind": "exact",
+      "gold_count": 1,
+      "scores": {
+        "keyword": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "vector": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "hybrid": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        }
+      },
+      "rankings": {
+        "keyword": [
+          "evidence-430454bd59262b0843870f78",
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-c3822ba988a48d2810a5d2c6",
+          "evidence-7c7d18c36908677b6a6fbe28",
+          "evidence-eec6b3b62ac7090955723aa9"
+        ],
+        "vector": [
+          "evidence-430454bd59262b0843870f78",
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-7c7d18c36908677b6a6fbe28",
+          "evidence-d7373097b3319814b7bbac67",
+          "evidence-eec6b3b62ac7090955723aa9",
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-45a1547dcd9ecaa2f90681d8",
+          "evidence-c3822ba988a48d2810a5d2c6",
+          "evidence-52c351ab4b3633cfa1732ee6",
+          "evidence-a114c9df652fe779b9a13f60"
+        ],
+        "hybrid": [
+          "evidence-430454bd59262b0843870f78",
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-7c7d18c36908677b6a6fbe28",
+          "evidence-eec6b3b62ac7090955723aa9",
+          "evidence-c3822ba988a48d2810a5d2c6",
+          "evidence-d7373097b3319814b7bbac67",
+          "evidence-45a1547dcd9ecaa2f90681d8",
+          "evidence-52c351ab4b3633cfa1732ee6",
+          "evidence-a114c9df652fe779b9a13f60"
+        ]
+      }
+    },
+    {
+      "id": "q-05-paraphrase",
+      "kind": "paraphrase",
+      "gold_count": 1,
+      "scores": {
+        "keyword": {
+          "recall_at_5": 0.0,
+          "mrr": 0.0
+        },
+        "vector": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "hybrid": {
+          "recall_at_5": 1.0,
+          "mrr": 0.2
+        }
+      },
+      "rankings": {
+        "keyword": [
+          "evidence-52c351ab4b3633cfa1732ee6",
+          "evidence-d7373097b3319814b7bbac67",
+          "evidence-a114c9df652fe779b9a13f60",
+          "evidence-45a1547dcd9ecaa2f90681d8"
+        ],
+        "vector": [
+          "evidence-430454bd59262b0843870f78",
+          "evidence-7c7d18c36908677b6a6fbe28",
+          "evidence-d7373097b3319814b7bbac67",
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-45a1547dcd9ecaa2f90681d8",
+          "evidence-eec6b3b62ac7090955723aa9",
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-a114c9df652fe779b9a13f60",
+          "evidence-52c351ab4b3633cfa1732ee6",
+          "evidence-c3822ba988a48d2810a5d2c6"
+        ],
+        "hybrid": [
+          "evidence-d7373097b3319814b7bbac67",
+          "evidence-45a1547dcd9ecaa2f90681d8",
+          "evidence-52c351ab4b3633cfa1732ee6",
+          "evidence-a114c9df652fe779b9a13f60",
+          "evidence-430454bd59262b0843870f78",
+          "evidence-7c7d18c36908677b6a6fbe28",
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-eec6b3b62ac7090955723aa9",
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-c3822ba988a48d2810a5d2c6"
+        ]
+      }
+    },
+    {
+      "id": "q-06-exact",
+      "kind": "exact",
+      "gold_count": 1,
+      "scores": {
+        "keyword": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "vector": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "hybrid": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        }
+      },
+      "rankings": {
+        "keyword": [
+          "evidence-242ef1f61dab2eabab0b9005"
+        ],
+        "vector": [
+          "evidence-242ef1f61dab2eabab0b9005",
+          "evidence-50e3553fe5349f11e476b2cc",
+          "evidence-354ae29257a149ba6d70fdba",
+          "evidence-e19fdd1be62ffd3bf6f5d65f",
+          "evidence-0704137976515f4a5e73ab96",
+          "evidence-f2a8038f3768ec6f38c01690",
+          "evidence-d8af09e9fa62903cc8c7b04f",
+          "evidence-b2b7fb4583fe750ea8f9c990",
+          "evidence-77dc7bdf4899c6f6357438d4",
+          "evidence-baf18090766dd5e63b0860e8"
+        ],
+        "hybrid": [
+          "evidence-242ef1f61dab2eabab0b9005",
+          "evidence-50e3553fe5349f11e476b2cc",
+          "evidence-354ae29257a149ba6d70fdba",
+          "evidence-e19fdd1be62ffd3bf6f5d65f",
+          "evidence-0704137976515f4a5e73ab96",
+          "evidence-f2a8038f3768ec6f38c01690",
+          "evidence-d8af09e9fa62903cc8c7b04f",
+          "evidence-b2b7fb4583fe750ea8f9c990",
+          "evidence-77dc7bdf4899c6f6357438d4",
+          "evidence-baf18090766dd5e63b0860e8"
+        ]
+      }
+    },
+    {
+      "id": "q-06-paraphrase",
+      "kind": "paraphrase",
+      "gold_count": 1,
+      "scores": {
+        "keyword": {
+          "recall_at_5": 0.0,
+          "mrr": 0.0
+        },
+        "vector": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "hybrid": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        }
+      },
+      "rankings": {
+        "keyword": [],
+        "vector": [
+          "evidence-242ef1f61dab2eabab0b9005",
+          "evidence-0704137976515f4a5e73ab96",
+          "evidence-e19fdd1be62ffd3bf6f5d65f",
+          "evidence-f2a8038f3768ec6f38c01690",
+          "evidence-50e3553fe5349f11e476b2cc",
+          "evidence-d8af09e9fa62903cc8c7b04f",
+          "evidence-baf18090766dd5e63b0860e8",
+          "evidence-77dc7bdf4899c6f6357438d4",
+          "evidence-b2b7fb4583fe750ea8f9c990",
+          "evidence-354ae29257a149ba6d70fdba"
+        ],
+        "hybrid": [
+          "evidence-242ef1f61dab2eabab0b9005",
+          "evidence-0704137976515f4a5e73ab96",
+          "evidence-e19fdd1be62ffd3bf6f5d65f",
+          "evidence-f2a8038f3768ec6f38c01690",
+          "evidence-50e3553fe5349f11e476b2cc",
+          "evidence-d8af09e9fa62903cc8c7b04f",
+          "evidence-baf18090766dd5e63b0860e8",
+          "evidence-77dc7bdf4899c6f6357438d4",
+          "evidence-b2b7fb4583fe750ea8f9c990",
+          "evidence-354ae29257a149ba6d70fdba"
+        ]
+      }
+    },
+    {
+      "id": "q-07-exact",
+      "kind": "exact",
+      "gold_count": 1,
+      "scores": {
+        "keyword": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "vector": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "hybrid": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        }
+      },
+      "rankings": {
+        "keyword": [
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-52c351ab4b3633cfa1732ee6",
+          "evidence-d7373097b3319814b7bbac67",
+          "evidence-45a1547dcd9ecaa2f90681d8",
+          "evidence-a114c9df652fe779b9a13f60"
+        ],
+        "vector": [
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-52c351ab4b3633cfa1732ee6",
+          "evidence-eec6b3b62ac7090955723aa9",
+          "evidence-a114c9df652fe779b9a13f60",
+          "evidence-45a1547dcd9ecaa2f90681d8",
+          "evidence-d7373097b3319814b7bbac67",
+          "evidence-430454bd59262b0843870f78",
+          "evidence-c3822ba988a48d2810a5d2c6",
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-7c7d18c36908677b6a6fbe28"
+        ],
+        "hybrid": [
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-52c351ab4b3633cfa1732ee6",
+          "evidence-d7373097b3319814b7bbac67",
+          "evidence-45a1547dcd9ecaa2f90681d8",
+          "evidence-a114c9df652fe779b9a13f60",
+          "evidence-eec6b3b62ac7090955723aa9",
+          "evidence-430454bd59262b0843870f78",
+          "evidence-c3822ba988a48d2810a5d2c6",
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-7c7d18c36908677b6a6fbe28"
+        ]
+      }
+    },
+    {
+      "id": "q-07-paraphrase",
+      "kind": "paraphrase",
+      "gold_count": 1,
+      "scores": {
+        "keyword": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "vector": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "hybrid": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        }
+      },
+      "rankings": {
+        "keyword": [
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-d7373097b3319814b7bbac67",
+          "evidence-a114c9df652fe779b9a13f60",
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-c3822ba988a48d2810a5d2c6",
+          "evidence-430454bd59262b0843870f78",
+          "evidence-7c7d18c36908677b6a6fbe28",
+          "evidence-eec6b3b62ac7090955723aa9"
+        ],
+        "vector": [
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-7c7d18c36908677b6a6fbe28",
+          "evidence-eec6b3b62ac7090955723aa9",
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-430454bd59262b0843870f78",
+          "evidence-45a1547dcd9ecaa2f90681d8",
+          "evidence-52c351ab4b3633cfa1732ee6",
+          "evidence-a114c9df652fe779b9a13f60",
+          "evidence-c3822ba988a48d2810a5d2c6",
+          "evidence-d7373097b3319814b7bbac67"
+        ],
+        "hybrid": [
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-7c7d18c36908677b6a6fbe28",
+          "evidence-a114c9df652fe779b9a13f60",
+          "evidence-eec6b3b62ac7090955723aa9",
+          "evidence-430454bd59262b0843870f78",
+          "evidence-d7373097b3319814b7bbac67",
+          "evidence-c3822ba988a48d2810a5d2c6",
+          "evidence-45a1547dcd9ecaa2f90681d8",
+          "evidence-52c351ab4b3633cfa1732ee6"
+        ]
+      }
+    },
+    {
+      "id": "q-08-exact",
+      "kind": "exact",
+      "gold_count": 1,
+      "scores": {
+        "keyword": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "vector": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "hybrid": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        }
+      },
+      "rankings": {
+        "keyword": [
+          "evidence-d8af09e9fa62903cc8c7b04f",
+          "evidence-0704137976515f4a5e73ab96"
+        ],
+        "vector": [
+          "evidence-d8af09e9fa62903cc8c7b04f",
+          "evidence-50e3553fe5349f11e476b2cc",
+          "evidence-354ae29257a149ba6d70fdba",
+          "evidence-baf18090766dd5e63b0860e8",
+          "evidence-242ef1f61dab2eabab0b9005",
+          "evidence-f2a8038f3768ec6f38c01690",
+          "evidence-77dc7bdf4899c6f6357438d4",
+          "evidence-0704137976515f4a5e73ab96",
+          "evidence-e19fdd1be62ffd3bf6f5d65f",
+          "evidence-b2b7fb4583fe750ea8f9c990"
+        ],
+        "hybrid": [
+          "evidence-d8af09e9fa62903cc8c7b04f",
+          "evidence-0704137976515f4a5e73ab96",
+          "evidence-50e3553fe5349f11e476b2cc",
+          "evidence-354ae29257a149ba6d70fdba",
+          "evidence-baf18090766dd5e63b0860e8",
+          "evidence-242ef1f61dab2eabab0b9005",
+          "evidence-f2a8038f3768ec6f38c01690",
+          "evidence-77dc7bdf4899c6f6357438d4",
+          "evidence-e19fdd1be62ffd3bf6f5d65f",
+          "evidence-b2b7fb4583fe750ea8f9c990"
+        ]
+      }
+    },
+    {
+      "id": "q-08-paraphrase",
+      "kind": "paraphrase",
+      "gold_count": 1,
+      "scores": {
+        "keyword": {
+          "recall_at_5": 0.0,
+          "mrr": 0.0
+        },
+        "vector": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "hybrid": {
+          "recall_at_5": 1.0,
+          "mrr": 0.2
+        }
+      },
+      "rankings": {
+        "keyword": [
+          "evidence-50e3553fe5349f11e476b2cc",
+          "evidence-baf18090766dd5e63b0860e8",
+          "evidence-b2b7fb4583fe750ea8f9c990",
+          "evidence-77dc7bdf4899c6f6357438d4"
+        ],
+        "vector": [
+          "evidence-d8af09e9fa62903cc8c7b04f",
+          "evidence-50e3553fe5349f11e476b2cc",
+          "evidence-0704137976515f4a5e73ab96",
+          "evidence-f2a8038f3768ec6f38c01690",
+          "evidence-77dc7bdf4899c6f6357438d4",
+          "evidence-354ae29257a149ba6d70fdba",
+          "evidence-242ef1f61dab2eabab0b9005",
+          "evidence-e19fdd1be62ffd3bf6f5d65f",
+          "evidence-baf18090766dd5e63b0860e8",
+          "evidence-b2b7fb4583fe750ea8f9c990"
+        ],
+        "hybrid": [
+          "evidence-50e3553fe5349f11e476b2cc",
+          "evidence-77dc7bdf4899c6f6357438d4",
+          "evidence-baf18090766dd5e63b0860e8",
+          "evidence-b2b7fb4583fe750ea8f9c990",
+          "evidence-d8af09e9fa62903cc8c7b04f",
+          "evidence-0704137976515f4a5e73ab96",
+          "evidence-f2a8038f3768ec6f38c01690",
+          "evidence-354ae29257a149ba6d70fdba",
+          "evidence-242ef1f61dab2eabab0b9005",
+          "evidence-e19fdd1be62ffd3bf6f5d65f"
+        ]
+      }
+    },
+    {
+      "id": "q-09-exact",
+      "kind": "exact",
+      "gold_count": 1,
+      "scores": {
+        "keyword": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "vector": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "hybrid": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        }
+      },
+      "rankings": {
+        "keyword": [
+          "evidence-d7373097b3319814b7bbac67",
+          "evidence-52c351ab4b3633cfa1732ee6",
+          "evidence-45a1547dcd9ecaa2f90681d8",
+          "evidence-a114c9df652fe779b9a13f60"
+        ],
+        "vector": [
+          "evidence-d7373097b3319814b7bbac67",
+          "evidence-45a1547dcd9ecaa2f90681d8",
+          "evidence-52c351ab4b3633cfa1732ee6",
+          "evidence-c3822ba988a48d2810a5d2c6",
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-a114c9df652fe779b9a13f60",
+          "evidence-7c7d18c36908677b6a6fbe28",
+          "evidence-430454bd59262b0843870f78",
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-eec6b3b62ac7090955723aa9"
+        ],
+        "hybrid": [
+          "evidence-d7373097b3319814b7bbac67",
+          "evidence-45a1547dcd9ecaa2f90681d8",
+          "evidence-52c351ab4b3633cfa1732ee6",
+          "evidence-a114c9df652fe779b9a13f60",
+          "evidence-c3822ba988a48d2810a5d2c6",
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-7c7d18c36908677b6a6fbe28",
+          "evidence-430454bd59262b0843870f78",
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-eec6b3b62ac7090955723aa9"
+        ]
+      }
+    },
+    {
+      "id": "q-09-paraphrase",
+      "kind": "paraphrase",
+      "gold_count": 1,
+      "scores": {
+        "keyword": {
+          "recall_at_5": 0.0,
+          "mrr": 0.0
+        },
+        "vector": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "hybrid": {
+          "recall_at_5": 0.0,
+          "mrr": 0.125
+        }
+      },
+      "rankings": {
+        "keyword": [
+          "evidence-52c351ab4b3633cfa1732ee6",
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-c3822ba988a48d2810a5d2c6",
+          "evidence-430454bd59262b0843870f78",
+          "evidence-7c7d18c36908677b6a6fbe28",
+          "evidence-eec6b3b62ac7090955723aa9"
+        ],
+        "vector": [
+          "evidence-d7373097b3319814b7bbac67",
+          "evidence-eec6b3b62ac7090955723aa9",
+          "evidence-52c351ab4b3633cfa1732ee6",
+          "evidence-7c7d18c36908677b6a6fbe28",
+          "evidence-45a1547dcd9ecaa2f90681d8",
+          "evidence-430454bd59262b0843870f78",
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-c3822ba988a48d2810a5d2c6",
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-a114c9df652fe779b9a13f60"
+        ],
+        "hybrid": [
+          "evidence-52c351ab4b3633cfa1732ee6",
+          "evidence-eec6b3b62ac7090955723aa9",
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-7c7d18c36908677b6a6fbe28",
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-430454bd59262b0843870f78",
+          "evidence-c3822ba988a48d2810a5d2c6",
+          "evidence-d7373097b3319814b7bbac67",
+          "evidence-45a1547dcd9ecaa2f90681d8",
+          "evidence-a114c9df652fe779b9a13f60"
+        ]
+      }
+    },
+    {
+      "id": "q-10-exact",
+      "kind": "exact",
+      "gold_count": 1,
+      "scores": {
+        "keyword": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "vector": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "hybrid": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        }
+      },
+      "rankings": {
+        "keyword": [
+          "evidence-baf18090766dd5e63b0860e8"
+        ],
+        "vector": [
+          "evidence-baf18090766dd5e63b0860e8",
+          "evidence-354ae29257a149ba6d70fdba",
+          "evidence-50e3553fe5349f11e476b2cc",
+          "evidence-d8af09e9fa62903cc8c7b04f",
+          "evidence-77dc7bdf4899c6f6357438d4",
+          "evidence-e19fdd1be62ffd3bf6f5d65f",
+          "evidence-f2a8038f3768ec6f38c01690",
+          "evidence-0704137976515f4a5e73ab96",
+          "evidence-b2b7fb4583fe750ea8f9c990",
+          "evidence-242ef1f61dab2eabab0b9005"
+        ],
+        "hybrid": [
+          "evidence-baf18090766dd5e63b0860e8",
+          "evidence-354ae29257a149ba6d70fdba",
+          "evidence-50e3553fe5349f11e476b2cc",
+          "evidence-d8af09e9fa62903cc8c7b04f",
+          "evidence-77dc7bdf4899c6f6357438d4",
+          "evidence-e19fdd1be62ffd3bf6f5d65f",
+          "evidence-f2a8038f3768ec6f38c01690",
+          "evidence-0704137976515f4a5e73ab96",
+          "evidence-b2b7fb4583fe750ea8f9c990",
+          "evidence-242ef1f61dab2eabab0b9005"
+        ]
+      }
+    },
+    {
+      "id": "q-10-paraphrase",
+      "kind": "paraphrase",
+      "gold_count": 1,
+      "scores": {
+        "keyword": {
+          "recall_at_5": 1.0,
+          "mrr": 0.25
+        },
+        "vector": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        },
+        "hybrid": {
+          "recall_at_5": 1.0,
+          "mrr": 1.0
+        }
+      },
+      "rankings": {
+        "keyword": [
+          "evidence-d8af09e9fa62903cc8c7b04f",
+          "evidence-50e3553fe5349f11e476b2cc",
+          "evidence-242ef1f61dab2eabab0b9005",
+          "evidence-baf18090766dd5e63b0860e8",
+          "evidence-77dc7bdf4899c6f6357438d4"
+        ],
+        "vector": [
+          "evidence-baf18090766dd5e63b0860e8",
+          "evidence-77dc7bdf4899c6f6357438d4",
+          "evidence-354ae29257a149ba6d70fdba",
+          "evidence-e19fdd1be62ffd3bf6f5d65f",
+          "evidence-50e3553fe5349f11e476b2cc",
+          "evidence-d8af09e9fa62903cc8c7b04f",
+          "evidence-f2a8038f3768ec6f38c01690",
+          "evidence-0704137976515f4a5e73ab96",
+          "evidence-b2b7fb4583fe750ea8f9c990",
+          "evidence-242ef1f61dab2eabab0b9005"
+        ],
+        "hybrid": [
+          "evidence-baf18090766dd5e63b0860e8",
+          "evidence-d8af09e9fa62903cc8c7b04f",
+          "evidence-50e3553fe5349f11e476b2cc",
+          "evidence-77dc7bdf4899c6f6357438d4",
+          "evidence-242ef1f61dab2eabab0b9005",
+          "evidence-354ae29257a149ba6d70fdba",
+          "evidence-e19fdd1be62ffd3bf6f5d65f",
+          "evidence-f2a8038f3768ec6f38c01690",
+          "evidence-0704137976515f4a5e73ab96",
+          "evidence-b2b7fb4583fe750ea8f9c990"
+        ]
+      }
+    },
+    {
+      "id": "none-alpha",
+      "kind": "no_evidence",
+      "gold_count": 0,
+      "scores": {
+        "keyword": null,
+        "vector": null,
+        "hybrid": null
+      },
+      "rankings": {
+        "keyword": [
+          "evidence-52c351ab4b3633cfa1732ee6",
+          "evidence-430454bd59262b0843870f78",
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-c3822ba988a48d2810a5d2c6",
+          "evidence-7c7d18c36908677b6a6fbe28",
+          "evidence-eec6b3b62ac7090955723aa9"
+        ],
+        "vector": [
+          "evidence-52c351ab4b3633cfa1732ee6",
+          "evidence-45a1547dcd9ecaa2f90681d8",
+          "evidence-a114c9df652fe779b9a13f60",
+          "evidence-7c7d18c36908677b6a6fbe28",
+          "evidence-c3822ba988a48d2810a5d2c6",
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-eec6b3b62ac7090955723aa9",
+          "evidence-d7373097b3319814b7bbac67",
+          "evidence-430454bd59262b0843870f78"
+        ],
+        "hybrid": [
+          "evidence-52c351ab4b3633cfa1732ee6",
+          "evidence-cae1fb7811c2ffa8007aa57c",
+          "evidence-54ea990559a921a3781a2790",
+          "evidence-7c7d18c36908677b6a6fbe28",
+          "evidence-c3822ba988a48d2810a5d2c6",
+          "evidence-430454bd59262b0843870f78",
+          "evidence-eec6b3b62ac7090955723aa9",
+          "evidence-45a1547dcd9ecaa2f90681d8",
+          "evidence-a114c9df652fe779b9a13f60",
+          "evidence-d7373097b3319814b7bbac67"
+        ]
+      }
+    }
+  ],
+  "embedding_seconds": 0.8448998760432005,
+  "query_embedding_seconds": {
+    "count": 21,
+    "p50": 0.01025162497535348,
+    "p95": 0.011489290976896882
+  },
+  "acceptance": "development comparison only"
+}

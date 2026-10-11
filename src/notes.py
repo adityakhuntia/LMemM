@@ -10,6 +10,7 @@ to the thing it's on, and `lmemm.py notes` shows all open ones by project.
 """
 
 import hashlib
+import readable
 from datetime import datetime
 
 
@@ -130,7 +131,7 @@ def pending_view(items, include_done=False):
         shown = item.get("notes", []) if include_done else open_notes(item)
         if not shown:
             continue
-        entry = {"id": item["id"], "app": item["app"], "what": item.get("title") or item["doing"],
+        entry = {"id": item["id"], "app": item["app"], "what": readable.show(item),
                  "last_seen": item["last_seen"][:16].replace("T", " "),
                  "notes": [{"id": note_id(n), "at": n["at"][:16].replace("T", " "), "text": n["text"],
                             **({"done": item["notes_done"][note_id(n)][:16].replace("T", " ")}
@@ -159,7 +160,7 @@ def card(items, item_id):
     members = [i for i in items.values() if project_of(i) == project]
     left, plan, history = [], [], []
     for i in sorted(members, key=lambda i: (i["id"] != item_id, i["last_seen"]), reverse=False):
-        what = i.get("title") or i["doing"]
+        what = readable.show(i)
         for n in i.get("notes", []):
             nid = note_id(n)
             done_at = i.get("notes_done", {}).get(nid)
@@ -175,7 +176,7 @@ def card(items, item_id):
     plan.sort(key=lambda r: (bool(r["done"]), r["at"]))
     history.sort(key=lambda h: h["at"], reverse=True)
     return {"item": item_id, "filed": item.get("project"),
-            "title": item.get("title") or item["doing"], "app": item["app"], "project": project,
+            "title": readable.show(item), "app": item["app"], "project": project,
             "left": left, "plan": plan, "history": history,
             "things": len(members), "visits": sum(i.get("visits", 0) for i in members),
             "seconds": sum(i.get("seconds", 0) for i in members)}
@@ -327,7 +328,7 @@ def open_now(items, item_id, now_iso, minutes=30, limit=2):
         if _seconds_between(item["last_seen"], now_iso) <= minutes * 60:
             near.append(item)
     near.sort(key=lambda i: i["last_seen"], reverse=True)
-    return [{"id": i["id"], "title": i.get("title") or i["doing"]} for i in near[:limit]]
+    return [{"id": i["id"], "title": readable.show(i)} for i in near[:limit]]
 
 
 def picker_view(items, item_id, query="", now_iso=None):
@@ -347,7 +348,7 @@ def picker_view(items, item_id, query="", now_iso=None):
             for p in project_names(items) if not q or q in p["name"].lower()]
     exact = any(r["name"].lower() == q for r in rows)
     return {"title": f"Add {item.get('title') or item['doing']} to a project",
-            "total": len(project_names(items)), "kind": item.get("kind", ""),
+            "total": len(project_names(items)), "kind": item.get("kind", ""), "app": item.get("app"),
             "current": item.get("project"), "rows": rows, "new": "" if (not query or exact) else query,
             "also": open_now(items, item_id, now_iso or datetime.now().isoformat(timespec="seconds"))}
 
@@ -358,7 +359,7 @@ def suggestion_view(suggestion, items, answered=0, first_times=3):
     the card adds a line on what a project is; after that the pill is just the mark."""
     if not suggestion:
         return None
-    things = [{"id": i, "title": items[i].get("title") or items[i]["doing"], "app": items[i]["app"],
+    things = [{"id": i, "title": readable.show(items[i]), "app": items[i]["app"],
                "kind": items[i].get("kind", "")}
               for i in suggestion["ids"] if i in items]
     if len(things) < 2:

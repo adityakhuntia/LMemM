@@ -27,7 +27,8 @@ import setup_kit as kit
 import thing_actions
 import window_model
 from setup_kit import LEFT, RIGHT
-from widget import _Fields, _Flipped, _Ring, _Tap
+from widget import ROW_H, _Fields, _Flipped, _Group, _Ring, _Tap, _Tile
+from window_recall import RecallPanes
 
 W, H = 1080, 720                                       # the size it first opens at; after that the window remembers its own
 MIN_W, MIN_H = 880, 560                                # the smallest it can be dragged to
@@ -127,11 +128,17 @@ def _scroll(parent):
     return scroll
 
 
-class MainWindow:
+class MainWindow(RecallPanes):
     """on_press(row id) is called when the banner's button is pressed (ids the menu already knows).
     data() returns (project registry, things by id) for the page."""
 
-    def __init__(self, on_press, data, on_tick=None, on_add_note=None, on_project=None, on_project_undo=None, suggest=None, prefs=None):
+    def __init__(self, on_press, data, on_tick=None, on_add_note=None, on_project=None, on_project_undo=None, suggest=None, prefs=None,
+                 recall=None, on_recall=None, ask=None, ask_state=None, ask_reset=None, text=None, text_state=None,
+                 text_reset=None, copy=None, on_memory=None, memory_view=None):
+        self.on_memory=on_memory or (lambda action,payload:None)
+        self.memory_view=memory_view
+        self.memory_pane=None
+        self.memory_snapshot=None
         self.on_press = on_press
         self.data = data
         self.on_tick = on_tick or (lambda ids, done: None)               # tick or reopen notes (the pill's own function)
@@ -207,6 +214,7 @@ class MainWindow:
         self.root.addSubview_(self.toast_host)
         self.side_foot = _Flipped.alloc().initWithFrame_(NSMakeRect(0, H - 48, SIDE_W, 48))
         self.root.addSubview_(self.side_foot)
+        self.init_recall(self.root, recall, on_recall, ask, ask_state, ask_reset, text, text_state, text_reset, copy)
         self.overlay = _Flipped.alloc().initWithFrame_(NSMakeRect(0, 0, W, H))
         self.overlay.setHidden_(True)
         self.root.addSubview_(self.overlay)
@@ -331,7 +339,9 @@ class MainWindow:
         return self.cur["zone"] == zone and self.cur["id"] == rid
 
     def escape(self):
-        if self.dialog:
+        if self.panel and not self.dialog:
+            self.close_panel()
+        elif self.dialog:
             self.close_dialog()
         elif self.sel is not None:
             self.stop_select()
@@ -396,7 +406,7 @@ class MainWindow:
     def flow_signature(self):
         """Everything that changes with the clock: a ticked note's hold, and the line at the bottom."""
         now = time.time()
-        return (self.flow.signature(now), bool(self.done and now < self.done["until"]))
+        return (self.flow.signature(now), bool(self.done and now < self.done["until"]), self.recall_signature())
 
     def tick_note(self, nid, done):
         """One tap flips a note (R10). A note that is folding away ignores taps."""
@@ -452,15 +462,16 @@ class MainWindow:
         now = time.time()
         page = page_model.view(reg, items, self.nav, fading=self.flow.holding(now), sugg=self.suggest(),
                                prefs=self.prefs(self.nav["sec"]) if self.nav["view"] == "settings" else None)
+        self.memory_snapshot=self.memory_view(page['main'].get('pid')) if self.memory_view and page['main']['kind']=='project' else None
         self.flow_sig = self.flow_signature()
-        sig = repr((window_model.signature(self.banner), page, self.flow_sig, self.sel, self.cur))
+        sig = repr((window_model.signature(self.banner), page, self.flow_sig, self.sel, self.cur,self.memory_snapshot))
         if sig == self.shown:
             return
         self.shown = sig
         self.krows = {"side": [], "main": []}
-        top = self._banner(self.banner["banner"])
+        top = self._banner((self.banner or {}).get("banner"))
         main = page["main"]
-        split = main["kind"] == "project" and not main.get("empty")      # a project: its top stays put, Things scrolls
+        split = main["kind"] == "project" and (not main.get("empty") or self.memory_snapshot is not None)      # a project: its top stays put, Things scrolls
         head = self._head(main) if split else self._no_head()
         thing = main["kind"] == "thing"
         self.item_here = main.get("item") if thing else None
@@ -477,7 +488,13 @@ class MainWindow:
         if moved:
             self.cur = {"zone": self.cur["zone"], "id": None}
         self._fill(self.side_scroll, SIDE_W, lambda doc: self._side(doc, page["side"]))
-        self._fill(self.main_scroll, self.W - SIDE_W, lambda doc: self._main(doc, main, split), top=moved)
+        if self.memory_snapshot and self.memory_snapshot['tab']=='Memory':
+            from memory_view import MemoryPane
+            if self.memory_pane is None:self.memory_pane=MemoryPane(self._memory_action)
+            self.memory_pane.render(self.memory_snapshot,self.W-SIDE_W,self.col_x,self.main_w)
+            self.main_scroll.setDocumentView_(self.memory_pane.host)
+        else:self._fill(self.main_scroll, self.W - SIDE_W, lambda doc: self._main(doc, main, split), top=moved)
+        self.draw_panel(TOP, self.H - TOP)
 
     def _fill(self, scroll, width, build, top=False):
         """Swap the scrolling area's contents, keeping the place the person had scrolled to (or
@@ -856,7 +873,9 @@ class MainWindow:
         """The app's own icon; a plain square when this Mac cannot find it."""
         image = self._app_image(app)
         if image is None:
-            kit.tile(parent, ("doc.fill", "app.fill"), kit.mute(), x, y, size)
+            tile = _Tile.alloc().initWithKind_app_size_("", app, size)     # Gmail and friends: their own colour and symbol
+            tile.setFrame_(NSMakeRect(x, y, size, size))
+            parent.addSubview_(tile)
             return
         holder = NSImageView.alloc().initWithFrame_(NSMakeRect(x, y, size, size))
         holder.setImage_(image)
@@ -912,6 +931,10 @@ class MainWindow:
 
     def _side(self, doc, side):
         y = 6
+        home = self._tap(doc, 8, y, SIDE_W - 16, 34, lambda: self.press("home"), fill=side["home"]["selected"])      # always one press from Home
+        kit.tile(home, ("house.fill", "square.stack.3d.up.fill"), kit.ink(), 8, 5, 24)
+        kit.put_text(home, "Home", 40, 0, SIDE_W - 16 - 48, 13, 600, wrap=False, height=34, middle=True)
+        y += 44
         needs = side["needs"]
         self._label(doc, "NEEDS YOU", 16, y, 130)
         if needs["count"]:
@@ -964,9 +987,46 @@ class MainWindow:
 
     # ------------------------------------------------------------ the page
 
+    def _memory_action(self,action,payload=None):
+        payload=payload or {}
+        try:
+            if action=='choose_root':
+                from AppKit import NSOpenPanel
+                panel=NSOpenPanel.openPanel();panel.setCanChooseDirectories_(True);panel.setCanChooseFiles_(False);panel.setAllowsMultipleSelection_(False)
+                panel.setMessage_('Enable Memory for one workspace. Retain only new approved visible excerpts and project notes.')
+                if panel.runModal()!=1:return
+                action='enroll';payload={'root':str(panel.URL().path())}
+            elif action in {'confirm_model','confirm_agent','confirm_disconnect'}:
+                from AppKit import NSAlert
+                titles={'confirm_model':'Install local semantic search?', 'confirm_agent':'Allow Codex to read this project’s memory?', 'confirm_disconnect':'Disconnect project Memory?'}
+                details={'confirm_model':'Download approximately 46 MB of MiniLM weights to LMemM’s embedding-models folder. The cloud-disabled local Ollama runtime must already be installed. No source text is sent during installation.',
+                         'confirm_agent':'Codex can search retained project excerpts and intentional notes, read cited context, and resolve sources. Invoking these tools sends that text to the agent and its configured provider. Capture permission is separate. You can revoke access here.',
+                         'confirm_disconnect':'Stop source capture and revoke all agent grants containing this project. Retained data remains local; it becomes inaccessible until explicitly re-enabled.'}
+                alert=NSAlert.alloc().init();alert.setMessageText_(titles[action]);alert.setInformativeText_(details[action]);alert.addButtonWithTitle_('Continue');alert.addButtonWithTitle_('Cancel')
+                if alert.runModal()!=1000:return
+                action={'confirm_model':'install_model','confirm_agent':'connect_agent','confirm_disconnect':'disconnect'}[action];payload={'approved':True}
+            elif action=='copy_preview':
+                from AppKit import NSPasteboard
+                import json
+                preview=self.memory_snapshot.get('preview')
+                if preview:
+                    paste=NSPasteboard.generalPasteboard();paste.clearContents();paste.setString_forType_(json.dumps(preview,ensure_ascii=False,indent=2),'public.utf8-plain-text')
+                return
+            elif action=='reconnect_extension':
+                from AppKit import NSAlert,NSPasteboard
+                import config,os
+                path=os.path.join(config.paths().semantic_dir,'bridge','grant.json')
+                paste=NSPasteboard.generalPasteboard();paste.clearContents();paste.setString_forType_(path,'public.utf8-plain-text')
+                alert=NSAlert.alloc().init();alert.setMessageText_('Reconnect VS Code source sharing');alert.setInformativeText_('In VS Code, run “LMemM: Connect Project Memory” from the Command Palette and paste the copied grant path. Approve the local workspace. This grants capture only, not agent access.');alert.runModal();return
+            self.on_memory(action,payload)
+        except (ValueError,OSError) as error:
+            if self.memory_snapshot:self.memory_snapshot['error']=str(error)
+        self.shown=None;self.render()
+
     def _main(self, doc, page, split=False):
         x, w = self.col_x, self.main_w
         if split:
+            if page.get("empty"):return self._empty(doc,page["empty"],x,20,w)
             return self._things(doc, page, x, 6, w)
         y = 30
         kind = page["kind"]
@@ -982,28 +1042,34 @@ class MainWindow:
         elif kind == "thing":
             self._app_icon(doc, page["app"], x, y - 2, 40)
             tx = x + 54
-        elif kind in ("home", "needs", "archived", "settings"):
-            kit.tile(doc, {"home": ("square.stack.3d.up.fill", "folder.fill"), "needs": ("bell.badge.fill", "bell.fill"),
+        elif kind in ("needs", "archived", "settings"):
+            kit.tile(doc, {"needs": ("bell.badge.fill", "bell.fill"),
                            "archived": ("archivebox.fill", "tray.fill"), "settings": ("gearshape.fill", "gear")}[kind], kit.ink(), x, y - 2, 40)
             tx = x + 54
-        kit.put_text(doc, page["title"], tx, y, w - (tx - x) - (170 if kind in ("project", "thing") else 0), 26, 700, wrap=False, height=34)
-        y += 36
-        if page.get("meta"):
-            self._label(doc, page["meta"], tx, y, w - (tx - x), size=13, weight=400)
-            y += 34
+        title, meta = page["title"], page.get("meta")
+        if kind == "home":                         # Home greets you, and says how many things are waiting
+            title, meta = self.greeting(), self.home_line(page)
+        kit.put_text(doc, title, tx, y, w - (tx - x) - (170 if kind in ("project", "thing") else 0), 30 if kind == "home" else 26, 700,
+                     wrap=False, height=38 if kind == "home" else 34)
+        y += 40 if kind == "home" else 36
+        if meta:
+            self._label(doc, meta, tx, y, w - (tx - x), size=14 if kind == "home" else 13, weight=400)
+            y += 38 if kind == "home" else 34
         if kind == "home":
             kit.button(doc, "+ New project", x + w - 150, 30, 150, 34, lambda: self.open_name("new"), kind="quiet", size=13, weight=600)
         if kind == "project":
             self._project_actions(doc, x + w, 28, page["pid"])
         if kind == "thing":
             self._thing_buttons(doc, x + w, 28, page["item"])
+        if kind == "home":
+            y = self.actions_row(doc, x, y, w)
         build = {"home": self._home, "project": self._project, "needs": self._needs, "search": self._search,
                  "thing": self._thing_page, "archived": self._archived, "settings": self._settings}[kind]
         return build(doc, page, x, y + 6, w)
 
     def _crumbs(self, doc, chain, x, y):
         cx = x - 6
-        cx += self._link(doc, "All projects", cx, y - 12, lambda: self.press("home"), size=12)
+        cx += self._link(doc, "Home", cx, y - 12, lambda: self.press("home"), size=12)
         for i, c in enumerate(chain):
             self._label(doc, "›", cx, y - 8, 12, size=12, weight=400)
             cx += 12
@@ -1076,11 +1142,41 @@ class MainWindow:
             y += 64
         return y
 
+    def greeting(self):
+        hour = time.localtime().tm_hour
+        return "Good morning" if hour < 12 else "Good afternoon" if hour < 18 else "Good evening"
+
+    def home_line(self, page):
+        n = len(self.recall_now)
+        if n:
+            return f"{n} thing{'s' * (n != 1)} for you right now"
+        return "Nothing needs you right now."
+
+    def _project_list(self, doc, rows, x, y, w):
+        """Projects as one inset list: a folder icon, the name, what is in it."""
+        group = _Group.alloc().initWithRows_(len(rows))
+        group.setFrame_(NSMakeRect(x, y, w, ROW_H * len(rows)))
+        doc.addSubview_(group)
+        for i, r in enumerate(rows):
+            call = lambda p=r["id"]: self.press("go", p)
+            tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(0, i * ROW_H, w, ROW_H), call)
+            if self._krow("main", "p" + r["id"], call, tap):
+                tap.tint = NSColor.labelColor().colorWithAlphaComponent_(0.14)
+            group.addSubview_(tap)
+            self._project_icon(tap, r["hue"], 10, 9, 32)
+            kit.put_text(tap, r["name"], 56, 8, w - 90, 14, 600, wrap=False, height=20)
+            kit.put_text(tap, r["line"], 56, 27, w - 90, 12, 400, kit.mute(), wrap=False, height=16)
+            kit.put_text(tap, "›", w - 28, 14, 14, 16, 400, kit.mute(), wrap=False, height=22)
+        return y + ROW_H * len(rows) + 22
+
     def _home(self, doc, page, x, y, w):
+        y = self.for_you(doc, x, y, w)
         if page.get("suggest"):
             y = self._suggest_home(doc, page["suggest"], x, y, w)
         if page["empty"]:
-            return self._empty(doc, page["empty"], x, y, w)
+            y = self._section(doc, "Projects", x, y, w)
+            h = kit.put_text(doc, page["empty"]["line"], x, y - 6, min(w, 520), 13, 400, kit.mute())
+            return y + h + 10
         needs = page["needs"]
         if needs["count"]:
             y = self._section(doc, "Needs you", x, y, w)
@@ -1090,7 +1186,7 @@ class MainWindow:
                 self._link(doc, f"See all {needs['count']}", x - 6, y - 4, lambda: self.press("needs"))
                 y += 30
         y = self._section(doc, "Projects", x + 0, y + 6, w)
-        y = self._rows_of_projects(doc, page["cards"], x, y, w)
+        y = self._project_list(doc, page["cards"], x, y, w)
         if page["unplaced"]:
             y += 6
             self._label(doc, f"{page['unplaced']:,} thing{'s' * (page['unplaced'] != 1)} not in a project yet.",
@@ -1277,6 +1373,13 @@ class MainWindow:
         y += kit.put_text(doc, general["keep_line"], x, y, w, 12, 400, kit.mute()) + 24
         y = self._row(doc, x, y, w, "Add a note", "Press this anywhere to write or dictate a note.",
                       lambda row, rw: kit.put_text(row, general["hotkey"], rw - 116, 0, 100, 15, 600, align=RIGHT, wrap=False, height=60, middle=True))
+        if self.memory_view:
+            y=self._section(doc,general['memory']['title'],x,y+16,w)
+            y+=kit.put_text(doc,general['memory']['line'],x,y,w,13,400,kit.mute())+12
+            kit.button(doc,'Choose project…',x,y,160,32,lambda:self.press('home'),kind='outline',size=13,weight=600)
+            kit.button(doc,'Pause Memory',x+174,y,150,32,lambda:self._memory_action('pause'),kind='quiet',size=13,weight=500)
+            kit.button(doc,'Resume Memory',x+338,y,150,32,lambda:self._memory_action('resume'),kind='quiet',size=13,weight=500)
+            y+=52
         return self._row(doc, x, y, w, "Setup", "Go through the first-run questions again. Your memory and notes stay.",
                          lambda row, rw: kit.button(row, "Reopen setup…", rw - 14 - 130, 14, 130, 32, lambda: self.on_press("setup"), kind="outline", size=13, weight=600))
 
@@ -1336,6 +1439,11 @@ class MainWindow:
         kit.put_text(host, page["title"], x + 54, y, w - 54 - 170, 26, 700, wrap=False, height=32)
         self._label(host, page["meta"], x + 54, y + 33, w - 54, size=13, weight=400)
         y += 62
+        if self.memory_snapshot:
+            for i,tab in enumerate(self.memory_snapshot['tabs']):
+                kit.button(host,tab,x+i*124,y,116,32,lambda t=tab:self._memory_action('tab',{'tab':t}),kind='outline' if self.memory_snapshot['tab']==tab else 'quiet',size=14,weight=600)
+            y+=48
+            if self.memory_snapshot['tab']=='Memory' or page.get('empty'):return y
         self._label(host, "PICK UP WHERE YOU LEFT OFF", x, y, w)
         y += 22
         if page["pick_up"]:

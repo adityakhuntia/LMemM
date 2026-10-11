@@ -40,3 +40,24 @@ model is called, the pill is unchanged, and corrections are not stored yet.
 (needs a store), a model-written summary, a pill entry point, opening the exact file or tab (only a web address or app).
 Writing capture is not used (only what is in memory.json and tasks.json), so a project with no notes and no task reading
 will often be "limited".
+
+## v1.1: work threads, scope and noise (PR 25 Session 2 regression)
+
+Rules R26 to R31 are in `src/evidence.py` and `src/resume.py`; the regression is `tests/test_resume_pr25.py` on
+`tests/fixtures/pr25_session2.json` (TEST DATA, a trimmed copy of the real snapshot with contact names redacted).
+
+- Things filed in a project are one body of work, but notes on the thread of the latest activity rank first, and the
+  newest note no longer wins on recency alone.
+- Things not filed anywhere are grouped into work threads only on shared evidence (a distinctive word seen in 3 or more
+  places, or one strong token such as 180DC). Asked for a scope, Resume leads with the thread that names it, lists the other
+  threads apart ("Other open work"), and says the project link is unconfirmed. No scope and no clear lead, or a scope nothing
+  names: it lists candidates and asks.
+- LMemM's own files and screens (its logs, memory, status) and garbled text are left out. AI chat text is never quoted.
+- With no usable note, an AI chat that was mid-task at the end is offered as a "likely continuation", never as your plan.
+
+    python3 lmemm.py catchup --scope "PR 25" --memory path/to/memory.json --now 2026-10-12T04:23:00   # read only
+    python3 lmemm.py catchup --memory path/to/memory.json                 # asks which work
+    python3 lmemm.py catchup --scope "PR 25" --memory FILE --pick ID      # resume a listed candidate
+
+Window: the filed-project page shows the why and confidence under the next step and a "Left out" line. Scope and candidate
+choosing are command-line only so far.

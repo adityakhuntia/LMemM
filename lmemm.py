@@ -57,7 +57,7 @@ USAGE = ("usage: lmemm.py [menu] | start [--demo] [--no-labels] [--no-writing] [
          " | context [SESSION] [--days N]"
          " | label [--dry-run] [--status] [--limit N] [--show] [--last [N]] [--ping]"
          " | next [--done ID | --dismiss ID]"
-         " | catchup PROJECT [--demo] [--copy] | brief [--local] [--no-copy] | recap [--days N] [--no-copy] | ask QUESTION…"
+         " | catchup [PROJECT | --scope TEXT] [--demo] [--copy] | brief [--local] [--no-copy] | recap [--days N] [--no-copy] | ask QUESTION…"
          " | tasks [--minutes N] [--session ID] [--dry-run] [--show]"
          " | trail … | status | pause | resume | pin | note | delete-session ID (--dry-run | --confirm ID)"
          " | delete-all (--dry-run | --confirm) | setup [--again] [--no-start]")
@@ -204,32 +204,9 @@ def run_resume_demo(opts):
 
 
 def cmd_catchup(args):
-    """catchup [PROJECT] [--demo] [--copy]: the Resume project brief, printed. Same text the window shows."""
-    import projects
-    import resume
-    import resume_demo
-    import tasks
-    demo = "--demo" in args
-    words = [a for a in args if not a.startswith("--")]
-    now = datetime.now()
-    if demo:
-        reg, items, book = resume_demo.build(now)
-    else:
-        try:
-            items, reg, book = store.load_items(), projects.load(), tasks.load_tasks()
-        except ValueError as error:
-            sys.exit(str(error))
-    names = {p["name"].casefold(): pid for pid, p in reg["projects"].items() if not p["archived"]}
-    if not words:
-        sys.exit("Which project? " + (", ".join(p["name"] for p in reg["projects"].values() if not p["archived"]) or "none yet"))
-    pid = names.get(" ".join(words).casefold())
-    if not pid:
-        sys.exit("No project called that. Try one of: " + ", ".join(p["name"] for p in reg["projects"].values()))
-    b = resume.brief(reg, items, pid, now, book)
-    text = resume.as_text(b) if b["state"] != "empty" else b["note"]
-    print(text)
-    if "--copy" in args:
-        tracker.Tracker.copy_text(text, "Copied")
+    """catchup [PROJECT | --scope TEXT] [--demo] [--memory FILE] [--copy]: the Resume brief, printed (resume_cli.py)."""
+    import resume_cli
+    resume_cli.run(args, copy=lambda text: tracker.Tracker.copy_text(text, "Copied"))
 
 
 def first_run_setup(again=False):

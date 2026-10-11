@@ -1640,8 +1640,15 @@ class MainWindow(RecallPanes):
                 y = self._claim(doc, c, x, y, w)
             y += 6
         if b["next"]:
-            y = self._section(doc, "Suggested next step", x, y, w)
-            y = self._claim(doc, b["next"], x, y, w, emphasis=True) + 6
+            y = self._section(doc, "Possible next step", x, y, w)
+            y = self._claim(doc, b["next"], x, y, w, emphasis=True)
+            for line in (b.get("why") and "Why: " + b["why"], b.get("confidence") and "Confidence: " + b["confidence"]):
+                if line:
+                    y += kit.put_text(doc, line, x, y, w, 12, 400, kit.mute()) + 4
+            y += 8
+        elif b.get("no_next"):
+            y = self._section(doc, "Possible next step", x, y, w)
+            y += kit.put_text(doc, b["no_next"] + " The latest source is the best place to start.", x, y, w, 13, 400) + 14
         details = [s for s in b["sections"] if s.get("detail")]
         if details:
             count = sum(len(s["claims"]) for s in details)
@@ -1657,6 +1664,10 @@ class MainWindow(RecallPanes):
                         y = self._claim(doc, c, x, y, w)
                     y += 6
         used = b["used"]
+        left = b.get("left_out") or []
+        if left:
+            y += kit.put_text(doc, f"Left out: {page_model.plural(len(left), 'thing')} that is LMemM's own file or screen.",
+                              x, y + 6, w, 12, 400, kit.mute()) + 6
         y += 10
         y += kit.put_text(doc, f"Used: {used['notes']} of your notes, {used['screen']} lines seen on screen, "
                           f"{used['tasks']} AI reading, from {page_model.plural(used['things'], 'thing')}. " + b["privacy"],

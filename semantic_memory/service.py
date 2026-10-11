@@ -45,6 +45,9 @@ class MemoryService:
         self.focus_provider=focus_provider or (lambda:focused_context(excluded_pids={os.getpid(),os.getppid()}))
         from .embedding_runtime import load_backend
         self.backend_factory=backend_factory or load_backend
+        from .model_setup import OwnedEmbeddingRuntime
+        self.runtime=OwnedEmbeddingRuntime(self.directory.parent/'embedding-models') if backend_factory is None else None
+        self.setup_thread=None
         try:
             self.store=SemanticStore(self.directory/'memory.sqlite')
             with self.store.transaction() as c:
@@ -67,7 +70,9 @@ class MemoryService:
             model_path=self.directory/'model.json'
             if model_path.exists():
                 try:
-                    self.model_manifest=ModelManifest(**read_private_json(model_path));self.backend=self.backend_factory(self.model_manifest)
+                    self.model_manifest=ModelManifest(**read_private_json(model_path))
+                    self.backend=self.backend_factory(self.model_manifest)
+                    if self.runtime:self.runtime.ensure()
                 except (OSError,ValueError):self.model_error='Local model unavailable'
         except BaseException:
             if hasattr(self,'store'):self.store.close()
@@ -113,7 +118,7 @@ class MemoryService:
             return json.loads(serialize_authorized(self.store,ctx,result))
         if role!='owner':raise ValueError('unavailable')
         handlers={'enroll':self.enroll,'bindings':self.bindings,'status':self.status,'pause':self.pause,'resume':self.resume,
-                  'configure_model':self.configure_model,'connect_agent':self.connect_agent,'revoke_agent':self.revoke_agent,'revoke_project':self.revoke_project,'begin_note_mutation':self.begin_note_mutation,'reconcile_notes':self.reconcile_notes,'recover_native_notes':self.recover_native_notes}
+                  'configure_model':self.configure_model,'connect_agent':self.connect_agent,'revoke_agent':self.revoke_agent,'revoke_project':self.revoke_project,'begin_note_mutation':self.begin_note_mutation,'reconcile_notes':self.reconcile_notes,'recover_native_notes':self.recover_native_notes,'install_model':self.install_model,'install_extension':self.install_extension}
         handler=handlers.get(method)
         if not handler:raise ValueError('unavailable')
         try:inspect.signature(handler).bind(**params)
@@ -154,9 +159,26 @@ class MemoryService:
     def recover_native_notes(self):
         return {'reconciled':self.native_notes.sync_pending(recover=True)}
 
+    def install_model(self):
+        if not self.runtime:raise ValueError('Local runtime unavailable')
+        if self.setup_thread and self.setup_thread.is_alive():return {'state':'Processing'}
+        self.model_error='Installing local model'
+        def install():
+            try:
+                manifest=self.runtime.install()
+                if not self.closed:self.configure_model(dataclasses.asdict(manifest))
+            except Exception:self.model_error='Local model installation failed; check Ollama and retry'
+        self.setup_thread=threading.Thread(target=install,daemon=True);self.setup_thread.start()
+        return {'state':'Processing'}
+
+    def install_extension(self):
+        from .model_setup import install_extension
+        return install_extension(self.directory.parent)
+
     def configure_model(self,manifest):
         manifest=ModelManifest(**manifest)
         backend=self.backend_factory(manifest)  # Validates installed assets, never downloads.
+        if self.runtime:self.runtime.ensure()
         if self.model_thread and self.model_thread.is_alive():raise ValueError('Indexing is busy; pause before changing model')
         self.model_manifest=manifest;self.backend=backend;self.model_error=None
         write_private_json(self.directory/'model.json',dataclasses.asdict(manifest))
@@ -192,7 +214,7 @@ class MemoryService:
             reason='Paused by user' if is_paused else self.model_error
             state='Paused' if is_paused else 'Needs attention' if failed or self.model_error else 'Processing' if pending else 'Ready' if enrolled else 'Disabled'
             generation=active_generation(self.store)
-            return dataclasses.asdict(MemoryStatus(state,reason,generation['created_at'] if generation else None,enrolled,pending,failed,'available' if self.backend else 'keyword-only',first,memory_usage(self.store)['total_bytes']))
+            return dataclasses.asdict(MemoryStatus(state,reason,generation['created_at'] if generation else None,enrolled,pending,failed,'available' if self.backend else 'missing',first,memory_usage(self.store)['total_bytes']))
 
     def _sync_bridge(self):
         if self.bridge:
@@ -252,4 +274,6 @@ class MemoryService:
         if self.bridge:self.bridge.active=False;self.bridge.publish_grant()
         if self.model_thread:self.model_thread.join(35)
         if self.model_thread and self.model_thread.is_alive():raise RuntimeError('Index shutdown deadline exceeded')
-        self.closed=True;self.store.close();os.close(self.lock_fd)
+        self.closed=True
+        if self.runtime:self.runtime.close()
+        self.store.close();os.close(self.lock_fd)

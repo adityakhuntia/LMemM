@@ -65,7 +65,7 @@ function poll(){
 function activate(context){
  status=vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right);context.subscriptions.push(status);
  context.subscriptions.push(vscode.commands.registerCommand('lmemm.connect',async()=>{
-  const grantPath=await vscode.window.showInputBox({prompt:'Path to the running pilot grant.json. Only approved visible local files are shared.'});
+  const grantPath=await vscode.window.showInputBox({prompt:'Path to the running LMemM grant.json. Only approved visible local files are shared.'});
   if(!grantPath)return;
   try{
    stop();const directory=path.dirname(grantPath);const s=fs.lstatSync(directory);
@@ -81,7 +81,7 @@ function activate(context){
  context.subscriptions.push(vscode.commands.registerCommand('lmemm.pause',()=>{paused=true;if(connection){confirmNote(connection);failNote(connection,'Source sharing paused.');}clear();poll();}));
  context.subscriptions.push(vscode.commands.registerCommand('lmemm.stop',stop));
  context.subscriptions.push(vscode.commands.registerCommand('lmemm.note',async()=>{
-  if(!connection){vscode.window.showErrorMessage('LMemM: run Connect Experimental Project Memory first.');return;}
+  if(!connection){vscode.window.showErrorMessage('LMemM: run Connect Project Memory first.');return;}
   if(paused){vscode.window.showErrorMessage('LMemM: source sharing is paused; reconnect before recording a note.');return;}
   const c=connection,editor=vscode.window.activeTextEditor;
   const before=visibleSnapshot(editor,c.roots,state(editor));if(!before){vscode.window.showErrorMessage('LMemM: open an approved local file such as README.md in the connected development window, then record the note.');return;}

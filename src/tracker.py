@@ -145,6 +145,7 @@ class Tracker:
         self.menubar = None                  # the menu-bar item (menubar.py), made in run()
         self.memory_client = None
         self.memory_events = []
+        self.memory_controller = None
         self.main_window = None              # the window (window.py), made the first time it is opened
         self.page_data_said = False
         self.menu_refreshed = 0.0
@@ -375,7 +376,10 @@ class Tracker:
             raise KeyboardInterrupt
         self.process_control()
         if self.memory_client:
-            self.memory_events.extend(self.memory_client.poll())
+            events=self.memory_client.poll()
+            if self.memory_controller:
+                self.memory_controller.poll(events)
+            else:self.memory_events.extend(events)
         self.poll_input()
         self.maintain()
         if self.widget:
@@ -789,9 +793,23 @@ class Tracker:
         if self.main_window is None:
             self.main_window = main_window.MainWindow(self.menu_pick, self.page_data, self.widget_tick, self.window_add_note,
                                                    self.window_project, self.window_project_undo, self.sug_view,
-                                                      self.settings_view)   # its button sends a menu row id
+                                                      self.settings_view, on_memory=self.window_memory_action, memory_view=self.window_memory_view)   # its button sends a menu row id
         self.adopt_projects()                       # things filed by name since the last time
         self.main_window.show(self.window_view(self.widget_status()))
+
+    def _memory_controller(self):
+        if self.memory_controller is None:
+            from memory_controller import MemoryController
+            self.memory_controller=MemoryController(self.start_memory,lambda:self.items,lambda:self.save(force=True))
+        return self.memory_controller
+
+    def window_memory_view(self,pid):
+        controller=self._memory_controller();controller.select(pid)
+        if self.memory_client is None:controller.poll([])
+        return controller.view()
+
+    def window_memory_action(self,action,payload):
+        with self.lock:self._memory_controller().action(action,payload)
 
     def show_memory_file(self):
         subprocess.run(["open", "-R", config.paths().items_file], check=False)

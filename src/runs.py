@@ -98,11 +98,22 @@ def use(folder, base):
     config.PATHS = replace(config.PATHS, data_dir=folder, base_dir=base)
 
 
+def last_pr(base):
+    """The PR number the latest run was started with, or None."""
+    folder = latest(base)
+    try:
+        with open(os.path.join(folder, MARKER)) as fh:
+            return json.load(fh).get("pr") or None
+    except (OSError, ValueError, TypeError):
+        return None
+
+
 def begin(pr=None, now=None, cwd=None):
-    """Make the next run folder, seed it with the user block, and switch to it. Returns its path."""
+    """Make the next run folder, seed it with the user block, and switch to it. Returns its path.
+    No PR given and none found (no `gh`)? The latest run's PR carries on, so folders keep one name."""
     now = now or datetime.now()
     base = config.paths().base_dir or config.paths().data_dir
-    pr = pr_number(pr, cwd)
+    pr = pr_number(pr, cwd) or last_pr(base)
     folder = os.path.join(runs_dir(base), next_name(base, pr, now))
     os.makedirs(os.path.join(folder, "memory"), exist_ok=True)
     with open(os.path.join(folder, MARKER), "w") as fh:

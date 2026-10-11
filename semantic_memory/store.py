@@ -37,9 +37,12 @@ class SemanticStore:
             self.lock = threading.RLock()
             self.connection = sqlite3.connect(self.path.resolve().as_uri() + '?mode=ro', uri=True, check_same_thread=False)
             self.connection.row_factory = sqlite3.Row
-            if self.connection.execute('PRAGMA user_version').fetchone()[0] != 1:
+            from .migrations import validate_schema
+            try:
+                validate_schema(self.connection, self.connection.execute('PRAGMA user_version').fetchone()[0])
+            except BaseException:
                 self.connection.close()
-                raise ValueError('Unsupported semantic schema')
+                raise
             return
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.lock = threading.RLock()
@@ -50,7 +53,7 @@ class SemanticStore:
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA foreign_keys=ON")
         version = self.connection.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1):
+        if version not in (0, 1, 2):
             self.connection.close()
             raise ValueError("Unsupported semantic schema")
         if version == 0:
@@ -60,6 +63,12 @@ class SemanticStore:
             self.connection.executescript(SCHEMA)
             self.connection.execute("PRAGMA user_version=1")
             self.connection.commit()
+        from .migrations import migrate
+        try:
+            migrate(self.connection)
+        except BaseException:
+            self.connection.close()
+            raise
         self.connection.execute("PRAGMA journal_mode=DELETE")
         self.connection.execute("PRAGMA secure_delete=ON")
 

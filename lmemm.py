@@ -511,7 +511,9 @@ def cmd_next(args):
         items = store.load_items()
     except ValueError as error:
         sys.exit(str(error))
+    import tasks
     doc = nextsteps.load()
+    nextsteps.refresh(doc, items, tasks.load_tasks())            # no front window here, so no "pick up", but hanging things show
     for sid, state in ((opts.done, "done"), (opts.dismiss, "dismissed")):
         if sid:
             try:
@@ -526,8 +528,11 @@ def cmd_next(args):
         print("Nothing to suggest right now. Suggestions come from `tasks`, which runs on its own while LMemM is running.")
         return
     for step in view["steps"]:
-        mark = "Link" if step["kind"] == "link" else "Next"
+        mark = {"link": "Link", "resume": "Pick up", "hanging": "Left open"}.get(step["kind"], "Next")
         print(f"{step['id']}  {mark}: {step['text']}   ({step['age']})")
+        for key, label in (("goal", "making"), ("last_wrote", "last wrote"), ("open", "open")):
+            if step["detail"].get(key):
+                print(f"      {label}: {step['detail'][key]}")
         for t in step["things"]:
             print(f"      - {t['app']}: {(t['title'] or '')[:60]}")
     print("\n`python3 lmemm.py next --done ID` or `--dismiss ID` answers one.")

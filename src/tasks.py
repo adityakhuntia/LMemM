@@ -380,10 +380,13 @@ def run(session_doc, items, provider, governor=None, minutes=None, dry_run=False
     parsed = parse(text, len(ids))
     seconds = {i["id"]: r["seconds"] for i, r in gather(session_doc, items, minutes)[0]}
     out = []
+    proof = evidence(session_doc, items, trail_events() if events is None else events)
     for t in parsed["tasks"]:
         members = [ids[n - 1] for n in t["things"]]
+        wrote = [w for i in members for w in (proof.get(i) or {}).get("wrote", [])]
         out.append({**{k: v for k, v in t.items() if k != "things"}, "items": members,
-                    "seconds": sum(seconds.get(i, 0) for i in members)})
+                    "seconds": sum(seconds.get(i, 0) for i in members),
+                    **({"last_wrote": clean(wrote[-1], 160)} if wrote else {})})
     result["tasks"], result["other"] = out, [ids[n - 1] for n in parsed["other"]]
     result["links"] = [{"items": [ids[l["a"] - 1], ids[l["b"] - 1]], "why": l["why"]} for l in parsed["links"]]
     book[session_doc.get("session", "?")] = {"digest": digest, "at": datetime.now().isoformat(timespec="seconds"), "minutes": minutes,

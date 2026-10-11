@@ -13,6 +13,15 @@
         thing that is gone, is dropped on every read.
     N4  Links need both ends: two different things that still exist, and a reason taken from the text.
     N5  No addresses, no secrets: a sentence is cleaned before it is kept (tasks.clean).
+
+What it offers (the pipeline, in the order the pill shows it). Only `next` and `link` come from the model (they
+arrive with a `tasks` run); the other two are worked out here from what is stored, so they cost no tokens:
+
+    resume   "Back to “Verify the follow-up automation”"   you return to a task after hours away: what you were
+                                                              making, the last thing you wrote, what was open
+    hanging  an unsent draft, a note you left open, a question a task never closed, once you have moved on
+    next     the open step of a task, while you are still on it
+    link     two things that go together          (projects are offered through suggestions.py, as before)
 """
 
 import json
@@ -25,7 +34,14 @@ import store
 import tasks
 
 KEEP_HOURS = 12
-MAX_OPEN = 5
+MAX_OPEN = 6
+PER_KIND = {"resume": 1, "hanging": 3, "next": 3, "link": 2}
+PRIORITY = ("resume", "hanging", "next", "link")
+RESUME_GAP_HOURS = 3        # a task whose last run is older than this counts as "left" when you come back to it
+HANG_HOURS = 3              # a note, question or task untouched this long counts as left hanging
+DRAFT_HOURS = 1
+TASK_DAYS = 3
+FROM_MODEL = ("next", "link")
 TEXT_CHARS = 140
 STATES = ("new", "done", "dismissed")
 
@@ -61,7 +77,7 @@ def _iso(now):
     return now.isoformat(timespec="seconds")
 
 
-def _add(doc, kind, text, ids, task, now):
+def _add(doc, kind, text, ids, task, now, detail=None):
     text = tasks.clean(text, TEXT_CHARS)
     if not text or not ids:
         return None
@@ -69,11 +85,13 @@ def _add(doc, kind, text, ids, task, now):
     for step in doc["steps"]:
         if step["key"] == key:
             if step["state"] == "new":
-                step.update(items=ids, task=task, seen=_iso(now))      # N2: refresh, never duplicate
+                step.update(items=ids, task=task, seen=_iso(now), **({"detail": detail} if detail else {}))   # N2: refresh, never duplicate
             return None
     doc["n"] += 1
     step = {"id": f"n{doc['n']}", "key": key, "kind": kind, "text": text, "items": ids, "task": task,
             "state": "new", "made": _iso(now), "seen": _iso(now)}
+    if detail:
+        step["detail"] = detail
     doc["steps"].append(step)
     return step
 
@@ -113,8 +131,13 @@ def tidy(doc, items, now=None):
             continue                                                               # the day's memory of an answer ends
         keep.append(step)
     waiting = [s for s in keep if s["state"] == "new"]
-    for old in sorted(waiting, key=lambda s: s["seen"])[:-MAX_OPEN] if len(waiting) > MAX_OPEN else []:
-        keep.remove(old)
+    surplus = []
+    for kind, cap in PER_KIND.items():
+        mine = sorted((s for s in waiting if s["kind"] == kind), key=lambda s: s["seen"], reverse=True)
+        surplus += mine[cap:]
+    rest = [s for s in waiting if s not in surplus]
+    surplus += sorted(rest, key=lambda s: (-PRIORITY.index(s["kind"]) if s["kind"] in PRIORITY else 0, s["seen"]))[:max(len(rest) - MAX_OPEN, 0)]
+    keep = [s for s in keep if s not in surplus]
     doc["steps"] = keep
     return repr(doc) != before
 
@@ -124,12 +147,14 @@ def view(doc, items, now=None):
     now = now or datetime.now()
     tidy(doc, items, now)
     rows = []
-    for step in sorted((s for s in doc["steps"] if s["state"] == "new"), key=lambda s: s["seen"], reverse=True):
+    order = sorted((s for s in doc["steps"] if s["state"] == "new"), key=lambda s: s["seen"], reverse=True)
+    for step in sorted(order, key=lambda s: PRIORITY.index(s["kind"]) if s["kind"] in PRIORITY else 9):
         try:
             minutes = int((now - datetime.fromisoformat(step["seen"])).total_seconds() // 60)
         except ValueError:
             minutes = 0
         rows.append({"id": step["id"], "kind": step["kind"], "text": step["text"], "task": step.get("task"),
+                     "detail": step.get("detail") or {},
                      "things": [{"app": items[i].get("app"), "title": items[i].get("title") or items[i].get("doing")}
                                 for i in step["items"]],
                      "age": "just now" if minutes < 2 else f"{minutes} min ago" if minutes < 90 else f"{minutes // 60} h ago"})
@@ -146,3 +171,82 @@ def answer(doc, sid, state):
             step["seen"] = _iso(datetime.now())
             return step
     raise ValueError("That suggestion is gone already. Nothing was changed.")
+
+
+# ---------------------------------------------------------------- resume and hanging: from what is stored, no model
+
+def _when(iso):
+    try:
+        return datetime.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return None
+
+
+def _title(item):
+    return tasks.clean(item.get("title") or item.get("doing") or "this", 60)
+
+
+def recent_tasks(book, now):
+    """Every task from the stored runs of the last TASK_DAYS days, newest run first: [(run time, task)]."""
+    out = []
+    for run in (book or {}).values():
+        at = _when(run.get("at"))
+        if at and now - at <= timedelta(days=TASK_DAYS):
+            out += [(at, t) for t in run.get("tasks") or []]
+    return sorted(out, key=lambda x: x[0], reverse=True)
+
+
+def candidates(items, book, now, front_id=None):
+    """Resume and hanging steps that are true right now: [(kind, text, item ids, task title, detail)]."""
+    out = []
+    seen_tasks = set()
+    for at, t in recent_tasks(book, now):
+        ids = [i for i in t.get("items", []) if i in items]
+        if not ids or t.get("title") in seen_tasks:
+            continue
+        seen_tasks.add(t.get("title"))
+        quiet = now - at >= timedelta(hours=RESUME_GAP_HOURS)
+        if front_id and front_id in ids and quiet:
+            detail = {k: t[k] for k in ("goal", "last_wrote", "open", "stage") if t.get(k)}
+            detail["things"] = [{"app": items[i].get("app"), "title": _title(items[i])} for i in ids]
+            out.append(("resume", f"Back to “{t['title']}”", ids, t["title"], detail))
+        elif t.get("open") and front_id not in ids and quiet:
+            newest = max((_when(items[i].get("last_seen")) or datetime.min for i in ids))
+            if now - newest >= timedelta(hours=HANG_HOURS):
+                out.append(("hanging", f"Still open in “{t['title']}”: {t['open']}", ids[:2], t["title"], {}))
+    for iid, item in items.items():
+        if iid == front_id:
+            continue
+        seen = _when(item.get("last_seen"))
+        if not seen:
+            continue
+        age = now - seen
+        draft = item.get("state") or {}
+        if item.get("kind") in ("writing_email", "composing_email") and (draft.get("draft") or draft.get("subject")) \
+                and timedelta(hours=DRAFT_HOURS) <= age <= timedelta(days=TASK_DAYS):
+            what = draft.get("subject") or draft.get("draft")
+            out.append(("hanging", f"Unsent draft: “{tasks.clean(what, 70)}”", [iid], None, {}))
+        elif age >= timedelta(hours=HANG_HOURS) and age <= timedelta(days=TASK_DAYS):
+            for note in notes_open(item)[:1]:
+                out.append(("hanging", f"A note on “{_title(item)}”: {tasks.clean(note, 80)}", [iid], None, {}))
+    return out
+
+
+def notes_open(item):
+    import notes
+    return [n["text"] for n in notes.open_notes(item)]
+
+
+def refresh(doc, items, book, now=None, front_id=None):
+    """Bring resume and hanging steps up to date: add what is true now, drop what no longer is (you came back to
+    the note, you sent the draft). Steps from the model are untouched. Returns the new steps."""
+    now = now or datetime.now()
+    keys, added = set(), []
+    for kind, text, ids, task, detail in candidates(items, book, now, front_id):
+        keys.add(_key(kind, tasks.clean(text, TEXT_CHARS)))
+        step = _add(doc, kind, text, ids, task, now, detail)
+        if step:
+            added.append(step)
+    doc["steps"] = [s for s in doc["steps"] if s["kind"] in FROM_MODEL or s["state"] != "new" or s["key"] in keys]
+    tidy(doc, items, now)
+    return [s for s in added if s in doc["steps"]]

@@ -139,6 +139,7 @@ class Tracker:
         self.capture_times = capture_plan.Timings(200)   # ... and each capture on the main thread
         self.last_place_key = None           # the trail's place, to notice a move inside one window
         self.live_labels = live_labels
+        self.recall_at = time.time() + config.RECALL_FIRST_AFTER - config.RECALL_EVERY    # first look soon after start
         self.labeller = None                 # labels.LiveLabeller, made in run() when asked for
         self.sections = {}                   # main-loop part -> capture_plan.Timings (see mark())
         self._tick_mark = 0.0
@@ -402,6 +403,8 @@ class Tracker:
         self.poll_input()
         self.maintain()
         self.mark("housekeeping")
+        if time.time() - self.recall_at >= config.RECALL_EVERY:
+            self.refresh_recall()
         if self.widget:
             here = self.front_sig()
             if here != self.pill_place:             # you switched tab or app: update the pill now, not within a second
@@ -1673,6 +1676,24 @@ class Tracker:
         finally:
             self.finish()
         self.hand_over()
+
+    def refresh_recall(self):
+        """Every RECALL_EVERY seconds: what to pick up and what was left hanging (nextsteps.py). Local and cheap: no
+        model, one pass over the things under the lock, one small file."""
+        self.recall_at = time.time()
+        try:
+            import nextsteps
+            import tasks
+            book = tasks.load_tasks()
+            with self.lock:
+                front = (self.last_frame or {}).get("item")
+                doc = nextsteps.load()
+                added = nextsteps.refresh(doc, self.items, book, front_id=front)
+                nextsteps.save(doc)
+            if added:
+                say(f"next: {len(added)} suggestion(s) ready  ·  see them with: python3 lmemm.py next")
+        except Exception as error:
+            say(f"recall skipped: {type(error).__name__}: {error}")
 
     def on_tasks(self, result):
         """What a tasks run leaves for the pill: the safe next steps (nextsteps.py) and, for a task that names

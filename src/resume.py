@@ -342,7 +342,7 @@ def brief(reg, items, pid, now=None, book=None, events=None):
         authored = [m for m in authored if m.get("item") in thread_ids]
     else:
         thread = None
-    out = _build(name, mine, now, book, extra={"scope": name}, thread_items=thread, authored=authored)
+    out = _build(name, mine, now, book, extra=None, thread_items=thread, authored=authored)
     out.update(pid=pid, scope=None, project_link="filed", left_out=left, others=[], candidates=[])
     if not mine:
         out["note"] = "Nothing has been remembered in this project yet, so there is nothing to resume from."

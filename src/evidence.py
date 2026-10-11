@@ -11,9 +11,11 @@ Resume (resume.py) must not turn noise into a story. Three jobs, all plain funct
   R26  LMemM's own files, logs, status lines and pill text are not work evidence (self_made, own_line).
   R27  A title or line is quoted only if its words are well formed and mostly ordinary words. Otherwise the brief
        names the source by app and kind ("Claude conversation") and leaves the text to the source page.
-  R28  Two things join one work thread only through shared distinctive words (3 or more, or one strong
-       token such as 180dc), never through time, app switching, or a shared window. A glance of a few seconds
-       with no note never joins on weak words.
+  R28  Two things join one work thread only through a strong shared token (such as 180dc), never through time,
+       app switching, or a shared window. Sharing a few ordinary words only makes them "maybe related": they are kept
+       apart and the brief says the link is uncertain. The shared words themselves are never shown to the user.
+  R32  What you typed (the event trail's write events) is the best evidence of the task: it is certainly yours. It is
+       assembled into messages per chat, quoted verbatim, and ranks above anything read from the screen.
 """
 
 import difflib
@@ -147,8 +149,8 @@ def _weighty(item):
 
 
 def threads(items):
-    """Group things into work threads. `items`: a list of items. Returns [{"items": [...], "shared": [...]}], each list
-    most recent first. Things that join nothing are returned alone."""
+    """Group things into work threads. `items`: a list of items. Returns [{"items": [...], "maybe": [...]}], each list
+    most recent first; `maybe` are things that might belong but are not shown to. Things that join nothing are alone."""
     items = list(items)
     terms = {i["id"]: _terms(i) for i in items}
     df = {}
@@ -163,29 +165,30 @@ def threads(items):
             x = parent[x]
         return x
 
-    shared_by = {}
+    maybe_pairs = {}
     for n, a in enumerate(items):
         for b in items[n + 1:]:
             both = {t for t in terms[a["id"]] & terms[b["id"]] if df[t] <= MAX_DF}
             strong = {t for t in both if t[0] == "strong"}
             weak = {t for t in both if t[0] == "weak"}
-            linked = bool(strong) or (len(weak) >= WEAK_LINK_TERMS and _weighty(a) and _weighty(b))
-            if linked:
+            if strong:
                 parent[find(a["id"])] = find(b["id"])
-                shared_by.setdefault(frozenset((a["id"], b["id"])), sorted(t[1] for t in strong | weak))
+            elif len(weak) >= WEAK_LINK_TERMS and _weighty(a) and _weighty(b):
+                maybe_pairs[(a["id"], b["id"])] = len(weak)         # shared ordinary words: possible, never enough (R28)
     groups = {}
     for i in items:
         groups.setdefault(find(i["id"]), []).append(i)
     out = []
+    by_id = {i["id"]: i for i in items}
     for members in groups.values():
         ids = {m["id"] for m in members}
-        words = {}
-        for pair, ws in shared_by.items():
-            if pair <= ids:
-                for w in ws:
-                    words[w] = words.get(w, 0) + 1
         members.sort(key=lambda m: m.get("last_seen", ""), reverse=True)
-        out.append({"items": members, "shared": [w for w, _n in sorted(words.items(), key=lambda kv: (-kv[1], kv[0]))][:6]})
+        maybe = {}
+        for (x, y), n in maybe_pairs.items():
+            for inside, outside in ((x, y), (y, x)):
+                if inside in ids and outside not in ids:
+                    maybe[outside] = max(maybe.get(outside, 0), n)
+        out.append({"items": members, "maybe": [by_id[k] for k, _n in sorted(maybe.items(), key=lambda kv: -kv[1])]})
     return out
 
 
@@ -224,3 +227,110 @@ def parse(iso):
         return datetime.fromisoformat(iso)
     except (TypeError, ValueError):
         return None
+
+
+# ---------------------------------------------------------------- what you typed (R32)
+
+REQUEST_BUILD = re.compile(r"\b(code|build|implement|fix|add|make|create)\b", re.I)
+REQUEST_RUN = re.compile(r"\b(run|test|try|check)\b", re.I)
+REQUEST_ASK = re.compile(r"\?|\b(tell me|show me|why|how|what)\b", re.I)
+CHOICE = re.compile(r"\b(lets|let's|go with|park|come with|follow)\b", re.I)
+MIN_MESSAGE = 12
+RUN_GAP = 90                                    # seconds without typing that starts a new message
+
+
+def _local(iso):
+    from trail_store import parse as parse_trail
+    return parse_trail(iso).astimezone().replace(tzinfo=None)
+
+
+def _common_prefix(a, b):
+    n = 0
+    for x, y in zip(a, b):
+        if x != y:
+            break
+        n += 1
+    return n
+
+
+def authored_messages(events, items, now=None):
+    """Messages you typed, whole and verbatim, from the trail's write events: [{"text", "at", "item", "chat", "project"}],
+    oldest first. The trail records each keystroke burst as the sentences added so far, so a message is rebuilt by
+    letting a longer version of the last sentence replace it. A new message starts when the field was cleared
+    (the typed total drops) or after RUN_GAP seconds. Only events up to `now` are used."""
+    spans = [(parse(i.get("first_seen")), parse(i.get("last_seen")), i) for i in items.values()]
+    names = {}
+    for e in events:
+        if e.get("kind") == "focus":
+            place = e.get("place") or {}
+            if place.get("key") and place.get("name"):
+                names[place["key"]] = place["name"]
+    runs, last = [], {}
+    for e in events:
+        if e.get("kind") != "write" or not e.get("added"):
+            continue
+        try:
+            at = _local(e["t"])
+        except (KeyError, ValueError):
+            continue
+        if now and at > now:
+            continue
+        key = (e.get("place"), e.get("field"))
+        prev = last.get(key)
+        if not prev or e.get("total", 0) < prev["total"] or (at - prev["at"]).total_seconds() > RUN_GAP:
+            run = {"place": e.get("place"), "app": e.get("app"), "sentences": [], "start": at}
+            runs.append(run)
+        else:
+            run = prev["run"]
+        for piece in e["added"]:
+            piece = piece.strip()
+            if not piece:
+                continue
+            sentences = run["sentences"]
+            if sentences and piece.startswith(sentences[-1]):
+                sentences[-1] = piece                                   # the same sentence, typed further
+            elif sentences and sentences[-1].startswith(piece):
+                continue
+            elif sentences and _common_prefix(sentences[-1], piece) >= max(2, int(0.5 * min(len(piece), len(sentences[-1])))):
+                sentences[-1] = piece                                   # a typo fixed in the sentence being typed
+            else:
+                sentences.append(piece)
+        run["end"] = at
+        last[key] = {"total": e.get("total", 0), "at": at, "run": run}
+    out = []
+    for run in runs:
+        text = " ".join(run["sentences"]).strip()
+        if len(text) < MIN_MESSAGE:
+            continue
+        if text[-1] not in ".?!":
+            text += "…"                                                # as typed: the last words may not have been finished
+        inside = [(b - a, i) for a, b, i in spans if a and b and i.get("app") == run["app"]
+                  and a.timestamp() - 30 <= run["end"].timestamp() <= b.timestamp() + 30]
+        item = min(inside, key=lambda x: x[0])[1] if inside else None
+        chat = (run["place"] or "").split("thread=")[-1][-8:] or None
+        project = (names.get(run["place"]) or "").rsplit(" - ", 1)[0] or None
+        out.append({"text": text, "at": run["end"].isoformat(timespec="seconds"), "item": item["id"] if item else None,
+                    "chat": chat, "project": project})
+    return sorted(out, key=lambda m: m["at"])
+
+
+def request_strength(text):
+    """How much a message of yours reads as a request still open: build 3, run/test 2, ask 1, else 0."""
+    if REQUEST_BUILD.search(text) and (CHOICE.search(text) or re.search(r"^\s*(please\s+)?(code|build|implement|fix|add|make|create)\b", text, re.I)):
+        return 3
+    if REQUEST_RUN.search(text):
+        return 2
+    return 1 if REQUEST_ASK.search(text) else 0
+
+
+def request_sentence(text):
+    """The sentence of a message that carries the request, to quote (with the choice that came just before it, if short)."""
+    text = text.rstrip("…")
+    parts = [p.strip() for p in re.split(r"(?<=[.?!])\s+", text) if p.strip()]
+    for rx in (REQUEST_BUILD, REQUEST_RUN, REQUEST_ASK):
+        n = next((k for k, p in enumerate(parts) if rx.search(p)), None)
+        if n is not None:
+            if n and len(parts[n]) < 40 and CHOICE.search(parts[n - 1]):
+                return (parts[n - 1] + " " + parts[n]).rstrip(".")
+            return parts[n].rstrip(".")
+    return (parts[0] if parts else text).rstrip(".")

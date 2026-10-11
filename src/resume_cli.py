@@ -3,7 +3,7 @@
     catchup PROJECT                 a filed project (name as in the project tree)
     catchup --scope "PR 25"         things not filed anywhere, grouped into work threads, led by the one naming the scope
     catchup --scope "PR 25" --pick ID   resume one of the candidates it listed
-    --memory FILE   read this memory.json instead (read only; nothing is written)   --now ISO   the moment to resume at
+    --memory FILE   read this memory.json instead (read only; nothing is written)   --trail FILE   the run's trail .jsonl (what you typed)   --now ISO   the moment to resume at
     --demo          the made-up projects      --copy   put the text on the clipboard (macOS)
 """
 
@@ -26,7 +26,12 @@ def _flag(args, name):
 def run(args, copy=None):
     now = datetime.fromisoformat(_flag(args, "--now")) if _flag(args, "--now") else datetime.now()
     scope, pick, memory = _flag(args, "--scope"), _flag(args, "--pick"), _flag(args, "--memory")
-    skip = {v for v in (scope, pick, memory, _flag(args, "--now")) if v}
+    trail = _flag(args, "--trail")
+    skip = {v for v in (scope, pick, memory, trail, _flag(args, "--now")) if v}
+    events = None
+    if trail:
+        with open(trail) as fh:                                       # read only
+            events = [json.loads(line) for line in fh if line.strip()]
     words = [a for a in args if not a.startswith("--") and a not in skip]
     if "--demo" in args:
         reg, items, book = resume_demo.build(now)
@@ -40,7 +45,7 @@ def run(args, copy=None):
         except ValueError as error:
             sys.exit(str(error))
     if scope or not words:
-        b = resume.brief_scope(items, scope, now, book, pick)
+        b = resume.brief_scope(items, scope, now, book, pick, events)
     else:
         names = {p["name"].casefold(): pid for pid, p in reg["projects"].items() if not p["archived"]}
         pid = names.get(" ".join(words).casefold())

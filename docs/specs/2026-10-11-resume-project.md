@@ -61,3 +61,11 @@ Rules R26 to R31 are in `src/evidence.py` and `src/resume.py`; the regression is
 
 Window: the filed-project page shows the why and confidence under the next step and a "Left out" line. Scope and candidate
 choosing are command-line only so far.
+
+## v1.2: next step from your own words
+
+- Typed text is rebuilt from the event trail (`evidence.authored_messages`) and used before anything else: your words, then notes, then the task book. Assistant text only appears as context, never as intent. Recency only breaks ties.
+- The generic "open the conversation and see what it finished" step is gone. With no supported continuation Resume says: "I can identify the work, but I can't reliably tell what you planned to do next."
+- Shared-word explanations are gone (R28). Only strong shared tokens (e.g. `180dc`) merge threads; weaker overlap shows as "Possibly related (uncertain)".
+- `resume_cli --trail FILE` reads a trail copy (read only). The window does not pass trail events yet.
+- Not supported by the snapshot: that UI code was pushed or untested on a Mac.

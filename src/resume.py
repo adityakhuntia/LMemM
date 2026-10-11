@@ -137,8 +137,50 @@ def _rank_notes(open_notes, latest, thread_ids):
     return sorted(open_notes, key=score, reverse=True)
 
 
-def _build(title, mine, now, book, extra=None, thread_items=None):
-    """The brief for one body of work (`mine`: its things, most recent first)."""
+
+def _next_from_messages(out, by_chat, item_of, scope, now, mine, thread_ids, sections):
+    """R23/R32: the open request in your own words that best fits the scope. Strength of the ask and a mention of the
+    scope decide; recency only breaks a tie. Returns a claim or None, and sets out["why"] / out["confidence"]."""
+    best = None
+    for chat, msgs in by_chat.items():
+        last = msgs[-1]                                    # nothing typed after it in that chat
+        strength = ev.request_strength(last["text"])
+        if not strength:
+            continue
+        hit = 1 if scope and ev.scope_hits({"title": "", "notes": [{"text": last["text"]}]}, scope) else 0
+        key = (hit, strength, last["at"])
+        if best is None or key > best[0]:
+            best = (key, chat, last, msgs)
+    if not best:
+        return None
+    _key, chat, last, msgs = best
+    item = item_of[last["item"]]
+    earlier = sorted([m for m in msgs[:-1] if len(m["text"]) >= 25], key=lambda m: len(m["text"]), reverse=True)[:2]
+    earlier.sort(key=lambda m: m["at"])
+    if earlier:
+        sections.append({"id": "earlier", "title": "Earlier in that chat you wrote", "detail": True,
+                         "claims": [claim("“" + m["text"] + "”", AUTHORED, item, now, at=m["at"], label="You wrote this")
+                                    for m in earlier]})
+    sentence = ev.request_sentence(last["text"])
+    strength = ev.request_strength(last["text"])
+    if strength == 3:
+        step = f"Look at what Claude came back with after you wrote “{sentence}”, and check it against what you wrote earlier in that chat."
+    elif strength == 2:
+        step = f"Look at what Claude came back with after you asked “{sentence}”."
+    else:
+        step = f"Look at Claude's answer to “{sentence}”."
+    working = ev.last_signal(item)
+    clock = ev.parse(working).strftime("%H:%M") if working else None
+    out["why"] = (f"It is your latest request in that chat ({ev.parse(last['at']).strftime('%H:%M')}) and nothing you typed came after it."
+                  + (f" The screen showed Claude running a command at {clock}." if clock else "")
+                  + " The snapshot does not show Claude's reply or whether the work was finished.")
+    out["confidence"] = "likely continuation; the snapshot does not establish that this is your committed next action"
+    return claim(step, INFERRED, item, now, at=last["at"], label="AI inference · Likely continuation")
+
+
+def _build(title, mine, now, book, extra=None, thread_items=None, authored=None):
+    """The brief for one body of work (`mine`: its things, most recent first). `authored`: your typed messages."""
+    scope_text = (extra or {}).get("scope")
     out = {"title": title, "state": "empty", "headline": "", "note": None, "ago": "", "away": False, "sections": [],
            "next": None, "no_next": None, "why": None, "latest": None, "sources": [], "confidence": None,
            "used": {"things": len(mine), "notes": 0, "screen": 0, "tasks": 0}, "privacy": PRIVACY, **(extra or {})}
@@ -164,13 +206,15 @@ def _build(title, mine, now, book, extra=None, thread_items=None):
     clock = out["latest"]["clock"]
     stand_text = (f"Most recent activity: {here}" + (f" at {clock}" if clock else "") + f" ({said(out['ago'])})"
                   + (f", {_span(latest['seconds'])} in total." if latest.get("seconds") else "."))
-    sections.append({"id": "stand", "title": "Where things stand",
-                     "claims": [claim(stand_text, OBSERVED, latest, now, label="Observed")]})
-    if extra and extra.get("shared"):
-        sections.append({"id": "grouped", "title": "Why these belong together", "detail": True, "claims": [
-            claim("Words that appear in more than one of them: " + ", ".join(extra["shared"]) + ".", OBSERVED, latest, now,
-                  label="Observed: shared words")]})
-
+    stand_claims = [claim(stand_text, OBSERVED, latest, now, label="Observed")]
+    for i in mine[:3]:
+        signal = ev.last_signal(i) if i.get("kind") == "ai_conversation" else None
+        if signal and ev.parse(i.get("last_seen")) and ev.parse(signal) and \
+                (ev.parse(i["last_seen"]) - ev.parse(signal)).total_seconds() <= WORKING_WITHIN:
+            stand_claims.append(claim(f"{label_of(i)} was showing “running a command” at {ev.parse(signal).strftime('%H:%M')}.",
+                                      OBSERVED, i, now, at=signal, label="Seen on screen"))
+            break
+    sections.append({"id": "stand", "title": "Where things stand", "claims": stand_claims})
     task = _task_for(book, mine_ids)
     if task:
         t_item = next((i for i in mine if i["id"] in task.get("items", [])), latest)
@@ -199,24 +243,26 @@ def _build(title, mine, now, book, extra=None, thread_items=None):
         out["why"] = ("Your open note on the work you were last in." if i["id"] == latest["id"]
                       else "Your open note on the same work thread as your latest activity.")
         out["confidence"] = "your words; whether it is still the plan is not shown"
-    elif task and task.get("open"):
+    msgs = [m for m in (authored or []) if m["item"] in mine_ids]
+    if msgs:
+        by_chat = {}
+        for m in msgs:
+            by_chat.setdefault(m["chat"], []).append(m)
+        recent = sorted(msgs, key=lambda m: m["at"], reverse=True)[:3]
+        item_of = {i["id"]: i for i in mine}
+        sections.insert(1, {"id": "asked", "title": "What you told Claude" if {i.get("app") for i in mine if i["id"] in {m["item"] for m in msgs}} == {"Claude"} else "What you wrote",
+                            "claims": [claim("“" + m["text"] + "”", AUTHORED, item_of[m["item"]], now, at=m["at"],
+                                             label="You wrote this") for m in recent]})
+        out["used"]["typed"] = len(msgs)
+        out["chats"] = len(by_chat)
+        out["project_name"] = next((m["project"] for m in msgs if m["project"]), None)
+        if not nxt:
+            nxt = _next_from_messages(out, by_chat, item_of, scope_text, now, mine, thread_ids, sections)
+    if not nxt and task and task.get("open"):
         t_item = next((i for i in mine if i["id"] in task.get("items", [])), latest)
         nxt = claim(tasks.clean(task["open"], 200), INFERRED, t_item, now, label="AI inference · Likely continuation")
         out["why"] = "The task reading LMemM made of this work lists it as open."
         out["confidence"] = "likely continuation; not confirmed by you"
-    else:
-        working = [(ev.last_signal(i), i) for i in mine if i["id"] in thread_ids and i.get("kind") == "ai_conversation"
-                   and (i.get("seconds") or 0) >= 60]
-        working = [(s, i) for s, i in working if s and ev.parse(s) and ev.parse(i.get("last_seen"))
-                   and (ev.parse(i["last_seen"]) - ev.parse(s)).total_seconds() <= WORKING_WITHIN]
-        if working:
-            s, i = max(working, key=lambda x: x[0])
-            clock = ev.parse(s).strftime("%H:%M")
-            nxt = claim(f"Open your {label_of(i)} and see what it finished. It was running a command when last captured at {clock}.",
-                        INFERRED, i, now, at=s, label="AI inference · Likely continuation")
-            out["why"] = ("It was your most recent activity on this work, and the chat was mid-task when last captured. "
-                          "The snapshot does not show what it was working on or whether it finished.")
-            out["confidence"] = "likely continuation; the snapshot does not show your plan or whether the work is complete"
     out["next"] = nxt
     if not nxt:
         out["no_next"] = NO_NEXT
@@ -318,7 +364,7 @@ def _summary(group, now, scope=None):
     last = members[0]
     return {"id": members[0]["id"], "title": title, "apps": apps, "last": last.get("last_seen"),
             "ago": page_model.ago(last.get("last_seen"), now), "things": len(members), "notes": len(open_notes),
-            "note_texts": [n["text"] for _a, n, _i in open_notes[:3]], "shared": group["shared"],
+            "note_texts": [n["text"] for _a, n, _i in open_notes[:3]],
             "sources": [source(i, None, now) for i in members[:4]], "item_ids": [i["id"] for i in members]}
 
 
@@ -333,7 +379,7 @@ def _score(group, scope, end):
     return 10 * min(hits, 1) + 2 * sources + 3 * authored + 1.5 * active + recency, hits
 
 
-def brief_scope(items, scope=None, now=None, book=None, pick=None):
+def brief_scope(items, scope=None, now=None, book=None, pick=None, events=None):
     """Resume work that is not filed in a project. `scope`: what the user asked for ('PR 25'), or None. `pick`: the id
     of a thread the user chose from the candidates. R30."""
     now = now or datetime.now()
@@ -377,9 +423,15 @@ def brief_scope(items, scope=None, now=None, book=None, pick=None):
         chosen = rated[0]
     score, hits, group = chosen
     summ = _summary(group, now, scope)
-    extra = dict(base, shared=group["shared"], matched=[
+    typed = ev.authored_messages(events, items if isinstance(items, dict) else {i["id"]: i for i in items}, now) if events else None
+    extra = dict(base, matched=[
         {"item": i["id"], "title": label_of(i), "hits": ev.scope_hits(i, scope)} for i in group["items"] if scope and ev.scope_hits(i, scope)])
-    out = _build(summ["title"], group["items"], now, book, extra, thread_items=group["items"])
+    out = _build(summ["title"], group["items"], now, book, extra, thread_items=group["items"], authored=typed)
+    out["maybe"] = [{"item": i["id"], "title": label_of(i), "note": f"{label_of(i)} covers similar ground, but I can't tell whether it is part of this work."}
+                    for i in group["maybe"]]
+    if out.get("chats"):
+        out["relation"] = (f"You typed in {page_model.plural(out['chats'], 'Claude chat')}" + (f" in your “{out['project_name']}” project" if out.get("project_name") else "")
+                           + ", all within this session.")
     if scope and out["state"] != "empty":
         out["headline"] = f"Matched “{scope}” in {page_model.plural(len(extra['matched']), 'place')}. " + out["headline"]
     rest = [_summary(r[2], now) for r in rated if r[2] is not group]
@@ -393,8 +445,10 @@ def as_text(b):
     """A short context brief to paste elsewhere. Every line says where it came from; inference is marked."""
     lines = [f"# Where I left off: {b['title']}", ""]
     if b.get("project_link") == "unconfirmed":
-        lines += ["_These things are not filed in a project; they were grouped by what they share._"]
-        if b.get("covers"):
+        lines += ["_These things aren't filed in a project, so Resume kept together only what clearly belongs together._"]
+        if b.get("relation"):
+            lines += [f"_{b['relation']}_"]
+        elif b.get("covers"):
             lines += [f"_This work: {b['covers']}._"]
         if b.get("matched"):
             lines += ["_Matched “%s” in: %s._" % (b["scope"], ", ".join(m["title"] for m in b["matched"]))]
@@ -420,6 +474,8 @@ def as_text(b):
         lines += [b["no_next"], ""]
     for o in b.get("others") or []:
         lines.append(f"Other open work: {o['title']} ({page_model.plural(o['notes'], 'open note')}, last {said(o['ago'])})")
+    for m in b.get("maybe") or []:
+        lines.append(f"Possibly related (uncertain): {m['note']}")
     left = b.get("left_out") or []
     if left:
         lines.append(f"Left out: {page_model.plural(len(left), 'thing')} that is LMemM's own file or screen ({', '.join(l['title'] for l in left[:3])}).")

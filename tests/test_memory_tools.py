@@ -82,6 +82,17 @@ class EarlierTests(TmpPaths):
         self.assertEqual(nextsteps.view(doc, items, NOW)["count"], 0)
 
 
+class DemoTests(TmpPaths):
+    def test_demo_steps_show_all_four_boxes_and_survive_a_refresh(self):
+        items, doc = world(), nextsteps.empty()
+        self.assertEqual(len(nextsteps.demo(doc, items, NOW)), 4)
+        nextsteps.refresh(doc, items, {}, NOW, front_id="chat")
+        kinds = [s["kind"] for s in nextsteps.view(doc, items, NOW)["steps"]]
+        self.assertEqual(sorted(kinds), ["earlier", "hanging", "next", "resume"])
+        self.assertEqual(len(nextsteps.demo(doc, items, NOW)), 4)         # a restart replaces them, never doubles them
+        self.assertEqual(nextsteps.demo(nextsteps.empty(), {}, NOW), [])
+
+
 class AskTests(TmpPaths):
     def test_it_answers_from_numbered_sources_and_lists_the_ones_used(self):
         found = ms.pieces(world())

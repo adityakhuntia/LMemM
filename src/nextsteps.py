@@ -260,6 +260,34 @@ def refresh(doc, items, book, now=None, front_id=None, extra=None):
         step = _add(doc, kind, text, ids, task, now, detail)
         if step:
             added.append(step)
-    doc["steps"] = [s for s in doc["steps"] if s["kind"] in FROM_MODEL or s["state"] != "new" or s["key"] in keys]
+    doc["steps"] = [s for s in doc["steps"] if s["kind"] in FROM_MODEL or s.get("demo") or s["state"] != "new" or s["key"] in keys]
     tidy(doc, items, now)
     return [s for s in added if s in doc["steps"]]
+
+
+def demo(doc, items, now=None):
+    """`start --demo`: one step of each kind, with long text, so the pill's boxes and the full card can be tried at once.
+    They are marked demo (refresh keeps them) and replaced on every start. Needs at least one thing; returns the steps."""
+    now = now or datetime.now()
+    doc["steps"] = [s for s in doc["steps"] if not s.get("demo")]
+    ids = list(items)[:2]
+    if not ids:
+        return []
+    things = [{"app": items[i].get("app"), "title": _title(items[i])} for i in ids]
+    long = ("Check whether the Apps Script trigger really ran on the weekend, then compare the execution log with the "
+            "scheduled folder in Gmail so you know which of the two is responsible for the emails that went out late")
+    rows = [("resume", "Back to “Verify the follow-up automation”", {"goal": "Find out if the script, not Gmail, schedules the emails",
+                                                                       "last_wrote": long, "open": "Compare the log with the Scheduled folder",
+                                                                       "things": things}),
+            ("hanging", "Still open in “Outreach tracker”: decide who gets the second reminder", {}),
+            ("next", long, {}),
+            ("earlier", "“The trigger runs the sendDrafts function every morning at eight o’clock”",
+             {"from": "script.google.com · Auto Send · on screen · yesterday",
+              "copy": "The trigger runs the sendDrafts function every morning at eight o’clock"})]
+    out = []
+    for kind, text, detail in rows:
+        step = _add(doc, kind, text, ids, None, now, detail)
+        if step:
+            step["demo"] = True
+            out.append(step)
+    return out

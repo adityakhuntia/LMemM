@@ -141,6 +141,7 @@ class Tracker:
         self.live_labels = live_labels
         self.recall_doc = self.load_recall()
         self.earlier_cands, self.found_cache = [], (0.0, [])
+        self.demo_seeded = False
         self.ask_state, self.pending_flash = {"state": "idle"}, None
         self.recall_at = time.time() + config.RECALL_FIRST_AFTER - config.RECALL_EVERY    # first look soon after start
         self.labeller = None                 # labels.LiveLabeller, made in run() when asked for
@@ -1731,6 +1732,8 @@ class Tracker:
                 front = (self.last_frame or {}).get("item")
                 doc = self.recall_doc
                 added = nextsteps.refresh(doc, self.items, book, front_id=front, extra=self.earlier_cands)
+                if config.DEMO and not self.demo_seeded and self.items:
+                    self.demo_seeded = bool(nextsteps.demo(doc, self.items))
                 nextsteps.save(doc)
             if added:
                 say("pill: " + ", ".join(sorted({a["kind"] for a in added})) + f"  ({len(added)} new)  ·  open the pill to see them")

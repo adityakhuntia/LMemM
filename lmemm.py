@@ -50,7 +50,7 @@ import notes  # noqa: E402
 import store  # noqa: E402
 import tracker  # noqa: E402
 
-USAGE = ("usage: lmemm.py [menu] | start [--no-labels] [--no-writing] [--every N] [--input-events --input-app APP]"
+USAGE = ("usage: lmemm.py [menu] | start [--demo] [--no-labels] [--no-writing] [--every N] [--input-events --input-app APP]"
          " | memory [N] [--content] [--events]"
          " | notes [--all] [PROJECT] | notes done|reopen ID…"
          " | projects [--all] | projects new|rename|move|archive|restore|merge|delete …"
@@ -161,12 +161,16 @@ def cmd_start(args):
                              "secure fields are never read; stays on this Mac; deleted after 48 h)")
     parser.add_argument("--recall-after", type=int, metavar="MINUTES", default=config.RECALL_GAP_MINUTES,
                         help="how long away counts as 'left' for pick up / left open on the pill (default %d); try 3 to see them quickly" % config.RECALL_GAP_MINUTES)
+    parser.add_argument("--demo", action="store_true",
+                        help="put one sample of each pill box on the pill within seconds, to try the look and the taps")
     parser.add_argument("--labels", action="store_true", help=argparse.SUPPRESS)      # old flags: now the default
     parser.add_argument("--writing", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--no-setup", action="store_true", help="skip first-run setup (it asks for permissions itself)")
     opts = parser.parse_args(args)
     config.TRAIL_WRITING = not opts.no_writing
     config.RECALL_GAP_MINUTES = max(opts.recall_after, 1)
+    if opts.demo:
+        config.DEMO, config.RECALL_FIRST_AFTER = True, 3
     if opts.recall_after < 60:                       # trying it out: the first tasks run comes sooner, and more often
         config.TASK_FIRST_AFTER, config.TASK_EVERY, config.LABEL_FIRST_AFTER = 120, 300, 60
     if opts.every <= 0 or not 0 < opts.input_retention_hours <= 24:

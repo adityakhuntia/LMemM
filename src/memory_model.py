@@ -19,7 +19,9 @@ def memory_reduce(state,action,payload):
     elif action=='tab':
         if payload['tab'] not in TABS:raise ValueError('Unknown tab')
         s['tab']=payload['tab'];s['source']=None
-    elif action=='query':s['query']=payload['text']
+    elif action=='query':
+        if payload['text']!=s['query']:
+            s.update(query=payload['text'],epoch=s['epoch']+1,request=None,result=None,source=None,loading=False)
     elif action=='time_filter':
         if payload['period'] not in PERIODS:raise ValueError('Unknown period')
         s.update(period=payload['period'],result=None,source=None,epoch=s['epoch']+1)
@@ -28,7 +30,7 @@ def memory_reduce(state,action,payload):
         s.update(request={'id':s['request_count'],'project_id':s['project_id'],'epoch':s['epoch'],'generation':s['generation'],'kind':action},loading=True,error=None)
         if action=='source':s['request']['citation_id']=payload['citation_id']
     elif action=='response':
-        if payload.get('request')!=s['request']:return s
+        if s['request'] is None or payload.get('request')!=s['request']:return s
         s['loading']=False
         if payload.get('revoked'):
             s.update(result=None,source=None,preview=None,error='Access unavailable')

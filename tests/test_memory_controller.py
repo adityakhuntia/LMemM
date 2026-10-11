@@ -19,3 +19,6 @@ class ControllerTests(unittest.TestCase):
         m.bindings=[dict(ui_project_id='a',project_id='pa',active=True,workspace_root='/a')];m.select('a')
         m.action('source',{'citation_id':'cite'})
         self.assertEqual(c.calls[-1][:2],('resolve_citation',{'project_id':'pa','citation_id':'cite'}))
+    def test_service_restart_clears_cached_result(self):
+        c=Client();m=MemoryController(lambda:c,lambda:{},lambda:None);m.state['result']={'primary':[{'text':'old'}]}
+        m.poll([{'type':'ready'}]);self.assertIsNone(m.state['result'])

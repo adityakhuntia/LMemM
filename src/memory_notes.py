@@ -55,11 +55,13 @@ def prepare_native_sync(items,directory):
     if not bindings:return None
     state_path=directory/'native-note-state.json'
     old=read_private_json(state_path) if state_path.exists() else {}
+    pending_path=directory/'native-notes.pending.json'
+    pending_projects=set(read_private_json(pending_path).get('projects',[])) if pending_path.exists() else set()
     hashes={}
     for binding in bindings:
         if not binding['active']:continue
         digest=snapshot_hash(project_snapshot(items,binding,binding['enrolled_at']))
-        if old.get(binding['project_id'])!=digest:hashes[binding['project_id']]=digest
+        if old.get(binding['project_id'])!=digest or binding['project_id'] in pending_projects:hashes[binding['project_id']]=digest
     if not hashes:return None
     marker={'version':1,'mutation_id':secrets.token_hex(16),'pid':os.getpid(),'projects':sorted(hashes),'phase':'preparing','hashes':hashes}
     write_private_json(directory/'native-notes.pending.json',marker)

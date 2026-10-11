@@ -34,3 +34,9 @@ class MemoryModelTests(unittest.TestCase):
         v=memory_view(new_memory_state(),{'workspace_root':'/repo'},{'state':'Ready'},{'open_tasks':[],'decisions':[],'recent_evidence':[]})
         self.assertIn('No retained evidence',v['empty'])
         self.assertNotIn('caught up',repr(v).lower())
+    def test_typing_new_query_discards_inflight_old_query(self):
+        s=memory_reduce(new_memory_state(),'query',{'text':'old'})
+        s=memory_reduce(s,'submit',{});token=s['request']
+        s=memory_reduce(s,'query',{'text':'new'})
+        s=memory_reduce(s,'response',{'request':token,'result':{'primary':[{'text':'old answer'}]}})
+        self.assertIsNone(s['result'])

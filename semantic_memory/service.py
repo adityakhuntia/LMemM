@@ -48,6 +48,7 @@ class MemoryService:
         from .model_setup import OwnedEmbeddingRuntime
         self.runtime=OwnedEmbeddingRuntime(self.directory.parent/'embedding-models') if backend_factory is None else None
         self.setup_thread=None
+        self.service_epoch=secrets.token_hex(16)
         try:
             self.store=SemanticStore(self.directory/'memory.sqlite')
             with self.store.transaction() as c:
@@ -231,8 +232,14 @@ class MemoryService:
             pending+=c.execute('SELECT count(*) FROM note_fences').fetchone()[0]
             reason='Paused by user' if is_paused else self.model_error
             state='Paused' if is_paused else 'Needs attention' if failed or self.model_error else 'Processing' if pending else 'Ready' if enrolled else 'Disabled'
+            journal=self.directory/'native-notes.pending.json'
+            if not is_paused and journal.exists() and read_private_json(journal).get('phase')=='preparing':
+                state='Needs attention';reason='A note save was interrupted. Recover saved notes to reconcile Memory.'
             generation=active_generation(self.store)
-            return dataclasses.asdict(MemoryStatus(state,reason,generation['created_at'] if generation else None,enrolled,pending,failed,'available' if self.backend else 'missing',first,memory_usage(self.store)['total_bytes']))
+            value=dataclasses.asdict(MemoryStatus(state,reason,generation['created_at'] if generation else None,enrolled,pending,failed,'available' if self.backend else 'missing',first,memory_usage(self.store)['total_bytes']))
+            from .grants import revision
+            value.update(service_epoch=self.service_epoch,policy_revision=revision(c),index_generation=generation['id'] if generation else None)
+            return value
 
     def _sync_bridge(self):
         if self.bridge:

@@ -1,0 +1,32 @@
+{
+  "kind": "synthetic full hybrid search probe; not paired native acceptance",
+  "authorized_chunks": 10000,
+  "loaded_model": true,
+  "build_seconds": 17.03043695818633,
+  "warm_p95_seconds": 0.2505915654241107,
+  "warm_search_seconds": [
+    0.2950578338932246,
+    0.23014604090712965,
+    0.24621033412404358,
+    0.2541762092150748,
+    0.24103316687978804,
+    0.23013366688974202,
+    0.2275594170205295,
+    0.2259475002065301,
+    0.23184066615067422,
+    0.23127291607670486,
+    0.23451495799236,
+    0.2320308331400156
+  ],
+  "primary_count": 10,
+  "nonmodel_peak_rss_bytes": 59883520,
+  "idle_seconds": 60,
+  "probe_idle_cpu_percent": 7.166102117466225e-05,
+  "db_bytes": 35676160,
+  "limitations": [
+    "duplicated document vectors isolate index cost",
+    "no paired native baseline",
+    "runtime RSS and energy not measured",
+    "not the 30-minute representative workload"
+  ]
+}

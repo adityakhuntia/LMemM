@@ -1,0 +1,11 @@
+{
+  "emitted": 8,
+  "gold": 8,
+  "unsupported": 0,
+  "precision": 1.0,
+  "recall": 1.0,
+  "passed": true,
+  "fresh_cases": 20,
+  "invalid_reasons_or_citations": 0,
+  "experimental_model_claims_enabled": false
+}

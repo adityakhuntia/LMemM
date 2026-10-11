@@ -1,73 +1,42 @@
 # LMemM — current context
 
-Updated 2026-10-10. This is the active continuation entry point.
+Updated 2026-10-10. Active work is now on **local `main`**, explicitly authorized by the user. `origin/main` was fetched at `42d7f0e`, which is included. No push was made. The old feature worktree is retained as a checkpoint, not the active implementation workspace. Root `context.md` is preserved untracked; the named `preserve user context before memory MVP main integration` stash is also retained. Do not stage that file, read/stage the worktree `.env` canary, or replay the stash blindly.
 
-## Current decision and next action
+## Implemented MVP
 
-The user selected a focused developer MVP: approved VS Code visible content and
-intentional project notes; keyword + local vector retrieval over evidence; small
-supported graph relationships; read-only MCP for one agent; and **Overview · Memory**
-tabs within the existing project window, with source inspection and agent-context preview.
-Browser semantic intake and a visual graph explorer are out of this increment.
+The approved [spec](specs/2026-10-10-hybrid-project-memory-mvp.md) and [plan](plans/2026-10-10-hybrid-project-memory-mvp.md) have been implemented through the backend, service, native integration and MCP tasks:
 
-The [new written spec](specs/2026-10-10-hybrid-project-memory-mvp.md) has been approved by the user and passed a fresh independent builder check. The
-[implementation plan](plans/2026-10-10-hybrid-project-memory-mvp.md) is written and
-self-reviewed, awaiting plan review before native execution under Superpowers
-executing-plans, with an independent whole-branch review at the end. Do not execute
-the superseded October 7 plans. No hybrid-MVP implementation has started.
+- Versioned SQLite project bindings, scoped grants, retained evidence chunks and exact citations.
+- Keyword + local MiniLM embeddings, incremental bounded vector generations, hybrid ranking and supported one-hop references.
+- Explicit note decisions/reasons/tasks, cited context packets, deletion/revocation/quota fences.
+- Private app-supervised service with asynchronous native client, pause/quit/lock lifecycle hooks and an owned cloud-disabled model runtime.
+- Durable native JSON-note reconciliation for new explicitly project-scoped notes, including edits/done/reopen/delete. Legacy/ambiguous OCR notes are not imported.
+- Native Overview / Memory tabs, time filters, Return-only search, project-note entry, retained-source inspection, setup and normal VSIX packaging.
+- Official SDK read-only MCP adapter, separate agent disclosure approval, exact grant-specific context preview and explicit copy.
 
-## Branch and preservation
+Browser semantic intake, repository crawling, graph visualization, agent writes and model-generated claims are outside this MVP. The local selected embedding model is `all-minilm:22m`, 384 dimensions; weights are installed only after explicit setup.
 
-Work in `.worktrees/semantic-project-memory`, branch `feat/semantic-project-memory`.
-Latest main included: `42d7f0e`, merged in `e94d03a`. The tested self-accessibility guard
-is committed in `11f5f3e`. This documentation revision follows it. Local commits have
-not been pushed. Root main remains at its earlier checkpoint with local context.md
-edits; do not reset or overwrite them. `.env` is an untracked local canary; never add it.
-Backup branches preserve the pre-main-update states. No worktrees were deleted.
+## Verification and acceptance
 
-## Implemented versus proposed
+Pre-review full suite: **790 Python tests passed**, plus **6 Node bridge tests**. Fresh independent whole-implementation review is the next verification gate; its material findings must be resolved before a completion claim.
 
-Existing: normal Mac capture/OCR, note/pill/project/menu/settings UI, event trail,
-and separate VS Code semantic pilot with SQLite evidence, source-backed claims,
-retention, scoped recall and citations. Native project tree and semantic workspace
-IDs are not yet unified. The normal capture flow does not feed the semantic pilot.
+Frozen production held-out retrieval: hybrid Recall@5 20/20; keyword 15/20; paraphrase 10/10 versus keyword 5/10; exact 10/10 both. Fresh deterministic assertion set: 8/8 supported claims across 20 cases, zero unsupported reasons/citations. These are small synthetic measurements.
 
-Not yet implemented: embedding index, hybrid search, new Memory tab, unified project
-note synchronization, supervised memory-service startup, MCP and real agent resume.
-One live project previously returned an explicit decision/reason and an open task;
-this is not general semantic acceptance. No local extractor passed the overall gate.
-Reviewed v2.4 1.5B result: 5 correct / 1 false assertion on a tiny held-out set; later
-adapter changes require fresh evaluation. See the [benchmark index](benchmarks/project-memory/README.md).
+10k authorized-chunk synthetic hybrid search: warm p95 0.251s, absolute probe RSS 59.9MB, 60-second probe idle sampled. Document vectors were duplicated to isolate index cost; this is not paired native runtime acceptance. Device: Apple M2 Pro, 32GiB RAM, macOS 27.0.
 
-## Verification and native abort
+Real AppKit synthetic pane states were displayed and captured by window ID. A real hosted Codex resume test used only two synthetic notes, called the MCP context tool, and cited both exact evidence IDs. No personal project evidence was enrolled or transmitted.
 
-Latest suite: 693 Python tests passed after the self-accessibility guard; latest
-extension run: 6 Node bridge tests passed during main integration. These are historical
-results for those revisions, not tests of the proposed hybrid MVP.
+**Still pending:** original open-project/app-switch native shutdown retest, physical sleep/lock acceptance, the paired 30-minute native resource workload (including runtime RSS/energy and live indexing latency), real extension installation/enrollment acceptance, and three consented external testers. Do not call launch complete or claim the original shutdown is fixed solely from tests. See [acceptance](benchmarks/project-memory/hybrid-mvp/acceptance.md).
 
-User smoke run on October 10 aborted after opening the project window. Unified log
-for PID 89486 reported off-main NSMenu mutation, NSRemoteView assertion and
-NSInternalInconsistencyException. Background AX readers could inspect LMemM's own
-foreground UI. PID-based self guards now prevent that path; four regressions fail
-before and pass after. The original live sequence still needs retesting. Memory
-warnings are not evidence that memory pressure caused the abort.
+## Run locally
 
-Use the user's terminal for real testing; don't start a second tracker. Optional
-restart command from the feature worktree:
+Use the root checkout now:
 
-```bash
-umask 077
-../../.venv/bin/python -X faulthandler -u lmemm.py start 2>&1 | tee data/smoke-test.log
+```sh
+cd /Users/divyaanshseth/Documents/LMemM/LMemM
+.venv/bin/python lmemm.py start
 ```
 
-## Documents
+Do not start a second tracker if the user's terminal is already running one. Open a project → Memory → Enable Memory. Setup, extension connection, agent disclosure and test steps are in the [runbook](hybrid-memory-runbook.md). Automated tests did not enroll personal sources or leave a test service running.
 
-- [Approved spec](specs/2026-10-10-hybrid-project-memory-mvp.md)
-- [Short handover](../handover.md)
-- [Prior complete context](history/2026-10-10-before-hybrid-scope.md)
-- [Existing pilot status](semantic-project-memory-status.md) and [pilot runbook](live-semantic-pilot.md)
-- [Architecture](architecture.md), [README](../README.md), [benchmark evidence](benchmarks/project-memory/README.md)
-
-Old specs/plans remain historical records with supersession banners. Their uncompleted
-roadmaps are not a competing active scope. No model assets, grants, private evidence,
-.env contents or runtime configuration belong in publication.
+The execution ledger is ignored at `.superpowers/sdd/2026-10-10-hybrid-project-memory-mvp/progress.md`; commit history and acceptance records are durable. Superseded October 7 plans remain historical, not competing scope.

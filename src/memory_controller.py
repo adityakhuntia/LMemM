@@ -50,12 +50,15 @@ class MemoryController:
                 params.update(period_args(self.state['period']))
                 method='get_project_context'
                 if action=='submit' and self.state['query'].strip():method='search_project_memory';params['query']=self.state['query'].strip()
-                if action=='preview':method='preview_agent_context';params['client_id']='Codex'
+                if action=='preview':
+                    method='preview_agent_context';params['client_id']='Codex'
+                    if self.agent:params['grant_id']=self.agent['grant_id']
             self.send(method,params,'read',self.state['request'])
     def poll(self,events=None):
         changed=False
         for event in self.client().poll() if events is None else events:
-            if event.get('type')=='ready':self.last_poll=0;continue
+            if event.get('type')=='ready':
+                self.last_poll=0;self.state=memory_reduce(self.state,'cancel',{});changed=True;continue
             if event.get('type')=='error':self.state['error']=event['error'];changed=True;continue
             entry=self.pending.pop(event.get('id'),None)
             if not entry:continue
@@ -65,7 +68,13 @@ class MemoryController:
             elif kind=='bindings':
                 self.bindings=event['result']
                 if not self.binding:self.state=memory_reduce(self.state,'revoke',{})
-            elif kind=='status':self.status=event['result']
+            elif kind=='status':
+                previous=(self.status.get('service_epoch'),self.status.get('policy_revision'),self.status.get('index_generation'))
+                self.status=event['result']
+                current=(self.status.get('service_epoch'),self.status.get('policy_revision'),self.status.get('index_generation'))
+                if current!=previous:
+                    self.state=memory_reduce(self.state,'generation',{'generation':current})
+                    if self.binding and self.state['tab']=='Memory':self.action('submit',{})
             elif kind=='agent':self.agent=event['result'];self.state['preview']={'connection':{k:v for k,v in self.agent.items() if k!='capability'}}
             elif kind=='open':
                 detail=event['result']

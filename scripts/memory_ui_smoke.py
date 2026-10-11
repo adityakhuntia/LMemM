@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+"""Draw only synthetic Memory evidence in a real AppKit window; export its view."""
+import argparse,sys,time
+from pathlib import Path
+sys.path[:0]=[str(Path(__file__).resolve().parents[1]/'src')]
+from AppKit import NSApplication,NSBitmapImageFileTypePNG,NSAppearance,NSImage,NSColor,NSBezierPath,NSBitmapImageRep
+import projects,page_model,window,window_model,macos
+from memory_model import new_memory_state,memory_view
+p=argparse.ArgumentParser();p.add_argument('--output',type=Path,required=True);args=p.parse_args();args.output.mkdir(parents=True,exist_ok=True)
+app=NSApplication.sharedApplication();app.setActivationPolicy_(0);app.setAppearance_(NSAppearance.appearanceNamed_('NSAppearanceNameAqua'))
+reg=projects.empty();pid=projects.create(reg,'MVP launch · synthetic');items={}
+state=new_memory_state();state['tab']='Memory'
+binding={'workspace_root':'/synthetic/lmemm-mvp','active':True}
+result={'decisions':[{'statement':'We decided to use local embeddings because project evidence stays on device.','reason':'because project evidence stays on device.','at':'2026-10-10T10:00:00Z','citations':['synthetic-1']}],
+        'open_tasks':[{'statement':'TODO: Verify the project resume flow.','at':'2026-10-10T10:15:00Z','citations':['synthetic-2']}],
+        'recent_evidence':[{'text':'The source bridge captures only approved visible local text.','at':'2026-10-10T10:20:00Z','citation_id':'synthetic-3','locator':'/synthetic/lmemm-mvp/bridge.py'}],
+        'coverage':{'evidence_count':3,'claims':'explicit supported intent only'}}
+snapshot=memory_view(state,binding,{'state':'Ready','model_state':'available'},result)
+actions=[]
+w=window.MainWindow(lambda *a:None,lambda:(reg,items),on_memory=lambda *a:actions.append(a),memory_view=lambda _:snapshot)
+w.nav=page_model.press(reg,w.nav,'go',pid)
+w.show(window_model.view({'screen':True}));app.activateIgnoringOtherApps_(True)
+for label in ['disabled','ready','processing','paused','error','source','overview']:
+    state['tab']='Overview' if label=='overview' else 'Memory'
+    status={'state':{'disabled':'Disabled','processing':'Processing','paused':'Paused','error':'Needs attention'}.get(label,'Ready'),'model_state':'missing' if label=='disabled' else 'available'}
+    state['source']={'text':'We decided to use local embeddings because project evidence stays on device.','locator':'/synthetic/lmemm-mvp/notes.md','at':'2026-10-10T10:00:00Z','citation_id':'synthetic-1','can_open_file':False} if label=='source' else None
+    snapshot=memory_view(state,None if label=='disabled' else binding,status,result)
+    w.shown=None;w.render()
+    for _ in range(8):macos.next_event(app,.05)
+    import Quartz
+    captured=Quartz.CGWindowListCreateImage(Quartz.CGRectNull,Quartz.kCGWindowListOptionIncludingWindow,int(w.window.windowNumber()),Quartz.kCGWindowImageBoundsIgnoreFraming)
+    if captured is None:raise RuntimeError('Own-window capture unavailable')
+    rep=NSBitmapImageRep.alloc().initWithCGImage_(captured)
+    rep.representationUsingType_properties_(NSBitmapImageFileTypePNG,{}).writeToFile_atomically_(str(args.output/(label+'.png')),True)
+    print(label,flush=True)
+w._memory_action('source',{'citation_id':'synthetic-1'})
+assert actions[-1]==('source',{'citation_id':'synthetic-1'})
+w.window.orderOut_(None)
+print('Native synthetic pane smoke passed; no personal capture, no live service.',flush=True)

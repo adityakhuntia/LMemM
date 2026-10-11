@@ -1,52 +1,11 @@
 # LMemM — continuation handover
 
-Updated 2026-10-10. Start with [current context](docs/current-context.md) and the
-[hybrid project-memory MVP spec](docs/specs/2026-10-10-hybrid-project-memory-mvp.md).
+Updated 2026-10-10. Read [current context](docs/current-context.md), [runbook](docs/hybrid-memory-runbook.md), and [acceptance](docs/benchmarks/project-memory/hybrid-mvp/acceptance.md).
 
-## Worktree and current task
+Work in the root checkout on **main**, per the user's explicit request. The latest fetched origin/main (`42d7f0e`) is included. No push performed. Preserve untracked user `context.md` and its integration safety stash. The feature worktree is a retained checkpoint with ignored model assets and an untracked .env canary; never read/stage that canary or force-clean the worktree.
 
-Use `.worktrees/semantic-project-memory` on `feat/semantic-project-memory`.
-Main is integrated through `42d7f0e` (merge `e94d03a`); crash guard `11f5f3e` follows.
-These local updates are not pushed. Root main and its modified context.md are preserved.
-The local .env canary stays untracked. Do not create a replacement branch or replay old stashes.
+The hybrid MVP backend, private supervised service, durable native-note sync, native Overview/Memory UI and official SDK MCP adapter are implemented. Pre-review: 790 Python tests and 6 Node tests pass. Synthetic native screenshots, held-out retrieval (20/20 Recall@5), fresh assertion precision (8/8 supported), 10k full-search probe (0.251s p95), and an actual synthetic-only hosted Codex resume are recorded.
 
-User chose **Overview · Memory** project tabs and the focused hybrid-memory scope.
-The user approved the full written design. The [implementation plan](docs/plans/2026-10-10-hybrid-project-memory-mvp.md)
-is written and self-reviewed. Next: plan review, then native execution under
-Superpowers executing-plans and one independent whole-branch review. Do not follow
-remaining tasks in the superseded October 7 plans.
+Next: fresh independent whole-implementation review, one TDD fix pass for material findings, then final checks/commits on main. Physical crash/sleep/lock, paired 30-minute resources, real extension setup and three external testers remain pending; do not claim launch acceptance.
 
-## Scope in one paragraph
-
-Approved VS Code visible excerpts and intentional project notes become retained,
-citable evidence. Keyword and local vector search find relevant passages; supported
-project/claim/reference links add context. The existing native project page gains a
-Memory tab with search, source detail and a grant-specific agent-context preview.
-One read-only MCP client can resume the same project using the same backend. Browser
-semantic intake, universal understanding, graph visualization and agent writes are deferred.
-
-## Existing behavior and outstanding proof
-
-The normal tracker/UI and experimental semantic pilot exist as separate flows. The
-new index, tabs, unified notes, supervised service and MCP are proposed, not implemented.
-One live explicit decision/task recall test passed; no general model acceptance exists.
-Latest 693 Python tests passed after self-AX guards; 6 Node tests passed during integration.
-Native abort: own-process background accessibility reads are guarded, but the original
-open-project/app-switch test still needs a live retest. Do not call the shutdown fixed
-solely from the unit suite. Resource and multi-project acceptance remain open.
-
-## Commands and records
-
-From this worktree, use `../../.venv/bin/python` as Python:
-
-```bash
-PYTHON=../../.venv/bin/python ./scripts/test.sh
-node --test extensions/lmemm-source/bridge.test.js
-../../.venv/bin/python lmemm.py start
-```
-
-Do not run duplicate trackers. The [pilot runbook](docs/live-semantic-pilot.md) is for
-the existing separate experiment, not the planned beta startup experience.
-[Prior detailed handover](docs/handover-2026-10-08.md) and
-[archived context](docs/history/2026-10-10-before-hybrid-scope.md) preserve history.
-All evidence/model caches, grants and runtime configuration remain local and ignored.
+Start from the root with `.venv/bin/python lmemm.py start`, only when no other tracker is running. Follow the runbook to enable a project explicitly; no personal sources were enrolled by implementation tests.

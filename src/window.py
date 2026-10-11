@@ -992,6 +992,13 @@ class MainWindow:
                 alert=NSAlert.alloc().init();alert.setMessageText_(titles[action]);alert.setInformativeText_(details[action]);alert.addButtonWithTitle_('Continue');alert.addButtonWithTitle_('Cancel')
                 if alert.runModal()!=1000:return
                 action={'confirm_model':'install_model','confirm_agent':'connect_agent','confirm_disconnect':'disconnect'}[action];payload={'approved':True}
+            elif action=='copy_preview':
+                from AppKit import NSPasteboard
+                import json
+                preview=self.memory_snapshot.get('preview')
+                if preview:
+                    paste=NSPasteboard.generalPasteboard();paste.clearContents();paste.setString_forType_(json.dumps(preview,ensure_ascii=False,indent=2),'public.utf8-plain-text')
+                return
             elif action=='reconnect_extension':
                 from AppKit import NSAlert,NSPasteboard
                 import config,os
@@ -1001,7 +1008,7 @@ class MainWindow:
             self.on_memory(action,payload)
         except (ValueError,OSError) as error:
             if self.memory_snapshot:self.memory_snapshot['error']=str(error)
-        if action!='query':self.shown=None;self.render()
+        self.shown=None;self.render()
 
     def _main(self, doc, page, split=False):
         x, w = self.col_x, self.main_w
@@ -1317,6 +1324,13 @@ class MainWindow:
         y += kit.put_text(doc, general["keep_line"], x, y, w, 12, 400, kit.mute()) + 24
         y = self._row(doc, x, y, w, "Add a note", "Press this anywhere to write or dictate a note.",
                       lambda row, rw: kit.put_text(row, general["hotkey"], rw - 116, 0, 100, 15, 600, align=RIGHT, wrap=False, height=60, middle=True))
+        if self.memory_view:
+            y=self._section(doc,general['memory']['title'],x,y+16,w)
+            y+=kit.put_text(doc,general['memory']['line'],x,y,w,13,400,kit.mute())+12
+            kit.button(doc,'Choose project…',x,y,160,32,lambda:self.press('home'),kind='outline',size=13,weight=600)
+            kit.button(doc,'Pause Memory',x+174,y,150,32,lambda:self._memory_action('pause'),kind='quiet',size=13,weight=500)
+            kit.button(doc,'Resume Memory',x+338,y,150,32,lambda:self._memory_action('resume'),kind='quiet',size=13,weight=500)
+            y+=52
         return self._row(doc, x, y, w, "Setup", "Go through the first-run questions again. Your memory and notes stay.",
                          lambda row, rw: kit.button(row, "Reopen setup…", rw - 14 - 130, 14, 130, 32, lambda: self.on_press("setup"), kind="outline", size=13, weight=600))
 

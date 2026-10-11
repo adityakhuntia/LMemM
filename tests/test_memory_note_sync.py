@@ -77,3 +77,11 @@ class NoteSyncTests(unittest.TestCase):
         self.save_note()
         with memory_notes.native_sync_lock(config.paths().semantic_dir):
             self.assertFalse(self.service.native_notes.sync_pending())
+
+    def test_save_and_revert_before_service_tick_does_not_leave_a_permanent_fence(self):
+        memory_notes.add_project_note(self.items,self.binding,'TODO: Temporary.','2026-10-10T10:00:00Z')
+        native_store.save_memory(self.items)
+        self.items.clear();native_store.save_memory(self.items)
+        self.service.tick()
+        self.assertFalse((Path(config.paths().semantic_dir)/'native-notes.pending.json').exists())
+        self.assertEqual(self.service.status()['state'],'Ready')

@@ -16,6 +16,7 @@ class MemoryPane:
     def __init__(self,on_action):
         from AppKit import NSTextField,NSMakeRect
         from widget import _Fields,_Flipped
+        self.project=None
         self.action=on_action;self.host=_Flipped.alloc().initWithFrame_(NSMakeRect(0,0,800,600))
         self.query_typing=_Fields.alloc().initWithChange_submit_cancel_(lambda text:self.action('query',{'text':text}),lambda text:self.action('submit',{}),lambda:self.action('query',{'text':''}))
         self.query=NSTextField.alloc().initWithFrame_(NSMakeRect(0,0,100,30));self.query.setDelegate_(self.query_typing)
@@ -43,6 +44,10 @@ class MemoryPane:
         text(view['message'],13,400,kit.mute())
         if view.get('error'):text(view['error'],13,500)
         binding=view.get('binding')
+        project=binding.get('project_id') if binding else None
+        if project!=self.project:
+            self.project=project;self.note.setStringValue_('')
+        if str(self.query.stringValue())!=view['query']:self.query.setStringValue_(view['query'])
         self.query.setHidden_(not bool(binding));self.note.setHidden_(not bool(binding))
         if not binding:
             text('Choose one workspace folder. Only new permitted VS Code excerpts and intentional project notes are retained. No repository scan or history import.')
@@ -56,7 +61,7 @@ class MemoryPane:
             if view['loading']:text('Loading permitted evidence…',13,400,kit.mute())
             if view['empty']:text(view['empty'],14,500)
             previous=None
-            for row in evidence_rows(view['result']):
+            for row in ([] if view.get('source') else evidence_rows(view['result'])):
                 if row['section']!=previous:text(row['section'],15,700);previous=row['section']
                 text(row['text'],14,500)
                 if row['reason']:text(row['reason'],12,400,kit.mute())
@@ -70,12 +75,14 @@ class MemoryPane:
                 button('Close source','close_source')
             if view.get('preview'):
                 import json
-                text('Exact context preview for Codex',16,700)
+                text('Proposed context for Codex · no access granted' if view['preview'].get('proposed') else 'Exact context preview for Codex',16,700)
                 text(json.dumps(view['preview'],ensure_ascii=False,indent=2),12)
+                button('Copy context preview','copy_preview')
             text('Project notes',15,700)
             text('Use “TODO:” for an explicit task, or “We decided … because …” to record a decision and its reason.',12,400,kit.mute())
             self.note.setFrame_(NSMakeRect(x,y,w,32));y+=52
             button('Refresh evidence','refresh')
+            if view['state']=='Needs attention':button('Recover saved notes','recover_native_notes')
             button('Resume Memory' if view['state']=='Paused' else 'Pause Memory','resume' if view['state']=='Paused' else 'pause')
             text('Semantic recall · local MiniLM model, approximately 46 MB. Stored in LMemM’s embedding-models folder. Installation is explicit; no cloud fallback.',12,400,kit.mute())
             button('Install local model…','confirm_model')

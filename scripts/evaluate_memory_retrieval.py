@@ -27,13 +27,28 @@ def score_ranking(ranking,gold):
             'mrr':next((1/(i+1) for i,item in enumerate(ranking) if item in gold),0.0)}
 
 
+def validate_queries(corpus,development,held_out):
+    ids=set();texts=set();eligible={c['occurrence_id'] for c in corpus if c.get('ingested')}
+    for split in (development,held_out):
+        for q in split:
+            gold=q['gold_occurrence_ids']
+            if q['id'] in ids or len(gold)!=len(set(gold)) or not set(gold)<=eligible:
+                raise ValueError('Contaminated query identities or invalid gold labels')
+            if not gold and q['kind']!='no_evidence':raise ValueError('Empty gold labels')
+            key=(q.get('project'),q['text'].strip().casefold())
+            if gold and key in texts:raise ValueError('Contaminated query text')
+            ids.add(q['id'])
+            if gold:texts.add(key)
+
 def load_fixture(directory,split):
     manifest=json.loads((directory/'manifest.json').read_text())
-    for key in ('corpus',split):
+    for key in ('corpus','development','held_out'):
         name=manifest['files'][key];raw=(directory/name).read_bytes()
         digest_key={'development':'development_sha256','held_out':'held_out_sha256','corpus':'corpus_sha256'}[key]
         if hashlib.sha256(raw).hexdigest()!=manifest[digest_key]:raise ValueError('Frozen fixture hash mismatch')
-    return manifest,json.loads((directory/manifest['files']['corpus']).read_text()),json.loads((directory/manifest['files'][split]).read_text())
+    docs={key:json.loads((directory/manifest['files'][key]).read_text()) for key in ('corpus','development','held_out')}
+    validate_queries(docs['corpus'],docs['development'],docs['held_out'])
+    return manifest,docs['corpus'],docs[split]
 
 
 def evaluate(directory,manifest,split):
@@ -53,6 +68,14 @@ def evaluate(directory,manifest,split):
                 if result.occurrence_ids[0]!=source['occurrence_id']:raise ValueError('Gold occurrence identity mismatch')
                 index_source(store,s.source_id)
                 started=time.perf_counter();embeddings[source['occurrence_id']]=backend.embed((source['text'],),query=False)[0];embedding_seconds+=time.perf_counter()-started
+            from semantic_memory.vector_index import begin_generation,activate_generation,vector_candidates
+            from semantic_memory.search import search_project
+            gid=begin_generation(store,manifest)
+            with store.transaction() as c:
+                for chunk in c.execute('SELECT id,occurrence_id FROM memory_chunks').fetchall():
+                    c.execute('INSERT INTO chunk_vectors VALUES(?,?,?)',(chunk['id'],gid,embeddings[chunk['occurrence_id']].astype(np.float32).tobytes()))
+                c.execute("UPDATE index_jobs SET state='done'")
+            activate_generation(store,gid)
             for q in questions:
                 binding=bindings[q['project']];ctx=authorize(store,grant.id,binding.project_id)
                 query=Query(binding.project_id,q['text'],q['start'],q['end'])
@@ -64,7 +87,8 @@ def evaluate(directory,manifest,split):
                 scores={}
                 for ranking in (kr,vr):
                     for i,oid in enumerate(ranking):scores[oid]=scores.get(oid,0)+1/(60+i+1)
-                hybrid=sorted(scores,key=lambda oid:(-scores[oid],oid))
+                hybrid=list(dict.fromkeys(h.citation_id for h in search_project(store,backend,ctx,query).primary))
+                vr=list(dict.fromkeys(h.citation_id for h in vector_candidates(store,ctx,query,qv)))
                 details.append({'id':q['id'],'kind':q['kind'],'gold_count':len(q['gold_occurrence_ids']),
                                 'scores':{name:score_ranking(rank,q['gold_occurrence_ids']) for name,rank in [('keyword',kr),('vector',vr),('hybrid',hybrid)]},
                                 'rankings':{'keyword':kr[:10],'vector':vr[:10],'hybrid':hybrid[:10]}})
@@ -75,7 +99,7 @@ def evaluate(directory,manifest,split):
         summary[kind]={'count':len(subset)}
         for method in ('keyword','vector','hybrid'):
             summary[kind][method]={metric:sum(d['scores'][method][metric] for d in subset)/len(subset) if subset else None for metric in ('recall_at_5','mrr')}
-    return {'model_id':manifest.model_id,'model_digest':manifest.digest,'dimension':manifest.dimension,'fixture':fixture,'split':split,'summary':summary,'details':details,'embedding_seconds':embedding_seconds,'query_embedding_seconds':{'count':len(timings),'p50':float(np.percentile(timings,50)),'p95':float(np.percentile(timings,95))},'acceptance':'development comparison only' if split=='development' else 'held-out retrieval only; other acceptance gates separate'}
+    return {'model_id':manifest.model_id,'model_digest':manifest.digest,'implementation':'production search_project, chunk version 1, RRF k=60, authorized candidate caps 50+50','dimension':manifest.dimension,'fixture':fixture,'split':split,'summary':summary,'details':details,'embedding_seconds':embedding_seconds,'query_embedding_seconds':{'count':len(timings),'p50':float(np.percentile(timings,50)),'p95':float(np.percentile(timings,95))},'acceptance':'development comparison only' if split=='development' else 'held-out retrieval only; other acceptance gates separate'}
 
 
 def main():

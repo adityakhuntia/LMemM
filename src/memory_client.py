@@ -15,6 +15,7 @@ class MemoryClient:
         self.capability=None;self.events=queue.SimpleQueue();self.stopping=False
         self.executor=concurrent.futures.ThreadPoolExecutor(max_workers=1,thread_name_prefix='memory-client')
         self.started=False;self.ready=threading.Event()
+        self.query_slots=threading.BoundedSemaphore(8);self.control_slots=threading.BoundedSemaphore(8)
         self.controls=concurrent.futures.ThreadPoolExecutor(max_workers=1,thread_name_prefix='memory-control')
 
     def start(self):
@@ -31,6 +32,8 @@ class MemoryClient:
             if self.headless:args.append('--headless')
             try:self.process=subprocess.Popen(args,pass_fds=(read_fd,),stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
             finally:os.close(read_fd)
+            if self.stopping:
+                self._close_control();self._reap(self.process);return
             deadline=time.monotonic()+10
             info=self.directory/'service.json'
             while time.monotonic()<deadline and not self.stopping:
@@ -44,13 +47,22 @@ class MemoryClient:
                 time.sleep(.02)
             raise RuntimeError('Service startup unavailable')
         except Exception:
+            self._close_control()
+            if self.process:self._reap(self.process)
             self.ready.set();self.events.put({'type':'error','error':'Project memory service unavailable'})
 
     def request(self,method,params,request_id):
         if not self.started:self.start()
         if not self.stopping:
-            executor=self.controls if method in {'pause','resume','revoke_agent','revoke_project','begin_note_mutation','reconcile_notes'} else self.executor
-            executor.submit(self._request,method,params,request_id)
+            control=method in {'pause','resume','revoke_agent','revoke_project','begin_note_mutation','reconcile_notes'}
+            executor=self.controls if control else self.executor
+            slots=self.control_slots if control else self.query_slots
+            if not slots.acquire(blocking=False):
+                self.events.put({'type':'response','id':request_id,'method':method,'error':'Memory is busy; try again'});return
+            try:future=executor.submit(self._request,method,params,request_id)
+            except RuntimeError:
+                slots.release();return
+            future.add_done_callback(lambda _:slots.release())
 
     def _request(self,method,params,request_id):
         from semantic_memory.ipc import request
@@ -69,18 +81,23 @@ class MemoryClient:
     def stop(self):
         if self.stopping:return
         self.stopping=True;self.ready.set()
-        if self.control is not None:
-            try:os.close(self.control)
-            except OSError:pass
-            self.control=None
+        self._close_control()
         self.executor.shutdown(wait=False,cancel_futures=True)
         self.controls.shutdown(wait=False,cancel_futures=True)
-        process=self.process
-        if process:
-            def reap():
+        if self.process:self._reap(self.process)
+
+    def _close_control(self):
+        fd,self.control=self.control,None
+        if fd is not None:
+            try:os.close(fd)
+            except OSError:pass
+
+    @staticmethod
+    def _reap(process):
+        def reap():
+            try:process.wait(3)
+            except subprocess.TimeoutExpired:
+                process.terminate()
                 try:process.wait(3)
-                except subprocess.TimeoutExpired:
-                    process.terminate()
-                    try:process.wait(3)
-                    except subprocess.TimeoutExpired:process.kill();process.wait()
-            threading.Thread(target=reap,name='memory-stop',daemon=True).start()
+                except subprocess.TimeoutExpired:process.kill();process.wait()
+        threading.Thread(target=reap,name='memory-stop',daemon=True).start()

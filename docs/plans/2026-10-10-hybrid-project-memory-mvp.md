@@ -1,5 +1,8 @@
 # Hybrid Project Memory MVP Implementation Plan
 
+Execution update (2026-10-10): backend/service/native UI/MCP implementation is on local main, explicitly authorized by the user. Automated and synthetic integration evidence is in the hybrid-memory runbook and acceptance report. Original live crash, physical sleep/lock, paired 30-minute resources, real extension enrollment and external testers remain pending; unchecked live acceptance steps are not passes. Fresh whole-implementation review follows the implementation commits.
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task, preserving the user's native execution choice, followed by one independent whole-branch review. Steps use checkbox (`- [ ]`) syntax for tracking. Read the approved spec and this plan before implementation.
 
 **Goal:** Deliver project-scoped hybrid evidence retrieval through the existing native Overview / Memory tabs and one read-only MCP agent, with exact citations and a verified resume workflow.

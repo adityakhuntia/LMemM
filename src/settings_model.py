@@ -144,7 +144,8 @@ def view(user, section, facts=None, data=None, hotkey="⌃⌥N"):
         page["general"] = {"keep": [{"days": d, "label": KEEP_WORDS[d], "on": d == days} for d in KEEP_CHOICES],
                            "keep_line": f"Each thing keeps one small picture for {KEEP_WORDS[days]}. Then the picture goes; "
                                         "the words, activity and your notes stay.",
-                           "hotkey": hotkey}
+                           "hotkey": hotkey,
+                           "memory":{"title":"Project Memory","line":"Enable a workspace and manage local search, pause, and agent connections from its Memory tab."}}
     else:
         page["data"] = {"where": data["data_dir"] if data else "", "files": data["files"] if data else 0,
                         "bytes": data["bytes"] if data else 0, "known": bool(data)}

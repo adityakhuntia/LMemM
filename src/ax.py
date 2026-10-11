@@ -7,6 +7,7 @@ way of knowing what you are on the instant you switch. Nothing is read from the
 control's contents, only its name; the text you type is never touched.
 """
 
+import os
 import time
 
 import ApplicationServices as AS
@@ -24,6 +25,9 @@ def _get(el, attr):
 def read(pid, app):
     """The place signature of the app in front: {"doc": url or "", "label": name of the
     focused text control or ""}, or None when the app exposes nothing."""
+    # Own-process AX calls enter AppKit synchronously on this worker thread.
+    if pid == os.getpid():
+        return None
     if not AS.AXIsProcessTrusted():
         return None
     el = AS.AXUIElementCreateApplication(pid)

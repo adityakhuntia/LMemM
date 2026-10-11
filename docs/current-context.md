@@ -3,6 +3,19 @@
 Updated 2026-10-10, America/New_York. Historical context and handover are in
 `docs/history/`. This file records current decisions and verification limits.
 
+## Native abort investigation — 2026-10-10
+
+User smoke test aborted at 19:31:15 after opening the project window. macOS unified
+log for PID 89486 reports NSMenu modification from non-main thread 0x156af69,
+NSRemoteView assertion and NSInternalInconsistencyException. Memory warnings preceded
+it but do not establish an out-of-memory cause. Background legacy AX and trail readers
+could inspect our own foreground Python UI, entering AppKit synchronously off-main.
+Added PID-based self guards to legacy AX reads, trail foreground/read, and click
+inspection while our app is foreground. Other Python apps remain eligible. Four
+regressions fail before guards and pass after; full native suite 693 tests passes.
+Original live open-project/switch sequence still needs retest; no native crash-free
+acceptance claimed. Restart with Python -X faulthandler and a private local log if needed.
+
 ## Main integration — 2026-10-10
 
 Integrated all ten new origin/main commits through `42d7f0e` into the semantic feature.

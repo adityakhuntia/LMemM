@@ -9,7 +9,7 @@ AT = '2026-10-10T10:00:00+00:00'
 
 def make_memory_fixture(tmp_path, project_count=2):
     store = SemanticStore(Path(tmp_path) / 'memory.sqlite3')
-    roots = tuple(str(Path(tmp_path) / str(i) / 'repo') for i in range(project_count))
+    roots = tuple(str(Path(tmp_path).resolve() / str(i) / 'repo') for i in range(project_count))
     return store, roots, AccessPolicy(1, frozenset({APP}), frozenset())
 
 

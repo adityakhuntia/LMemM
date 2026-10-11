@@ -118,7 +118,7 @@ class MemoryService:
             return json.loads(serialize_authorized(self.store,ctx,result))
         if role!='owner':raise ValueError('unavailable')
         handlers={'enroll':self.enroll,'bindings':self.bindings,'status':self.status,'pause':self.pause,'resume':self.resume,
-                  'configure_model':self.configure_model,'connect_agent':self.connect_agent,'revoke_agent':self.revoke_agent,'revoke_project':self.revoke_project,'begin_note_mutation':self.begin_note_mutation,'reconcile_notes':self.reconcile_notes,'recover_native_notes':self.recover_native_notes,'install_model':self.install_model,'install_extension':self.install_extension}
+                  'configure_model':self.configure_model,'connect_agent':self.connect_agent,'revoke_agent':self.revoke_agent,'revoke_project':self.revoke_project,'begin_note_mutation':self.begin_note_mutation,'reconcile_notes':self.reconcile_notes,'recover_native_notes':self.recover_native_notes,'install_model':self.install_model,'install_extension':self.install_extension,'preview_agent_context':self.preview_agent_context}
         handler=handlers.get(method)
         if not handler:raise ValueError('unavailable')
         try:inspect.signature(handler).bind(**params)
@@ -130,6 +130,9 @@ class MemoryService:
         path=Path(root)
         if not path.is_dir():raise ValueError('Choose a local workspace folder')
         binding=bind_project(self.store,ui_project_id,str(path),timestamp(self.clock()))
+        if not binding.active:
+            from .project_scope import set_binding_active,resolve_binding
+            set_binding_active(self.store,ui_project_id,True);binding=resolve_binding(self.store,ui_project_id)
         self._refresh_owner();self.roots_dirty=True;self.native_notes.publish_bindings()
         return dataclasses.asdict(binding)
 
@@ -141,7 +144,22 @@ class MemoryService:
         grant=enroll_grant(self.store,client_id,project_ids,SourceScope(frozenset(app_ids)))
         token=secrets.token_hex(32);self.capabilities['agents'][token]={'grant_id':grant.id}
         write_private_json(self.directory/'capabilities.json',self.capabilities)
-        return {'capability':token,'grant_id':grant.id,'project_ids':sorted(grant.project_ids)}
+        clients=self.directory/'clients';clients.mkdir(mode=0o700,exist_ok=True)
+        config_path=clients/(grant.id+'.json')
+        write_private_json(config_path,{'service_file':str(self.directory/'service.json'),'capability':token,'project_ids':sorted(grant.project_ids)})
+        return {'capability':token,'grant_id':grant.id,'project_ids':sorted(grant.project_ids),'config_path':str(config_path)}
+
+    def preview_agent_context(self,project_id,client_id,start=None,end=None,grant_id=None):
+        self.native_notes.sync_fences()
+        if grant_id:
+            from .grants import current_grant
+            ctx=authorize(self.store,grant_id,project_id)
+            if current_grant(self.store,ctx,project_id).client_id!=client_id:raise ValueError('unavailable')
+        else:ctx=authorize(self.store,self.owner_grant_id,project_id)
+        packet=get_context(self.store,ctx,project_id,start,end)
+        self.native_notes.sync_fences()
+        return {'proposed':grant_id is None,'client_id':client_id,'project_ids':[project_id],
+                'policy_revision':ctx.policy_revision,'packet':json.loads(serialize_authorized(self.store,ctx,packet))}
 
     def revoke_agent(self,grant_id):
         return {'revision':revoke_grant(self.store,grant_id)}

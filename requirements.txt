@@ -4,3 +4,6 @@ pyobjc-framework-ApplicationServices>=10.0
 pyobjc-framework-Vision>=10.0
 numpy
 pillow
+
+# Official MCP SDK; real stdio adapter is tested against this exact release.
+mcp==2.3.0

@@ -16,3 +16,18 @@ class BoundsTests(unittest.TestCase):
             with patch('memory_client.subprocess.Popen',return_value=process):c._start()
             try:self.assertIsNone(c.control)
             finally:c.stop()
+    def test_explicit_retry_after_transient_start_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            c=MemoryClient(tmp)
+            with patch('memory_client.subprocess.Popen',side_effect=OSError('transient')) as spawn:
+                c.start();c.executor.submit(lambda:None).result(2)
+                c.retry();c.executor.submit(lambda:None).result(2)
+                self.assertEqual(spawn.call_count,2)
+            c.stop()
+    def test_child_exit_invalidates_state_and_allows_explicit_retry(self):
+        c=MemoryClient('/tmp/unused');c.started=True;c.capability='old';c.ready.set()
+        c.process=MagicMock();c.process.poll.return_value=1
+        events=c.poll()
+        self.assertIsNone(c.capability);self.assertTrue(any(e['type']=='error' for e in events))
+        with patch.object(c,'start') as start:c.retry();start.assert_called_once()
+        c.stop()

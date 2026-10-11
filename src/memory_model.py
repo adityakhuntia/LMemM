@@ -58,7 +58,7 @@ def memory_view(state,binding,status,result):
     message=messages.get(mode,'Retained snapshots with citations. Matching evidence may not answer your question.')
     if status.get('model_state')=='missing' and mode!='Disabled':message+=' Keyword search is available; install the local model for semantic recall.'
     return dict(tabs=list(TABS),periods=list(PERIODS),tab=state['tab'],query=state['query'],period=state['period'],
-                state=mode,binding=binding,message=message,loading=state['loading'],error=state['error'],
+                state=mode,binding=binding,status=status,message=message,loading=state['loading'],error=state['error'],
                 result=result,source=state['source'],preview=state['preview'],
                 empty='No retained evidence for this period.' if not any(result.get(k) for k in ('primary','decisions','open_tasks','recent_evidence')) else '',
                 coverage=result.get('coverage',{}))

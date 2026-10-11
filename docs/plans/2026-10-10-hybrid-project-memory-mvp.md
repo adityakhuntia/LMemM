@@ -1,6 +1,6 @@
 # Hybrid Project Memory MVP Implementation Plan
 
-Execution update (2026-10-10): backend/service/native UI/MCP implementation is on local main, explicitly authorized by the user. Automated and synthetic integration evidence is in the hybrid-memory runbook and acceptance report. Original live crash, physical sleep/lock, paired 30-minute resources, real extension enrollment and external testers remain pending; unchecked live acceptance steps are not passes. Fresh whole-implementation review follows the implementation commits.
+Execution update (2026-10-11): backend/service/native UI/MCP implementation is on local main, explicitly authorized by the user. Automated and synthetic integration evidence is in the hybrid-memory runbook and acceptance report. Original live crash, physical sleep/lock, paired 30-minute resources, real extension enrollment and external testers remain pending; unchecked live acceptance steps are not passes. The independent whole-implementation review and one material-finding regression/fix pass are complete; see the durable review-and-decisions record.
 
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task, preserving the user's native execution choice, followed by one independent whole-branch review. Steps use checkbox (`- [ ]`) syntax for tracking. Read the approved spec and this plan before implementation.
@@ -15,7 +15,7 @@ Execution update (2026-10-10): backend/service/native UI/MCP implementation is o
 
 ## Global Constraints
 
-- Work in `.worktrees/semantic-project-memory`, branch `feat/semantic-project-memory`. Do not reset root main or its local context.md; do not add .env, capture data, models or grants.
+- Original isolation was `.worktrees/semantic-project-memory`, branch `feat/semantic-project-memory`. The user subsequently explicitly authorized direct commits on up-to-date main; the root checkout is now active. Preserve local context.md; do not add .env, capture data, models or grants.
 - Sources: approved VS Code visible local-file excerpts and newly enrolled intentional project notes only. No repository crawl, browser/terminal intake, historical OCR or historical note import.
 - One canonical workspace root per linked UI project; automatic artifact membership, no title-based identity or automatic project merges.
 - Local embedding/inference only, no hosted fallback. Explicit model installation and separate agent disclosure authorization.

@@ -2,7 +2,7 @@
 
 Device: Apple M2 Pro, 32 GiB RAM, macOS 27.0.
 
-Status: implemented MVP under verification; **not launch-approved**. Mandatory live/external observations remain pending. No personal evidence was enrolled for these tests.
+Status: implementation independently reviewed and material findings fixed; **not launch-approved**. Mandatory live/external observations remain pending. No personal evidence was enrolled for these tests.
 
 | Check | Observed result | Limit |
 |---|---|---|
@@ -28,3 +28,5 @@ Machine-readable evidence: [production development](production-development.json)
 The first attempted hosted synthetic Codex call correctly returned empty scope because the test fixture used a noncanonical macOS `/var` path while enrollment resolved `/private/var`. The harness now asserts the local packet contains the decision/task before invoking an external host. Its final successful result is recorded in [codex-resume.json](codex-resume.json).
 
 Missing observations are not treated as passes. The acceptance harness rejects absent resource samples, unloaded-model claims, empty assertion output, unsupported statements/missing citations, exact-match regression and modified frozen fixture bytes.
+
+Post-review verification (2026-10-11): 807 Python tests, 6 Node bridge tests and seven refreshed real AppKit synthetic states passed. Ten material findings and evidence trust presentation were fixed in one regression pass. See [review and decisions](review-and-decisions.md). The mandatory pending acceptance rows above remain pending.

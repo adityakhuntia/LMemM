@@ -85,3 +85,48 @@ class NoteSyncTests(unittest.TestCase):
         self.service.tick()
         self.assertFalse((Path(config.paths().semantic_dir)/'native-notes.pending.json').exists())
         self.assertEqual(self.service.status()['state'],'Ready')
+
+    def test_pause_during_reconcile_preserves_pending_done_state(self):
+        note=self.save_note();notes.set_done(self.items,[notes.note_id(note)],True,'2026-10-10T11:00:00Z')
+        native_store.save_memory(self.items)
+        original=self.service.native_notes.reconcile
+        def interrupted(*args):
+            self.service.pause();return original(*args)
+        with patch.object(self.service.native_notes,'reconcile',side_effect=interrupted):
+            self.assertFalse(self.service.native_notes.sync_pending())
+        self.assertTrue((Path(config.paths().semantic_dir)/'native-notes.pending.json').exists())
+        self.service.resume();self.service.tick();self.assertEqual(self.packet()['open_tasks'],[])
+
+    def test_reenrollment_reconciles_notes_deleted_while_disconnected(self):
+        self.save_note();self.service.revoke_project(self.binding['project_id'])
+        self.items.clear();native_store.save_memory(self.items)
+        self.service.enroll('ui-a',str(self.root))
+        self.assertEqual(self.packet()['open_tasks'],[])
+        self.service.tick();self.assertEqual(self.packet()['open_tasks'],[])
+        self.assertEqual(self.service.store.count('sources'),0)
+
+    def test_marker_observation_and_fencing_cannot_follow_completed_sync(self):
+        import threading
+        self.save_note();self.items.clear();native_store.save_memory(self.items)
+        loaded=threading.Event();release=threading.Event();done=threading.Event()
+        from semantic_memory import note_sync
+        original=note_sync.read_private_json
+        def delayed(path):
+            value=original(path)
+            if threading.current_thread().name=='delayed-reader' and path.name=='native-notes.pending.json':
+                loaded.set();release.wait(2)
+            return value
+        with patch.object(note_sync,'read_private_json',side_effect=delayed):
+            reader=threading.Thread(target=self.service.native_notes.sync_fences,name='delayed-reader');reader.start()
+            self.assertTrue(loaded.wait(1))
+            worker=threading.Thread(target=lambda:(self.service.native_notes.sync_pending(),done.set()));worker.start()
+            finished_before_release=done.wait(.1)
+            release.set();reader.join(2);worker.join(2)
+        self.assertFalse(finished_before_release)
+        self.assertEqual(self.service.store.connection.execute('SELECT count(*) FROM note_fences').fetchone()[0],0)
+
+    def test_failed_reactivation_keeps_saved_notes_inaccessible(self):
+        self.save_note();self.service.revoke_project(self.binding['project_id'])
+        with patch.object(self.service.native_notes,'_authority',side_effect=ValueError('unavailable')):
+            with self.assertRaises(ValueError):self.service.enroll('ui-a',str(self.root))
+        self.assertFalse(self.service.bindings()[0]['active'])

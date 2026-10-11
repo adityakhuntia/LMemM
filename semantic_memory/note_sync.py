@@ -35,6 +35,11 @@ class NativeNoteMirror:
                 c.execute('INSERT OR REPLACE INTO note_fences VALUES(?,?)',(project_id,mutation_id));bump_revision(c)
 
     def sync_fences(self):
+        # Observation and fencing share the same lock as journal consumption.
+        # A reader must never reinstall a fence for an already consumed marker.
+        with self.store.lock:return self._sync_fences_locked()
+
+    def _sync_fences_locked(self):
         path=self.directory/'native-notes.pending.json'
         if not path.exists():return None
         marker=read_private_json(path)
@@ -54,6 +59,9 @@ class NativeNoteMirror:
         return {item['id']:item for item in document['items']}
 
     def reconcile(self,project_id,snapshots,mutation_id):
+        with self.store.lock:return self._reconcile_locked(project_id,snapshots,mutation_id)
+
+    def _reconcile_locked(self,project_id,snapshots,mutation_id):
         from memory_notes import project_snapshot
         self.fence(project_id,mutation_id)
         if paused(self.store):return SyncResult(0,len(snapshots),0)
@@ -99,6 +107,21 @@ class NativeNoteMirror:
             return self._sync_pending_locked(recover)
 
     def _sync_pending_locked(self,recover=False):
+        with self.store.lock:return self._consume_pending(recover)
+
+    def queue_reconciliation(self,project_id):
+        """Called under the native writer lock and store lock on re-enrollment."""
+        from memory_notes import project_snapshot,snapshot_hash
+        path=self.directory/'native-notes.pending.json'
+        projects=set(read_private_json(path)['projects']) if path.exists() else set()
+        projects.add(project_id);items=self._authority();hashes={}
+        for binding in self.service.bindings():
+            if binding['active'] and binding['project_id'] in projects:
+                hashes[binding['project_id']]=snapshot_hash(project_snapshot(items,binding,binding['enrolled_at']))
+        marker={'version':1,'mutation_id':secrets.token_hex(16),'pid':os.getpid(),'projects':sorted(hashes),'phase':'committed','hashes':hashes}
+        write_private_json(path,marker);self.sync_fences()
+
+    def _consume_pending(self,recover=False):
         from memory_notes import project_snapshot,snapshot_hash
         marker=self.sync_fences()
         if marker is None or paused(self.store):return False
@@ -112,7 +135,9 @@ class NativeNoteMirror:
             if pid not in marker['projects'] or not binding['active']:continue
             snapshots=project_snapshot(items,binding,binding['enrolled_at'])
             if marker['phase']=='committed' and marker['hashes'].get(pid)!=snapshot_hash(snapshots):return False
-            self.reconcile(pid,snapshots,marker['mutation_id']);state[pid]=snapshot_hash(snapshots)
+            result=self.reconcile(pid,snapshots,marker['mutation_id'])
+            if result.pending or paused(self.store):return False
+            state[pid]=snapshot_hash(snapshots)
         # Check journal identity again; a newer native save keeps its own fence.
         path=self.directory/'native-notes.pending.json';latest=read_private_json(path)
         if latest['mutation_id']!=marker['mutation_id']:return False

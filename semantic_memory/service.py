@@ -14,7 +14,7 @@ from .contracts import AccessPolicy,SourceScope
 from .live_bridge import Bridge,read_private_json,write_private_json
 from .live_focus import focused_context
 from .project_scope import bind_project
-from .grants import enroll_grant,authorize,revoke_grant,revoke_project
+from .grants import enroll_grant,authorize,revoke_grant,revoke_project,revision,bump_revision
 from .store import SemanticStore
 from .chunks import index_source
 from .index_worker import IndexWorker,schedule_source,paused
@@ -63,6 +63,12 @@ class MemoryService:
                 self.capabilities={'owner':owner_grant or secrets.token_hex(32),'agents':{}}
                 write_private_json(path,self.capabilities)
             self.owner_capability=self.capabilities['owner'];self.owner_grant_id=None
+            # Recover databases written by versions that inserted binding 65
+            # before checking the grant limit. Excess bindings stay visible but
+            # disabled; recovery never broadens intake permission.
+            with self.store.lock:
+                overflow=self.store.connection.execute('SELECT project_id FROM project_bindings WHERE active=1 ORDER BY ui_project_id LIMIT -1 OFFSET 64').fetchall()
+                for row in overflow:revoke_project(self.store,row[0])
             self._refresh_owner()
             from .note_sync import NativeNoteMirror
             self.native_notes=NativeNoteMirror(self)
@@ -74,6 +80,7 @@ class MemoryService:
                     self.model_manifest=ModelManifest(**read_private_json(model_path))
                     self.backend=self.backend_factory(self.model_manifest)
                     if self.runtime:self.runtime.ensure()
+                    self._ensure_model_generation(self.model_manifest)
                 except (OSError,ValueError):self.model_error='Local model unavailable'
         except BaseException:
             if hasattr(self,'store'):self.store.close()
@@ -104,7 +111,9 @@ class MemoryService:
             if set(params)-allowed or 'project_id' not in params:raise ValueError('Invalid memory arguments')
             ctx=authorize(self.store,grant_id,params['project_id'])
             if method=='search_project_memory':
-                q=Query(params['project_id'],params.get('query',''),params.get('start'),params.get('end'),params.get('limit',10))
+                from .context_service import time_bounds
+                start,end=time_bounds(params.get('start'),params.get('end'))
+                q=Query(params['project_id'],params.get('query',''),start,end,params.get('limit',10))
                 result=search_project(self.store,self.backend,ctx,q)
             elif method=='get_project_context':result=get_context(self.store,ctx,params['project_id'],params.get('start'),params.get('end'))
             else:
@@ -119,7 +128,7 @@ class MemoryService:
             return json.loads(serialize_authorized(self.store,ctx,result))
         if role!='owner':raise ValueError('unavailable')
         handlers={'enroll':self.enroll,'bindings':self.bindings,'status':self.status,'pause':self.pause,'resume':self.resume,
-                  'configure_model':self.configure_model,'connect_agent':self.connect_agent,'revoke_agent':self.revoke_agent,'revoke_project':self.revoke_project,'begin_note_mutation':self.begin_note_mutation,'reconcile_notes':self.reconcile_notes,'recover_native_notes':self.recover_native_notes,'install_model':self.install_model,'install_extension':self.install_extension,'preview_agent_context':self.preview_agent_context}
+                  'configure_model':self.configure_model,'connect_agent':self.connect_agent,'agent_connections':self.agent_connections,'revoke_agent':self.revoke_agent,'revoke_project':self.revoke_project,'begin_note_mutation':self.begin_note_mutation,'reconcile_notes':self.reconcile_notes,'recover_native_notes':self.recover_native_notes,'install_model':self.install_model,'install_extension':self.install_extension,'preview_agent_context':self.preview_agent_context}
         handler=handlers.get(method)
         if not handler:raise ValueError('unavailable')
         try:inspect.signature(handler).bind(**params)
@@ -130,18 +139,32 @@ class MemoryService:
         # Intake enrollment is an explicit native action, never an agent call.
         path=Path(root)
         if not path.is_dir():raise ValueError('Choose a local workspace folder')
-        binding=bind_project(self.store,ui_project_id,str(path),timestamp(self.clock()))
-        if not binding.active:
-            from .project_scope import set_binding_active,resolve_binding
-            set_binding_active(self.store,ui_project_id,True);binding=resolve_binding(self.store,ui_project_id)
-        self._refresh_owner();self.roots_dirty=True;self.native_notes.publish_bindings()
+        from memory_notes import native_sync_lock
+        from .project_scope import set_binding_active,resolve_binding
+        # Lock order is always native writer lock, then store lock.
+        with native_sync_lock(self.directory),self.store.lock:
+            prior=resolve_binding(self.store,ui_project_id)
+            if (prior is None or not prior.active) and self.store.connection.execute('SELECT count(*) FROM project_bindings WHERE active=1').fetchone()[0]>=64:
+                raise ValueError('At most 64 projects can have Memory enabled')
+            binding=bind_project(self.store,ui_project_id,str(path),timestamp(self.clock()))
+            if not binding.active:
+                set_binding_active(self.store,ui_project_id,True);binding=resolve_binding(self.store,ui_project_id)
+                try:self.native_notes.queue_reconciliation(binding.project_id)
+                except (OSError,ValueError):
+                    set_binding_active(self.store,ui_project_id,False);raise
+            self._refresh_owner();self.roots_dirty=True;self.native_notes.publish_bindings()
         return dataclasses.asdict(binding)
 
     def bindings(self):
         with self.store.lock:return [dict(row) for row in self.store.connection.execute('SELECT * FROM project_bindings ORDER BY ui_project_id')]
 
     def connect_agent(self,client_id,project_ids,app_ids,disclosure_approved=False):
-        if disclosure_approved is not True or set(app_ids)!={APP} or len(self.capabilities['agents'])>=8:raise ValueError('Explicit agent disclosure approval required')
+        with self.store.lock:return self._connect_agent(client_id,project_ids,app_ids,disclosure_approved)
+
+    def _connect_agent(self,client_id,project_ids,app_ids,disclosure_approved):
+        self._prune_agents()
+        if disclosure_approved is not True or set(app_ids)!={APP}:raise ValueError('Explicit agent disclosure approval required')
+        if len(self.capabilities['agents'])>=8:raise ValueError('At most eight active agent connections are supported; revoke one first')
         grant=enroll_grant(self.store,client_id,project_ids,SourceScope(frozenset(app_ids)))
         token=secrets.token_hex(32);self.capabilities['agents'][token]={'grant_id':grant.id}
         write_private_json(self.directory/'capabilities.json',self.capabilities)
@@ -149,6 +172,22 @@ class MemoryService:
         config_path=clients/(grant.id+'.json')
         write_private_json(config_path,{'service_file':str(self.directory/'service.json'),'capability':token,'project_ids':sorted(grant.project_ids)})
         return {'capability':token,'grant_id':grant.id,'project_ids':sorted(grant.project_ids),'config_path':str(config_path)}
+
+    def _prune_agents(self):
+        stale=[token for token,value in self.capabilities['agents'].items() if not self.store.connection.execute('SELECT 1 FROM memory_grants WHERE id=? AND revoked=0',(value['grant_id'],)).fetchone()]
+        for token in stale:
+            value=self.capabilities['agents'].pop(token)
+            (self.directory/'clients'/(value['grant_id']+'.json')).unlink(missing_ok=True)
+        if stale:write_private_json(self.directory/'capabilities.json',self.capabilities)
+
+    def agent_connections(self):
+        # Owner-only inventory contains no bearer capabilities.
+        with self.store.lock:
+            self._prune_agents();connections=[]
+            for value in self.capabilities['agents'].values():
+                row=self.store.connection.execute('SELECT * FROM memory_grants WHERE id=?',(value['grant_id'],)).fetchone()
+                connections.append({'grant_id':row['id'],'client_id':row['client_id'],'project_ids':json.loads(row['project_ids']),'config_path':str(self.directory/'clients'/(row['id']+'.json'))})
+            return connections
 
     def preview_agent_context(self,project_id,client_id,start=None,end=None,grant_id=None):
         self.native_notes.sync_fences()
@@ -163,7 +202,8 @@ class MemoryService:
                 'policy_revision':ctx.policy_revision,'packet':json.loads(serialize_authorized(self.store,ctx,packet))}
 
     def revoke_agent(self,grant_id):
-        return {'revision':revoke_grant(self.store,grant_id)}
+        with self.store.lock:
+            result={'revision':revoke_grant(self.store,grant_id)};self._prune_agents();return result
 
     def revoke_project(self,project_id):
         result={'revision':revoke_project(self.store,project_id)};self.roots_dirty=True;self._refresh_owner();self.native_notes.publish_bindings();return result
@@ -199,14 +239,25 @@ class MemoryService:
         backend=self.backend_factory(manifest)  # Validates installed assets, never downloads.
         if self.runtime:self.runtime.ensure()
         if self.model_thread and self.model_thread.is_alive():raise ValueError('Indexing is busy; pause before changing model')
-        self.model_manifest=manifest;self.backend=backend;self.model_error=None
-        write_private_json(self.directory/'model.json',dataclasses.asdict(manifest))
-        begin_generation(self.store,manifest)
+        with self.store.lock:
+            # Persist the desired manifest first; startup reconciles any interrupted
+            # generation transaction against this durable configuration intent.
+            write_private_json(self.directory/'model.json',dataclasses.asdict(manifest))
+            self.model_manifest=manifest;self.backend=backend;self.model_error=None
+            try:self._ensure_model_generation(manifest)
+            except (OSError,ValueError):
+                self.backend=None;self.model_error='Local index configuration interrupted; restart Memory to recover';raise
         return {'state':'Processing','model_id':manifest.model_id}
+
+    def _ensure_model_generation(self,manifest):
+        with self.store.lock:
+            row=self.store.connection.execute("SELECT manifest FROM index_generations WHERE state IN ('building','active') ORDER BY CASE state WHEN 'building' THEN 0 ELSE 1 END LIMIT 1").fetchone()
+            if row is None or json.loads(row['manifest'])!=dataclasses.asdict(manifest):begin_generation(self.store,manifest)
 
     def pause(self,reason='Paused by user'):
         with self.store.transaction() as c:
             c.execute("INSERT OR REPLACE INTO meta VALUES('memory_paused',?)",(reason,))
+            bump_revision(c)
         if self.backend:self.backend.cancel()
         self.roots_dirty=True
         return {'state':'Paused'}
@@ -218,6 +269,7 @@ class MemoryService:
         with self.store.transaction() as c:
             c.execute("DELETE FROM meta WHERE key='memory_paused'")
             c.execute("UPDATE index_jobs SET state='queued',error=NULL WHERE state IN ('running','failed')")
+            bump_revision(c)
         self.roots_dirty=True
         return {'state':'Processing' if self.backend else 'Ready'}
 
@@ -242,6 +294,9 @@ class MemoryService:
             return value
 
     def _sync_bridge(self):
+        with self.store.lock:self._sync_bridge_locked()
+
+    def _sync_bridge_locked(self):
         if self.bridge:
             self.bridge.active=False;self.bridge.publish_grant()
         roots=[Path(r[0]) for r in self.store.connection.execute('SELECT workspace_root FROM project_bindings WHERE active=1')]
@@ -251,6 +306,13 @@ class MemoryService:
             self.bridge.revision=self.policy.revision;self.bridge.active=not paused(self.store);self.bridge.open_session()
         else:self.bridge=None
         self.roots_dirty=False
+
+    def _ingest_capture(self,envelope,capture_revision):
+        with self.store.lock:
+            if self.closed or paused(self.store) or revision(self.store.connection)!=capture_revision:raise ValueError('Capture no longer authorized')
+            if not self.store.connection.execute('SELECT 1 FROM project_bindings WHERE workspace_root=? AND active=1',(envelope.workspace_locator,)).fetchone():raise ValueError('Capture no longer authorized')
+            result=self.store.ingest(envelope,self.policy);schedule_source(self.store,result.source_id)
+            return result
 
     def tick(self):
         if self.closed:return
@@ -266,13 +328,14 @@ class MemoryService:
                     if path.stem!=message.get('client'):continue
                     before=self.focus_provider()
                     if focus!=before:continue
+                    with self.store.lock:capture_revision=revision(self.store.connection)
                     envelope=self.bridge.accept(message,before)
                     after=self.focus_provider()
                     if message.get('kind')=='connect' and (before!=after or after is None or 'LMemM '+message['client'] not in after.title):
                         self.bridge.clients.pop(message['client'],None)
                         (self.bridge.directory/'acks'/(message['client']+'.json')).unlink(missing_ok=True);continue
                     if envelope and before==after:
-                        result=self.store.ingest(envelope,self.policy);schedule_source(self.store,result.source_id)
+                        self._ingest_capture(envelope,capture_revision)
                         write_private_json(self.bridge.directory/'acks'/(message['client']+'.json'),{'session':self.bridge.session,'window':after.window,'seq':message['seq'],'accepted':True,'note_id':message.get('note_id'),'revision':self.policy.revision})
                 except (ValueError,OSError,RuntimeError):continue
             self.bridge.expire()

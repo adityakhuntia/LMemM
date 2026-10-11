@@ -9,3 +9,9 @@ class ViewTests(unittest.TestCase):
         v=source_presentation({'text':'old snapshot','locator':'/repo/a','at':'then','can_open_file':False})
         self.assertEqual(v['text'],'old snapshot');self.assertFalse(v['open_enabled'])
         self.assertIn('today',v['open_explanation'].lower())
+    def test_evidence_preserves_provenance_and_truncation(self):
+        rows=evidence_rows({'primary':[dict(text='excerpt',origin_type='observed_screen_text',truncated=True),dict(text='intentional',origin_type='user_note',truncated=False)]})
+        self.assertEqual(rows[0]['provenance'],'Observed content');self.assertTrue(rows[0]['truncated'])
+        self.assertEqual(rows[1]['provenance'],'Your note')
+        detail=source_presentation(dict(text='excerpt',locator='/a',at='now',origin_type='observed_screen_text',truncated=True))
+        self.assertTrue(detail['truncated']);self.assertEqual(detail['provenance'],'Observed content')

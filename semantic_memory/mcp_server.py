@@ -21,7 +21,7 @@ def make_server(config_path):
         except Exception:raise ValueError('Project memory unavailable') from None
     @server.tool(annotations=annotations)
     def search_project_memory(project_id:str,query:str,start:str|None=None,end:str|None=None,limit:int=10)->dict:
-        """Find retained evidence in an authorized project. Matches are not answers."""
+        """Find authorized evidence, defaulting to two days. Returns effective time bounds; matches are not answers."""
         return call('search_project_memory',dict(project_id=project_id,query=query,start=start,end=end,limit=limit))
     @server.tool(annotations=annotations)
     def get_project_context(project_id:str,start:str|None=None,end:str|None=None)->dict:

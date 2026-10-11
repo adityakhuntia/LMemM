@@ -14,13 +14,25 @@ class MemoryClient:
         self.directory=Path(data_dir);self.headless=headless;self.process=None;self.control=None
         self.capability=None;self.events=queue.SimpleQueue();self.stopping=False
         self.executor=concurrent.futures.ThreadPoolExecutor(max_workers=1,thread_name_prefix='memory-client')
-        self.started=False;self.ready=threading.Event()
+        self.started=False;self.failed=False;self.generation=0;self.state_lock=threading.RLock();self.ready=threading.Event()
         self.query_slots=threading.BoundedSemaphore(8);self.control_slots=threading.BoundedSemaphore(8)
         self.controls=concurrent.futures.ThreadPoolExecutor(max_workers=1,thread_name_prefix='memory-control')
 
     def start(self):
-        if self.started:return
-        self.started=True;self.executor.submit(self._start)
+        with self.state_lock:
+            if self.started or self.stopping:return
+            self.started=True;self.failed=False;self.capability=None;self.ready.clear();self.generation+=1
+            self.executor.submit(self._start)
+
+    def retry(self):
+        self._check_child()
+        if not self.started and not self.stopping:self.start()
+
+    def _check_child(self):
+        with self.state_lock:
+            if self.started and self.capability and self.process and self.process.poll() is not None:
+                self._close_control();self.capability=None;self.started=False;self.failed=True;self.generation+=1
+                self.events.put({'type':'error','error':'Project memory stopped. Refresh evidence to retry.'})
 
     def _start(self):
         from semantic_memory.live_bridge import read_private_json
@@ -49,31 +61,35 @@ class MemoryClient:
         except Exception:
             self._close_control()
             if self.process:self._reap(self.process)
-            self.ready.set();self.events.put({'type':'error','error':'Project memory service unavailable'})
+            with self.state_lock:self.capability=None;self.started=False;self.failed=True
+            self.ready.set();self.events.put({'type':'error','error':'Project memory service unavailable. Refresh evidence to retry.'})
 
     def request(self,method,params,request_id):
-        if not self.started:self.start()
+        self._check_child()
+        if not self.started and not self.failed:self.start()
         if not self.stopping:
             control=method in {'pause','resume','revoke_agent','revoke_project','begin_note_mutation','reconcile_notes'}
             executor=self.controls if control else self.executor
             slots=self.control_slots if control else self.query_slots
             if not slots.acquire(blocking=False):
                 self.events.put({'type':'response','id':request_id,'method':method,'error':'Memory is busy; try again'});return
-            try:future=executor.submit(self._request,method,params,request_id)
+            try:future=executor.submit(self._request,method,params,request_id,self.generation)
             except RuntimeError:
                 slots.release();return
             future.add_done_callback(lambda _:slots.release())
 
-    def _request(self,method,params,request_id):
+    def _request(self,method,params,request_id,generation):
         from semantic_memory.ipc import request
         try:
             if not self.capability:self.ready.wait(10)
-            if not self.capability or self.stopping:raise ValueError('Service unavailable')
+            if not self.capability or self.stopping or generation!=self.generation:raise ValueError('Service unavailable')
             value=request(self.directory/'service.json',self.capability,method,params,request_id)
-            self.events.put({'type':'response','id':request_id,'method':method,'result':value})
-        except Exception:self.events.put({'type':'response','id':request_id,'method':method,'error':'Project memory unavailable'})
+            if generation==self.generation:self.events.put({'type':'response','id':request_id,'method':method,'result':value})
+        except Exception:
+            if generation==self.generation:self.events.put({'type':'response','id':request_id,'method':method,'error':'Project memory unavailable'})
 
     def poll(self):
+        self._check_child()
         values=[]
         while not self.events.empty():values.append(self.events.get())
         return values

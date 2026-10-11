@@ -10,10 +10,10 @@ p=argparse.ArgumentParser();p.add_argument('--output',type=Path,required=True);a
 app=NSApplication.sharedApplication();app.setActivationPolicy_(0);app.setAppearance_(NSAppearance.appearanceNamed_('NSAppearanceNameAqua'))
 reg=projects.empty();pid=projects.create(reg,'MVP launch · synthetic');items={}
 state=new_memory_state();state['tab']='Memory'
-binding={'workspace_root':'/synthetic/lmemm-mvp','active':True}
+binding={'project_id':'synthetic-project','ui_project_id':pid,'workspace_root':'/synthetic/lmemm-mvp','enrolled_at':'2026-10-10T09:00:00Z','active':True}
 result={'decisions':[{'statement':'We decided to use local embeddings because project evidence stays on device.','reason':'because project evidence stays on device.','at':'2026-10-10T10:00:00Z','citations':['synthetic-1']}],
         'open_tasks':[{'statement':'TODO: Verify the project resume flow.','at':'2026-10-10T10:15:00Z','citations':['synthetic-2']}],
-        'recent_evidence':[{'text':'The source bridge captures only approved visible local text.','at':'2026-10-10T10:20:00Z','citation_id':'synthetic-3','locator':'/synthetic/lmemm-mvp/bridge.py'}],
+        'recent_evidence':[{'text':'The source bridge captures only approved visible local text.','at':'2026-10-10T10:20:00Z','citation_id':'synthetic-3','locator':'/synthetic/lmemm-mvp/bridge.py','origin_type':'observed_screen_text','truncated':True}],
         'coverage':{'evidence_count':3,'claims':'explicit supported intent only'}}
 snapshot=memory_view(state,binding,{'state':'Ready','model_state':'available'},result)
 actions=[]
@@ -22,8 +22,8 @@ w.nav=page_model.press(reg,w.nav,'go',pid)
 w.show(window_model.view({'screen':True}));app.activateIgnoringOtherApps_(True)
 for label in ['disabled','ready','processing','paused','error','source','overview']:
     state['tab']='Overview' if label=='overview' else 'Memory'
-    status={'state':{'disabled':'Disabled','processing':'Processing','paused':'Paused','error':'Needs attention'}.get(label,'Ready'),'model_state':'missing' if label=='disabled' else 'available'}
-    state['source']={'text':'We decided to use local embeddings because project evidence stays on device.','locator':'/synthetic/lmemm-mvp/notes.md','at':'2026-10-10T10:00:00Z','citation_id':'synthetic-1','can_open_file':False} if label=='source' else None
+    status={'state':{'disabled':'Disabled','processing':'Processing','paused':'Paused','error':'Needs attention'}.get(label,'Ready'),'model_state':'missing' if label=='disabled' else 'available','enrolled_at':'2026-10-10T09:00:00Z','indexed_at':'2026-10-10T10:21:00Z','pending':2 if label=='processing' else 0}
+    state['source']={'text':'We decided to use local embeddings because project evidence stays on device.','locator':'/synthetic/lmemm-mvp/notes.md','at':'2026-10-10T10:00:00Z','citation_id':'synthetic-1','can_open_file':False,'origin_type':'user_note','truncated':False} if label=='source' else None
     snapshot=memory_view(state,None if label=='disabled' else binding,status,result)
     w.shown=None;w.render()
     for _ in range(8):macos.next_event(app,.05)

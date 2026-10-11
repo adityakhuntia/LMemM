@@ -115,7 +115,7 @@ def search_project(store,backend,ctx,query):
         related=_expand_references(store,ctx,query,primary)
         current_grant(store,ctx,query.project_id)
         return SearchResult(query.project_id,ctx.policy_revision,tuple(primary),tuple(related),
-                            {'matching_is_not_an_answer':True,'primary_count':len(primary),'related_count':len(related)},mode)
+                            {'matching_is_not_an_answer':True,'primary_count':len(primary),'related_count':len(related)},mode,query.start,query.end)
 
 
 def _expand_references(store,ctx,query,primary):

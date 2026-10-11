@@ -1,6 +1,6 @@
 # LMemM — current context
 
-Updated 2026-10-10. Active work is now on **local `main`**, explicitly authorized by the user. `origin/main` was fetched at `42d7f0e`, which is included. No push was made. The old feature worktree is retained as a checkpoint, not the active implementation workspace. Root `context.md` is preserved untracked; the named `preserve user context before memory MVP main integration` stash is also retained. Do not stage that file, read/stage the worktree `.env` canary, or replay the stash blindly.
+Updated 2026-10-11. Active work is now on **local `main`**, explicitly authorized by the user. `origin/main` was fetched at `42d7f0e`, which is included. No push was made. The old feature worktree is retained as a checkpoint, not the active implementation workspace. Root `context.md` is preserved untracked; the named `preserve user context before memory MVP main integration` stash is also retained. Do not stage that file, read/stage the worktree `.env` canary, or replay the stash blindly.
 
 ## Implemented MVP
 
@@ -18,7 +18,7 @@ Browser semantic intake, repository crawling, graph visualization, agent writes 
 
 ## Verification and acceptance
 
-Pre-review full suite: **790 Python tests passed**, plus **6 Node bridge tests**. Fresh independent whole-implementation review is the next verification gate; its material findings must be resolved before a completion claim.
+Post-review full suite: **807 Python tests passed**, plus **6 Node bridge tests** and seven refreshed real AppKit synthetic states. All ten material independent-review findings, plus provenance presentation, were addressed in one regression/fix pass. See the [review and decisions](benchmarks/project-memory/hybrid-mvp/review-and-decisions.md).
 
 Frozen production held-out retrieval: hybrid Recall@5 20/20; keyword 15/20; paraphrase 10/10 versus keyword 5/10; exact 10/10 both. Fresh deterministic assertion set: 8/8 supported claims across 20 cases, zero unsupported reasons/citations. These are small synthetic measurements.
 
@@ -39,4 +39,4 @@ cd /Users/divyaanshseth/Documents/LMemM/LMemM
 
 Do not start a second tracker if the user's terminal is already running one. Open a project → Memory → Enable Memory. Setup, extension connection, agent disclosure and test steps are in the [runbook](hybrid-memory-runbook.md). Automated tests did not enroll personal sources or leave a test service running.
 
-The execution ledger is ignored at `.superpowers/sdd/2026-10-10-hybrid-project-memory-mvp/progress.md`; commit history and acceptance records are durable. Superseded October 7 plans remain historical, not competing scope.
+The execution decisions and final findings are preserved in the linked review record; commit history and acceptance records are durable. Superseded October 7 plans remain historical, not competing scope.

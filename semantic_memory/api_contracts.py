@@ -79,6 +79,8 @@ class SearchResult:
     related: tuple[EvidenceHit, ...]
     coverage: dict
     mode: str
+    start: str | None = None
+    end: str | None = None
 
 
 @dataclass(frozen=True)

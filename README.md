@@ -326,24 +326,28 @@ docs/           architecture, specs, plans, history
 [docs/architecture.md](docs/architecture.md) covers how the modules fit and where to extend it.
 [docs/](docs/) has specs, plans and the development history.
 
-## Experimental semantic project memory (feature branch)
+## Project Memory MVP
 
-`feat/semantic-project-memory` adds local SQLite evidence, project identity,
-bounded episodes, source-backed claims and scoped recall. An **opt-in live VS Code
-pilot** now feeds approved visible file ranges through a private bridge and native
-foreground checks. It supports multiple approved project windows, pause/resume,
-restart, source citations and session deletion. Ordinary capture remains separate.
+The implementation is now on `main`. Each project has **Overview** and **Memory**
+tabs. Enable Memory for one workspace to retain new approved visible VS Code
+excerpts and intentional project notes. Search combines keyword matching with
+local MiniLM embeddings; decisions, reasons and tasks come from explicit notes
+and link to exact retained sources. Inspect a source to distinguish its snapshot
+from today's file. No repository crawl or historical import is performed.
 
-Follow the [live pilot runbook](docs/live-semantic-pilot.md) to start the collector,
-load the VS Code extension and inspect what was observed and what may be left.
-Local inference requires explicit experimental flags and an already running
-cloud-disabled service. No tested model passes the accuracy gate; tentative
-interpretations remain inspectable. MCP access is not implemented.
+The supervised private service supports pause/resume, deletion, scoped revocable
+agent access and an official SDK read-only MCP adapter. Local model installation
+and disclosure to Codex require separate explicit setup. Previewing context does
+not send it to an agent.
 
-Verification: **251 Python tests and 6 Node tests passed** after integration with main.
-Live VS Code capture, saved-note recovery, decision/task extraction and cited recall
-passed a small one-project test. Broader acceptance and representative performance remain open.
-See the [current handover](docs/handover-2026-10-08.md) for scope and test steps.
-See [current context](docs/current-context.md), the [semantic handover](docs/semantic-project-memory-status.md)
-and [benchmark index](docs/benchmarks/project-memory/README.md) for current limits.
-Normal capture commands do not start Ollama, download models or send evidence.
+Start from this checkout with `.venv/bin/python lmemm.py start`, then open a
+project → **Memory** → **Enable Memory**. Follow the
+[setup and testing runbook](docs/hybrid-memory-runbook.md).
+
+Independent review findings were addressed with regression tests. Frozen synthetic
+held-out recall was 20/20 at five results; the 10k-chunk synthetic warm-search
+probe measured 0.251 seconds p95. These are limited measurements, not launch
+acceptance. Original shutdown/sleep/lock testing, the paired 30-minute native
+resource workload, real extension enrollment and three external testers remain
+pending. See [current context](docs/current-context.md) and
+[acceptance evidence](docs/benchmarks/project-memory/hybrid-mvp/acceptance.md).

@@ -1,15 +1,20 @@
 """Native evidence pane using the existing Figtree drawing kit."""
 
+def provenance(row):
+    return 'Your note' if row.get('origin_type')=='user_note' else 'Observed content' if row.get('origin_type') else 'Supported by cited sources'
+
 def evidence_rows(result):
     rows=[]
     for key,title in [('primary','Search results'),('related','Related evidence'),('decisions','Decisions'),('open_tasks','Open tasks'),('recent_evidence','Recent evidence')]:
         for row in result.get(key,[]):
             rows.append(dict(section=title,text=row.get('text',row.get('statement','')),at=row.get('at',''),
-                citation_id=row.get('citation_id') or next(iter(row.get('citations',[])),None),reason=row.get('reason'),locator=row.get('locator','')))
+                citation_id=row.get('citation_id') or next(iter(row.get('citations',[])),None),reason=row.get('reason'),locator=row.get('locator',''),
+                provenance=provenance(row),truncated=row.get('truncated',False)))
     return rows
 
 def source_presentation(source):
     return dict(text=source['text'],locator=source['locator'],at=source['at'],open_enabled=source.get('can_open_file',False),
+                provenance=provenance(source),truncated=source.get('truncated',False),
                 open_explanation='This is the retained snapshot. Open file shows the file as it exists today.')
 
 class MemoryPane:
@@ -42,6 +47,9 @@ class MemoryPane:
             kit.button(host,label,x,y,min(w,360),32,lambda:self.action(action,payload or {}),kind='outline',size=13,weight=500);y+=42
         text(view['state'],14,600)
         text(view['message'],13,400,kit.mute())
+        status=view.get('status',{})
+        if view.get('binding'):
+            text('Enrolled: '+str(status.get('enrolled_at') or view['binding'].get('enrolled_at','unknown'))+' · Last index: '+str(status.get('indexed_at') or 'not yet')+' · Pending: '+str(status.get('pending',0)),11,400,kit.mute())
         if view.get('error'):text(view['error'],13,500)
         binding=view.get('binding')
         project=binding.get('project_id') if binding else None
@@ -64,12 +72,14 @@ class MemoryPane:
             for row in ([] if view.get('source') else evidence_rows(view['result'])):
                 if row['section']!=previous:text(row['section'],15,700);previous=row['section']
                 text(row['text'],14,500)
+                text(row['provenance']+(' · Truncated excerpt' if row['truncated'] else ''),11,400,kit.mute())
                 if row['reason']:text(row['reason'],12,400,kit.mute())
                 text(row['at']+'  '+row['locator'],11,400,kit.mute())
                 if row['citation_id']:button('View retained source','source',{'citation_id':row['citation_id']})
             source=view.get('source')
             if source:
                 p=source_presentation(source);text('Retained source',16,700);text(p['locator'],12);text(p['at'],12)
+                text(p['provenance']+(' · Truncated excerpt' if p['truncated'] else ''),12,400,kit.mute())
                 text(p['text'],14);text(p['open_explanation'],12,400,kit.mute())
                 if p['open_enabled']:button('Open current file…','open_file',{'citation_id':source['citation_id']})
                 button('Close source','close_source')

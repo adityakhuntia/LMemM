@@ -6,7 +6,10 @@ class MemoryController:
     def __init__(self,client,items,save):
         self.client=client;self.items=items;self.save=save;self.state=new_memory_state()
         self.bindings=[];self.status={};self.pending={};self.serial=0;self.last_poll=0;self.ui_project=None
-        self.agent=None
+        self.agents={}
+    @property
+    def agent(self):
+        return next((a for a in self.agents.values() if self.binding and self.binding['project_id'] in a['project_ids'] and a.get('client_id','Codex')=='Codex'),None)
     @property
     def binding(self):
         return next((b for b in self.bindings if b['ui_project_id']==self.ui_project and b['active']),None)
@@ -22,7 +25,10 @@ class MemoryController:
         payload=payload or {}
         if action=='enroll':self.send('enroll',{'ui_project_id':self.ui_project,'root':payload['root']},'enroll');return
         if action in {'pause','resume','install_model','install_extension','recover_native_notes'}:self.send(action,{},action);return
-        if action=='refresh':self.last_poll=0;self.action('submit',{});return
+        if action=='refresh':
+            retry=getattr(self.client(),'retry',None)
+            if retry:retry()
+            self.last_poll=0;self.action('submit',{});return
         if action=='note':
             if not self.binding:raise ValueError('Enable Memory first')
             from memory_notes import add_project_note
@@ -38,8 +44,10 @@ class MemoryController:
             if not self.binding:raise ValueError('Enable Memory first')
             self.send('connect_agent',dict(client_id='Codex',project_ids=[self.binding['project_id']],app_ids=['com.microsoft.VSCode'],disclosure_approved=payload.get('approved') is True),'agent');return
         if action=='revoke_agent':
-            if self.agent:self.send('revoke_agent',{'grant_id':self.agent['grant_id']},'revoke_agent')
-            self.agent=None;return
+            for grant_id,connection in list(self.agents.items()):
+                if self.binding and self.binding['project_id'] in connection['project_ids'] and connection.get('client_id','Codex')=='Codex':
+                    self.send('revoke_agent',{'grant_id':grant_id},'revoke_agent');self.agents.pop(grant_id,None)
+            return
         self.state=memory_reduce(self.state,action,payload)
         if action=='tab' and payload['tab']=='Memory':self.last_poll=0;self.action('submit',{})
         elif action=='time_filter':self.action('submit',{})
@@ -58,8 +66,9 @@ class MemoryController:
         changed=False
         for event in self.client().poll() if events is None else events:
             if event.get('type')=='ready':
-                self.last_poll=0;self.state=memory_reduce(self.state,'cancel',{});changed=True;continue
-            if event.get('type')=='error':self.state['error']=event['error'];changed=True;continue
+                self.last_poll=0;self.agents={};self.pending={};self.state=memory_reduce(self.state,'cancel',{});changed=True;continue
+            if event.get('type')=='error':
+                self.state=memory_reduce(self.state,'cancel',{});self.state['error']=event['error'];changed=True;continue
             entry=self.pending.pop(event.get('id'),None)
             if not entry:continue
             kind,token=entry;changed=True
@@ -75,7 +84,11 @@ class MemoryController:
                 if current!=previous:
                     self.state=memory_reduce(self.state,'generation',{'generation':current})
                     if self.binding and self.state['tab']=='Memory':self.action('submit',{})
-            elif kind=='agent':self.agent=event['result'];self.state['preview']={'connection':{k:v for k,v in self.agent.items() if k!='capability'}}
+            elif kind=='agents':self.agents={a['grant_id']:a for a in event['result']}
+            elif kind=='agent':
+                connection={k:v for k,v in event['result'].items() if k!='capability'}
+                self.agents[connection['grant_id']]=connection
+                if self.binding and self.binding['project_id'] in connection['project_ids']:self.state['preview']={'connection':connection}
             elif kind=='open':
                 detail=event['result']
                 if self.binding and token['project_id']==self.ui_project and detail.get('can_open_file'):
@@ -87,8 +100,8 @@ class MemoryController:
                         NSWorkspace.sharedWorkspace().openURL_(NSURL.fileURLWithPath_(str(path)))
             else:
                 self.last_poll=0
-                if kind=='enroll':self.bindings=[b for b in self.bindings if b['ui_project_id']!=self.ui_project]+[event['result']]
+                if kind=='enroll':self.bindings=[b for b in self.bindings if b['ui_project_id']!=event['result']['ui_project_id']]+[event['result']]
                 if kind in {'enroll','recover_native_notes','resume'}:self.action('submit',{})
         if self.ui_project and time.monotonic()-self.last_poll>2:
-            self.last_poll=time.monotonic();self.send('bindings',{},'bindings');self.send('status',{},'status')
+            self.last_poll=time.monotonic();self.send('bindings',{},'bindings');self.send('status',{},'status');self.send('agent_connections',{},'agents')
         return changed

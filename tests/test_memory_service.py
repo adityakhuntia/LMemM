@@ -1,6 +1,7 @@
 """Service capabilities cannot broaden an agent's project or source authority."""
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from semantic_memory.service import MemoryService
 from memory_helpers import AT,APP,memory_source
@@ -71,3 +72,123 @@ class ServiceTests(unittest.TestCase):
         self.service.system_flags={'locked'}
         self.owner('pause',reason='System locked')
         with self.assertRaises(ValueError):self.owner('resume')
+
+    def test_capture_rechecks_pause_and_binding_at_commit(self):
+        self.enroll();self.service.tick()
+        from types import SimpleNamespace
+        from semantic_memory.live_bridge import write_private_json
+        focus=SimpleNamespace(window='w',title='editor')
+        self.service.focus_provider=lambda:focus
+        bridge=self.service.bridge
+        for action in ('pause','revoke'):
+            self.owner('resume');self.enroll();self.service.tick();bridge=self.service.bridge
+            write_private_json(bridge.directory/'events'/'test.json',{'client':'test','kind':'excerpt','seq':1})
+            def accept(*_):
+                if action=='pause':self.owner('pause')
+                else:self.owner('revoke_project',project_id=self.enroll()['project_id'])
+                return memory_source(action,str(self.root.resolve()),'Must not retain this')
+            with patch.object(bridge,'accept',side_effect=accept):self.service.tick()
+            self.assertEqual(self.service.store.count('sources'),0)
+            self.assertEqual(self.service.store.connection.execute('SELECT count(*) FROM memory_chunks').fetchone()[0],0)
+            self.assertEqual(self.service.store.connection.execute('SELECT count(*) FROM index_jobs').fetchone()[0],0)
+            self.assertFalse((bridge.directory/'acks'/'test.json').exists())
+
+    def test_repeated_agent_revoke_does_not_exhaust_connections(self):
+        b=self.enroll()
+        for _ in range(10):
+            connection=self.owner('connect_agent',client_id='Codex',project_ids=[b['project_id']],app_ids=[APP],disclosure_approved=True)
+            self.assertEqual(self.owner('agent_connections')[0]['grant_id'],connection['grant_id'])
+            self.owner('revoke_agent',grant_id=connection['grant_id'])
+            self.assertFalse(Path(connection['config_path']).exists())
+
+    def test_project_limit_is_checked_before_mutation_and_restart_is_usable(self):
+        for i in range(64):
+            root=self.root/str(i);root.mkdir();self.owner('enroll',ui_project_id='p'+str(i),root=str(root))
+        extra=self.root/'extra';extra.mkdir()
+        with self.assertRaises(ValueError):self.owner('enroll',ui_project_id='extra',root=str(extra))
+        self.assertEqual(len(self.owner('bindings')),64)
+        self.service.close();self.service=MemoryService(self.directory,focus_provider=lambda:None)
+        self.addCleanup(self.service.close);self.assertEqual(self.owner('status')['state'],'Ready')
+
+    def test_search_defaults_to_two_days_and_reports_effective_bounds(self):
+        from datetime import datetime,timedelta,timezone
+        b=self.enroll();now=datetime.now(timezone.utc)
+        for sid,days in [('recent',0),('older',7)]:
+            self.service.store.ingest(memory_source(sid,str(self.root.resolve()),'rollback '+sid,at=(now-timedelta(days=days)).isoformat()),self.service.policy)
+            index_source(self.service.store,sid)
+        result=self.owner('search_project_memory',project_id=b['project_id'],query='rollback')
+        self.assertEqual([h['text'] for h in result['primary']],['rollback recent'])
+        self.assertLessEqual(abs((datetime.fromisoformat(result['end'])-datetime.fromisoformat(result['start'])).total_seconds()-172800),1)
+        all_time=self.owner('search_project_memory',project_id=b['project_id'],query='rollback',start='1970-01-01T00:00:00Z')
+        self.assertEqual(len(all_time['primary']),2)
+
+    def test_legacy_excess_enrollment_is_repaired_on_startup(self):
+        from semantic_memory.project_scope import bind_project
+        for i in range(65):
+            root=self.root/str(i);root.mkdir();bind_project(self.service.store,'p'+str(i),str(root),'2026-09-30T00:00:00Z')
+        self.service.close();self.service=MemoryService(self.directory,focus_provider=lambda:None)
+        self.addCleanup(self.service.close)
+        self.assertEqual(sum(b['active'] for b in self.owner('bindings')),64)
+        self.assertEqual(self.owner('status')['state'],'Ready')
+
+    def test_active_agent_limit_and_persisted_inventory(self):
+        b=self.enroll();connections=[]
+        for i in range(8):connections.append(self.owner('connect_agent',client_id='agent'+str(i),project_ids=[b['project_id']],app_ids=[APP],disclosure_approved=True))
+        with self.assertRaises(ValueError):self.owner('connect_agent',client_id='extra',project_ids=[b['project_id']],app_ids=[APP],disclosure_approved=True)
+        self.service.close();self.service=MemoryService(self.directory,focus_provider=lambda:None)
+        self.addCleanup(self.service.close)
+        inventory=self.owner('agent_connections');self.assertEqual(len(inventory),8)
+        self.assertNotIn('capability',repr(inventory))
+        for connection in inventory:self.owner('revoke_agent',grant_id=connection['grant_id'])
+        self.assertEqual(self.owner('agent_connections'),[])
+
+    def test_restart_recovers_interrupted_model_generation_creation(self):
+        import dataclasses
+        from test_memory_embeddings import local_manifest
+        from semantic_memory.embedding_runtime import load_backend
+        weights=Path(self.tmp.name)/'weights';weights.mkdir();manifest=local_manifest(weights)
+        self.service.close();self.service=MemoryService(self.directory,backend_factory=load_backend,focus_provider=lambda:None)
+        self.addCleanup(self.service.close)
+        with patch('semantic_memory.service.begin_generation',side_effect=OSError('interrupted')):
+            with self.assertRaises(OSError):self.service.configure_model(dataclasses.asdict(manifest))
+        self.service.close();self.service=MemoryService(self.directory,backend_factory=load_backend,focus_provider=lambda:None)
+        self.addCleanup(self.service.close)
+        generation=self.service.store.connection.execute("SELECT * FROM index_generations WHERE state IN ('active','building')").fetchone()
+        self.assertIsNotNone(generation)
+        import json
+        self.assertEqual(json.loads(generation['manifest']),dataclasses.asdict(manifest))
+
+    def test_model_upgrade_recovers_on_both_sides_of_generation_commit(self):
+        import dataclasses,json,numpy as np
+        from types import SimpleNamespace
+        from semantic_memory.api_contracts import ModelManifest
+        from semantic_memory.vector_index import activate_generation,begin_generation
+        from semantic_memory.index_worker import IndexWorker,schedule_source
+        def factory(manifest):
+            return SimpleNamespace(manifest=manifest,cancel=lambda:None,embed=lambda texts,query:np.tile([1.]+[0.]*(manifest.dimension-1),(len(texts),1)).astype(np.float32))
+        for boundary in ('before','after'):
+            with self.subTest(boundary=boundary):
+                self.service.close();self.service=MemoryService(self.directory,backend_factory=factory,focus_provider=lambda:None)
+                self.addCleanup(self.service.close);self.enroll()
+                a=ModelManifest('synthetic','a'*64,3,512,1,'fake','/synthetic')
+                self.service.configure_model(dataclasses.asdict(a))
+                worker=IndexWorker(self.service.store,self.service.backend)
+                while worker.run_one():pass
+                gid=self.service.store.connection.execute("SELECT id FROM index_generations WHERE state='building'").fetchone()
+                if gid:activate_generation(self.service.store,gid[0])
+                b=dataclasses.replace(a,digest='b'*64,dimension=2)
+                def interrupted(*args):
+                    if boundary=='after':begin_generation(*args)
+                    raise OSError('crash boundary')
+                with patch('semantic_memory.service.begin_generation',side_effect=interrupted):
+                    with self.assertRaises(OSError):self.service.configure_model(dataclasses.asdict(b))
+                self.service.close();self.service=MemoryService(self.directory,backend_factory=factory,focus_provider=lambda:None)
+                self.addCleanup(self.service.close)
+                self.service.store.ingest(memory_source(boundary,str(self.root.resolve()),'SQLite local evidence'),self.service.policy)
+                schedule_source(self.service.store,boundary)
+                worker=IndexWorker(self.service.store,self.service.backend)
+                while worker.run_one():pass
+                row=self.service.store.connection.execute("SELECT * FROM index_generations WHERE state='building'").fetchone()
+                self.assertEqual(json.loads(row['manifest'])['dimension'],2)
+                activate_generation(self.service.store,row['id'])
+                self.assertFalse(self.service.store.connection.execute("SELECT 1 FROM index_jobs WHERE state!='done'").fetchone())

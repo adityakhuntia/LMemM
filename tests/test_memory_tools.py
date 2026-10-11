@@ -158,6 +158,18 @@ class BriefAndRecapTests(TmpPaths):
         self.assertIn("Build follow-up automation", sent)
         self.assertNotIn("window_model", sent)
 
+    def test_the_brief_is_about_the_last_minutes_not_old_tasks(self):
+        items = world()
+        book = self.book_now()
+        book["old"] = {"at": "2026-10-11T13:00:00", "tasks": [{"title": "Fix the slide deck", "goal": "g", "stage": "Editing",
+                                                                "open": "o", "items": ["sheet"], "seconds": 60}]}
+        data = brief.evidence(items, book, "chat", [], NOW)
+        self.assertTrue(data.startswith("RIGHT NOW"))
+        self.assertIn("ChatGPT: Follow up system", data)
+        self.assertNotIn("Outreach Tracker", data)             # last seen yesterday: not part of now
+        self.assertNotIn("Fix the slide deck", data)           # shares no recent window
+        self.assertIn("BACKGROUND", data)                      # the follow-up task shares chat and mail
+
     def test_the_brief_falls_back_to_the_plain_one_when_the_day_is_spent(self):
         governor = labels.Governor()
         governor.doc["tokens"] = governor.cap

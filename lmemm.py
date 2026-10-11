@@ -564,6 +564,7 @@ def cmd_brief(args):
     import tasks
     parser = argparse.ArgumentParser(prog="lmemm.py brief")
     parser.add_argument("--no-copy", action="store_true", help="print only; do not copy")
+    parser.add_argument("--evidence", action="store_true", help="show what would be sent to Claude, and send nothing")
     parser.add_argument("--local", action="store_true", help="no Claude call: the plain brief from what is stored")
     opts = parser.parse_args(args)
     try:
@@ -573,6 +574,9 @@ def cmd_brief(args):
     book = tasks.load_tasks()
     newest = max(items, key=lambda i: items[i].get("last_seen") or "", default=None)
     found = memory_search.gather(items, book)
+    if opts.evidence:
+        print(brief.evidence(items, book, newest, found) or "(nothing recent to say)")
+        return
     provider = labels.ClaudeCli()
     if provider.available() and not opts.local:
         print("asking Claude to write it...", flush=True)

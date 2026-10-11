@@ -142,6 +142,7 @@ class Tracker:
         self.recall_doc = self.load_recall()
         self.earlier_cands, self.found_cache = [], (0.0, [])
         self.demo_seeded = False
+        self.text_state = {"state": "idle"}
         self.ask_state, self.pending_flash = {"state": "idle"}, None
         self.recall_at = time.time() + config.RECALL_FIRST_AFTER - config.RECALL_EVERY    # first look soon after start
         self.labeller = None                 # labels.LiveLabeller, made in run() when asked for
@@ -869,7 +870,11 @@ class Tracker:
         if self.main_window is None:
             self.main_window = main_window.MainWindow(self.menu_pick, self.page_data, self.widget_tick, self.window_add_note,
                                                    self.window_project, self.window_project_undo, self.sug_view,
-                                                      self.settings_view)   # its button sends a menu row id
+                                                      self.settings_view, recall=self.widget_recall, on_recall=self.widget_recall_answer,
+                                                      ask=self.widget_ask, ask_state=self.widget_ask_state,
+                                                      ask_reset=self.widget_ask_reset, text=self.window_text,
+                                                      text_state=self.window_text_state, text_reset=self.window_text_reset,
+                                                      copy=self.window_copy)   # its button sends a menu row id
         self.adopt_projects()                       # things filed by name since the last time
         self.main_window.show(self.window_view(self.widget_status()))
 
@@ -1788,35 +1793,60 @@ class Tracker:
             except Exception as error:
                 say(f"from earlier skipped: {type(error).__name__}: {error}")
 
+    def make_text(self, name):
+        """The text for "brief" (Claude writes it from your last 25 minutes) or "recap" (today's tasks, no model).
+        Call from a worker thread. '' when there is nothing to say."""
+        import brief
+        import recap
+        import tasks
+        book = tasks.load_tasks()
+        if name == "brief":
+            with self.lock:
+                items, front = copy.deepcopy(self.items), (self.last_frame or {}).get("item")
+            provider = labels.ClaudeCli()
+            if provider.available():
+                text, spent = brief.compose(items, book, front, self.found(), provider, labels.Governor())
+                say(f"brief written by Claude: {spent} tokens" if spent else "brief built locally (no tokens)")
+                return text
+            return brief.build(items, book, front, self.found())
+        return recap.build(book, days=1)
+
     def widget_action(self, name):
-        """A row on the card: "brief" (copy a context brief for Claude or ChatGPT) or "recap" (copy what you did).
-        Runs off the main loop and confirms on the pill."""
+        """A row on the pill's card: copy the brief or the recap at once. Runs off the main loop and confirms on the pill."""
         def work():
             try:
-                import brief
-                import recap
-                import tasks
-                book = tasks.load_tasks()
-                if name == "brief":
-                    with self.lock:
-                        items, front = copy.deepcopy(self.items), (self.last_frame or {}).get("item")
-                    provider = labels.ClaudeCli()
-                    if provider.available():
-                        text, spent = brief.compose(items, book, front, self.found(), provider, labels.Governor())
-                        say(f"brief written by Claude: {spent} tokens" if spent else "brief built locally (no tokens)")
-                    else:
-                        text = brief.build(items, book, front, self.found())
-                    empty = "Nothing to brief yet"
-                else:
-                    text = recap.build(book, days=1)
-                    empty = "Nothing to recap yet"
+                text = self.make_text(name)
                 if not text:
-                    self.flash_later(empty)
+                    self.flash_later("Nothing to brief yet" if name == "brief" else "Nothing to recap yet")
                 elif self.copy_text(text, "Copied the brief" if name == "brief" else "Copied the recap"):
                     self.flash_later("Copied: paste it in Claude" if name == "brief" else "Copied the recap")
             except Exception as error:
                 say(f"{name} skipped: {type(error).__name__}: {error}")
         threading.Thread(target=work, daemon=True).start()
+
+    def window_text(self, name):
+        """The window's brief or recap: written first, shown in the side card, copied when you press Copy."""
+        if self.text_state.get("state") == "working":
+            return
+        self.text_state = {"name": name, "state": "working"}
+
+        def work():
+            try:
+                self.text_state = {"name": name, "state": "done", "text": self.make_text(name)}
+            except Exception as error:
+                say(f"{name} failed: {type(error).__name__}: {error}")
+                self.text_state = {"name": name, "state": "done", "text": ""}
+        threading.Thread(target=work, daemon=True).start()
+
+    def window_text_state(self):
+        return self.text_state
+
+    def window_text_reset(self):
+        if self.text_state.get("state") != "working":
+            self.text_state = {"state": "idle"}
+
+    def window_copy(self, text):
+        return self.copy_text(text, "Copied")
 
     def flash_later(self, text):
         self.pending_flash = text                  # shown by the main loop (AppKit is not touched from a thread)
@@ -1861,10 +1891,12 @@ class Tracker:
                 nextsteps.save(doc)
             if added:
                 say("pill: " + ", ".join(sorted({a["kind"] for a in added})) + f"  ({len(added)} new)  ·  open the pill to see them")
+            import tasks as task_rules
             for t in result.get("tasks") or []:
-                name = t.get("project_guess") or (" ".join(t["title"].split()[:4]) if len(t.get("items", [])) >= 3 else None)
-                if name and len(t.get("items", [])) >= 2:
-                    self.offer_project(name, t["items"], t.get("goal") or "")
+                name = t.get("project_guess")                 # only the model's own name for it: no name, no offer
+                ids = [i for i in t.get("items", []) if i in self.items and task_rules.readable_title(self.items[i])]
+                if name and len(ids) >= 2:
+                    self.offer_project(name, ids, f"You moved between these {len(ids)} while working on “{t['title']}”.")
         except Exception as error:
             say(f"next steps skipped: {type(error).__name__}: {error}")
 

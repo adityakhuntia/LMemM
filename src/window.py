@@ -28,6 +28,7 @@ import thing_actions
 import window_model
 from setup_kit import LEFT, RIGHT
 from widget import _Fields, _Flipped, _Ring, _Tap
+from window_recall import RecallPanes
 
 W, H = 1080, 720                                       # the size it first opens at; after that the window remembers its own
 MIN_W, MIN_H = 880, 560                                # the smallest it can be dragged to
@@ -127,11 +128,13 @@ def _scroll(parent):
     return scroll
 
 
-class MainWindow:
+class MainWindow(RecallPanes):
     """on_press(row id) is called when the banner's button is pressed (ids the menu already knows).
     data() returns (project registry, things by id) for the page."""
 
-    def __init__(self, on_press, data, on_tick=None, on_add_note=None, on_project=None, on_project_undo=None, suggest=None, prefs=None):
+    def __init__(self, on_press, data, on_tick=None, on_add_note=None, on_project=None, on_project_undo=None, suggest=None, prefs=None,
+                 recall=None, on_recall=None, ask=None, ask_state=None, ask_reset=None, text=None, text_state=None,
+                 text_reset=None, copy=None):
         self.on_press = on_press
         self.data = data
         self.on_tick = on_tick or (lambda ids, done: None)               # tick or reopen notes (the pill's own function)
@@ -207,6 +210,7 @@ class MainWindow:
         self.root.addSubview_(self.toast_host)
         self.side_foot = _Flipped.alloc().initWithFrame_(NSMakeRect(0, H - 48, SIDE_W, 48))
         self.root.addSubview_(self.side_foot)
+        self.init_recall(self.root, recall, on_recall, ask, ask_state, ask_reset, text, text_state, text_reset, copy)
         self.overlay = _Flipped.alloc().initWithFrame_(NSMakeRect(0, 0, W, H))
         self.overlay.setHidden_(True)
         self.root.addSubview_(self.overlay)
@@ -331,7 +335,9 @@ class MainWindow:
         return self.cur["zone"] == zone and self.cur["id"] == rid
 
     def escape(self):
-        if self.dialog:
+        if self.panel and not self.dialog:
+            self.close_panel()
+        elif self.dialog:
             self.close_dialog()
         elif self.sel is not None:
             self.stop_select()
@@ -396,7 +402,7 @@ class MainWindow:
     def flow_signature(self):
         """Everything that changes with the clock: a ticked note's hold, and the line at the bottom."""
         now = time.time()
-        return (self.flow.signature(now), bool(self.done and now < self.done["until"]))
+        return (self.flow.signature(now), bool(self.done and now < self.done["until"]), self.recall_signature())
 
     def tick_note(self, nid, done):
         """One tap flips a note (R10). A note that is folding away ignores taps."""
@@ -478,6 +484,7 @@ class MainWindow:
             self.cur = {"zone": self.cur["zone"], "id": None}
         self._fill(self.side_scroll, SIDE_W, lambda doc: self._side(doc, page["side"]))
         self._fill(self.main_scroll, self.W - SIDE_W, lambda doc: self._main(doc, main, split), top=moved)
+        self.draw_panel(TOP, self.H - TOP)
 
     def _fill(self, scroll, width, build, top=False):
         """Swap the scrolling area's contents, keeping the place the person had scrolled to (or
@@ -997,6 +1004,8 @@ class MainWindow:
             self._project_actions(doc, x + w, 28, page["pid"])
         if kind == "thing":
             self._thing_buttons(doc, x + w, 28, page["item"])
+        if kind == "home":
+            y = self.actions_row(doc, x, y, w)
         build = {"home": self._home, "project": self._project, "needs": self._needs, "search": self._search,
                  "thing": self._thing_page, "archived": self._archived, "settings": self._settings}[kind]
         return build(doc, page, x, y + 6, w)
@@ -1077,6 +1086,7 @@ class MainWindow:
         return y
 
     def _home(self, doc, page, x, y, w):
+        y = self.for_you(doc, x, y, w)
         if page.get("suggest"):
             y = self._suggest_home(doc, page["suggest"], x, y, w)
         if page["empty"]:

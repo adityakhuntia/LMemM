@@ -139,6 +139,10 @@ class WindowWiringTests(unittest.TestCase):
         tree = ast.parse(self.source())
         cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "MainWindow")
         defined = {n.name for n in cls.body if isinstance(n, ast.FunctionDef)}
+        import os
+        with open(os.path.join(os.path.dirname(__file__), "..", "src", "window_recall.py")) as fh:        # the mixin's methods
+            mixin = next(n for n in ast.parse(fh.read()).body if isinstance(n, ast.ClassDef) and n.name == "RecallPanes")
+        defined |= {n.name for n in mixin.body if isinstance(n, ast.FunctionDef)}
         called = {n.func.attr for n in ast.walk(cls) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
                   and isinstance(n.func.value, ast.Name) and n.func.value.id == "self"}
         attrs = {n.attr for n in ast.walk(cls) if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name)

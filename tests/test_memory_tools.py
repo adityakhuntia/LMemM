@@ -93,6 +93,14 @@ class DemoTests(TmpPaths):
         self.assertEqual(nextsteps.demo(nextsteps.empty(), {}, NOW), [])
 
 
+class TitleTests(TmpPaths):
+    def test_spoken_debris_is_not_a_title_but_real_ones_are(self):
+        import tasks
+        self.assertFalse(tasks.readable_title({"title": "now. Uh, I'm not 8vre if it18 at that level. Uh, again, Ilke"}))
+        for ok in ("180DC DTU Junior Consultant Track Preferences (Responses) - Google Sheets", "Understand email automation evidence"):
+            self.assertTrue(tasks.readable_title({"title": ok}))
+
+
 class AskTests(TmpPaths):
     def test_it_answers_from_numbered_sources_and_lists_the_ones_used(self):
         found = ms.pieces(world())

@@ -107,6 +107,19 @@ def prose(line):
     return plain / len(words) >= 0.85
 
 
+FILLER = {"uh", "um", "uhm", "hmm", "erm"}
+
+
+def readable_title(item):
+    """False for a thing whose title is spoken-word debris ('now. Uh, I'm not 8vre if it18...'), which makes no sense in a list."""
+    title = (item.get("title") or item.get("doing") or "").strip()
+    words = [w.strip(".,!?").lower() for w in title.split()]
+    if not title or any(w in FILLER for w in words):
+        return False
+    garbled = [w for w in title.split() if any(c.isdigit() for c in w) and any(c.islower() for c in w)]
+    return len(garbled) < 2                                   # '8vre', 'it18': letters and digits mixed, in lower case
+
+
 def screen_lines(item):
     """Lines of on-screen text for this thing, oldest first: secrets out, UI noise and LMemM's own text out.
     Unlike labels, addresses and phone numbers stay (mail and messages are not redacted here)."""

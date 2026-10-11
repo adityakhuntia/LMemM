@@ -37,4 +37,6 @@ def index_source(store, source_id):
                 ids.append(cid)
                 if c.execute('INSERT OR IGNORE INTO memory_chunks VALUES(?,?,?,?,?,?)',(cid,row['id'],CHUNK_VERSION,start,end,text)).rowcount:
                     c.execute('INSERT INTO chunk_search VALUES(?,?)',(cid,text))
+        from .relationships import record_retained_source
+        record_retained_source(store,source_id)
     return tuple(ids)

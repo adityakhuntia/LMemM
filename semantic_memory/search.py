@@ -62,3 +62,69 @@ def resolve_source(store,ctx,project_id,citation_id):
         can_open=path.is_absolute() and path.resolve().is_relative_to(root)
         current_grant(store,ctx,project_id)
         return SourceDetail(project_id,citation_id,row['text'],row['locator'],row['at'],row['origin_type'],bool(row['truncated']),can_open)
+
+
+def search_project(store,backend,ctx,query):
+    import dataclasses
+    import json
+    from .api_contracts import SearchResult
+    from .index_worker import paused
+    from .vector_index import active_generation,vector_candidates
+    keywords=keyword_candidates(store,ctx,query)
+    vectors=[];mode='keyword-only'
+    with store.lock:
+        generation=active_generation(store)
+        use_vectors=backend is not None and generation is not None and not paused(store)
+        if use_vectors:
+            use_vectors=json.loads(generation['manifest'])['digest']==backend.manifest.digest
+    if use_vectors:
+        # Same lock as background indexing; UI calls this off its event loop.
+        with store.model_lock:
+            with store.lock:
+                current_grant(store,ctx,query.project_id)
+                use_vectors=not paused(store) and active_generation(store)==generation
+            if use_vectors:
+                try:
+                    qv=backend.embed((query.text,),query=True)[0]
+                    vectors=vector_candidates(store,ctx,query,qv)
+                    mode='hybrid'
+                except (RuntimeError,ValueError,OSError):
+                    # Evidence remains useful when a local model is unavailable.
+                    current_grant(store,ctx,query.project_id)
+    with store.lock:
+        current_grant(store,ctx,query.project_id)
+        scores={};by_chunk={}
+        for ranking in (keywords,vectors):
+            for rank,item in enumerate(ranking,1):
+                scores[item.chunk_id]=scores.get(item.chunk_id,0)+1/(60+rank)
+                by_chunk[item.chunk_id]=item
+        ordered=sorted(by_chunk.values(),key=lambda h:(scores[h.chunk_id],h.at,h.chunk_id),reverse=True)
+        primary=[];texts=set()
+        for item in ordered:
+            if item.text in texts:continue
+            # Deleted evidence can disappear while query embedding ran.
+            if resolve_source(store,ctx,query.project_id,item.citation_id) is None:continue
+            texts.add(item.text);primary.append(dataclasses.replace(item,score=scores[item.chunk_id]))
+            if len(primary)>=query.limit:break
+        related=_expand_references(store,ctx,query,primary)
+        current_grant(store,ctx,query.project_id)
+        return SearchResult(query.project_id,ctx.policy_revision,tuple(primary),tuple(related),
+                            {'matching_is_not_an_answer':True,'primary_count':len(primary),'related_count':len(related)},mode)
+
+
+def _expand_references(store,ctx,query,primary):
+    import dataclasses
+    where,args=scope_filter(store,ctx,query)
+    related=[];seen={h.citation_id for h in primary}
+    for parent in primary:
+        edges=store.connection.execute("SELECT * FROM edges WHERE subject_id=? AND kind='references' AND status IN ('supported','user_asserted') ORDER BY id",(parent.artifact_id,)).fetchall()
+        for edge in edges:
+            support=store.connection.execute('SELECT occurrence_id FROM support WHERE entity_id=?',(edge['id'],)).fetchall()
+            if not support or any(resolve_source(store,ctx,query.project_id,s[0]) is None for s in support):continue
+            rows=store.connection.execute('''SELECT c.*,s.artifact_id,a.locator,s.at,s.origin_type,o.truncated FROM memory_chunks c '''+JOINS+'''
+                WHERE s.artifact_id=? AND '''+where+' ORDER BY s.at DESC,c.id LIMIT 10',[edge['object_id'],*args]).fetchall()
+            for row in rows:
+                if row['occurrence_id'] in seen:continue
+                seen.add(row['occurrence_id']);related.append(dataclasses.replace(hit(row),related_to=parent.citation_id))
+                if len(related)>=10:return related
+    return related

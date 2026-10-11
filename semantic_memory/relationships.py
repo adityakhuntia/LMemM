@@ -128,3 +128,39 @@ def recompute_support(store,entity_ids):
             project=c.execute('SELECT locator FROM projects WHERE id=?',(edge['object_id'],)).fetchone()
             strong=any(e['project_id']==edge['object_id'] or (project and references_project(e['text'],project[0])) for e in evidence)
             c.execute('UPDATE edges SET status=? WHERE id=?',('supported' if strong else 'inferred',eid))
+
+
+def record_retained_source(store, source_id):
+    """Caller owns transaction. Deterministic intent and captured-file references."""
+    from pathlib import Path
+    c=store.connection
+    rows=c.execute('''SELECT o.id,b.text,s.* ,a.locator FROM occurrences o
+        JOIN blobs b ON b.id=o.blob_id JOIN sources s ON s.id=o.source_id
+        JOIN artifacts a ON a.id=s.artifact_id WHERE s.id=?''',(source_id,)).fetchall()
+    for e in rows:
+        if not e['project_id']:continue
+        refs=[e['id']]
+        _edge(c,e['artifact_id'],e['project_id'],'belongs_to','supported',e['at'],refs,None,'workspace')
+        text=e['text']
+        kind=None
+        if e['origin_type']=='user_note' and '\n' not in text and '\r' not in text:
+            if re.fullmatch(r'\s*TODO:\s*\S[^\r\n]*',text,re.I):kind='task'
+            elif re.match(r'\s*(?:we|i)\s+(?:decided|chose|agreed|selected)\b',text,re.I):kind='decision'
+        if kind:
+            cid=identifier('claim',e['artifact_id']+'|'+kind+'|'+text)
+            reason_match=re.search(r'\bbecause\s+(.+)',text,re.I) if kind=='decision' else None
+            reason=reason_match[1] if reason_match and len(reason_match[1].encode())<=512 else None
+            c.execute('INSERT OR IGNORE INTO claims VALUES(?,NULL,?,?,?,?,?,?,?)',(cid,e['project_id'],kind,text,'supported','open' if kind=='task' else None,e['at'],reason))
+            _support(c,cid,refs,None,'explicit_note')
+            _edge(c,cid,e['artifact_id'],'supports','supported',e['at'],refs,None,'explicit_note')
+        project=c.execute('SELECT locator FROM projects WHERE id=?',(e['project_id'],)).fetchone()
+        if not project:continue
+        root=Path(project[0])
+        for match in re.finditer(r'(?<![\w/])(?:\./|\.\./|/)[\w./-]+',text):
+            token=match[0].rstrip('.,;')
+            target=(Path(e['locator']).parent/token).resolve() if not token.startswith('/') else Path(token).resolve()
+            if not target.is_relative_to(root):continue
+            artifact=c.execute('''SELECT a.id FROM artifacts a WHERE a.locator=? AND a.project_id=?
+                AND EXISTS(SELECT 1 FROM sources s WHERE s.artifact_id=a.id)''',(str(target),e['project_id'])).fetchone()
+            if artifact and artifact[0]!=e['artifact_id']:
+                _edge(c,e['artifact_id'],artifact[0],'references','supported',e['at'],refs,None,'explicit_path')

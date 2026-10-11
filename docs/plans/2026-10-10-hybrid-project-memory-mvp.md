@@ -8,7 +8,7 @@
 
 **Tech Stack:** Existing Python 3.11 environment, SQLite/FTS5, NumPy, PyObjC/AppKit, VS Code JavaScript extension, unittest and Node built-in tests. Start with SQLite float32 vector blobs and exact cosine search over authorized candidates; avoid a vector server. The local embedding runtime/model is selected by Task 4's benchmark. Pin a maintained MCP SDK in Task 12 using its then-current official documentation.
 
-**Spec:** [Approved hybrid project-memory MVP](../specs/2026-10-10-hybrid-project-memory-mvp.md), approved by the user after local spec commit `a0dfe69`. This plan is ready for review; product implementation has not started.
+**Spec:** [Approved hybrid project-memory MVP](../specs/2026-10-10-hybrid-project-memory-mvp.md), approved by the user after local spec commit `a0dfe69`. User approved this plan after commit `8ae1d6e`; native execution is in progress.
 
 ## Global Constraints
 
@@ -323,4 +323,4 @@ approved source scope, privacy or acceptance budgets goes back to the user.
   fixture/unit evidence are distinguished.
 - [x] No product code, dependencies, model downloads, schema migrations or live capture
   were performed during planning. No historical successful test is treated as MVP acceptance.
-- [ ] User reviews this plan before native implementation under executing-plans.
+- [x] User approved the plan; native implementation under executing-plans started.

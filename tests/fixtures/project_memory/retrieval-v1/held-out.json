@@ -1,0 +1,252 @@
+[
+  {
+    "id": "q-11-exact",
+    "split": "held_out",
+    "kind": "exact",
+    "project": "alpha",
+    "text": "Where does semantic search run?",
+    "gold_occurrence_ids": [
+      "evidence-52c351ab4b3633cfa1732ee6"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-11-paraphrase",
+    "split": "held_out",
+    "kind": "paraphrase",
+    "project": "alpha",
+    "text": "Why avoid sending project snippets to a remote similarity service?",
+    "gold_occurrence_ids": [
+      "evidence-52c351ab4b3633cfa1732ee6"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-12-exact",
+    "split": "held_out",
+    "kind": "exact",
+    "project": "beta",
+    "text": "Why use Redis for carts?",
+    "gold_occurrence_ids": [
+      "evidence-354ae29257a149ba6d70fdba"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-12-paraphrase",
+    "split": "held_out",
+    "kind": "paraphrase",
+    "project": "beta",
+    "text": "Where are unfinished purchases stored for quick checkout?",
+    "gold_occurrence_ids": [
+      "evidence-354ae29257a149ba6d70fdba"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-13-exact",
+    "split": "held_out",
+    "kind": "exact",
+    "project": "alpha",
+    "text": "What remains for export_context?",
+    "gold_occurrence_ids": [
+      "evidence-c3822ba988a48d2810a5d2c6"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-13-paraphrase",
+    "split": "held_out",
+    "kind": "paraphrase",
+    "project": "alpha",
+    "text": "Which text encoding bug blocks the beta release?",
+    "gold_occurrence_ids": [
+      "evidence-c3822ba988a48d2810a5d2c6"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-14-exact",
+    "split": "held_out",
+    "kind": "exact",
+    "project": "beta",
+    "text": "What remains for stock_alert?",
+    "gold_occurrence_ids": [
+      "evidence-f2a8038f3768ec6f38c01690"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-14-paraphrase",
+    "split": "held_out",
+    "kind": "paraphrase",
+    "project": "beta",
+    "text": "How will buyers know an unavailable item is back?",
+    "gold_occurrence_ids": [
+      "evidence-f2a8038f3768ec6f38c01690"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-15-exact",
+    "split": "held_out",
+    "kind": "exact",
+    "project": "alpha",
+    "text": "How long are raw trail events retained?",
+    "gold_occurrence_ids": [
+      "evidence-7c7d18c36908677b6a6fbe28"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-15-paraphrase",
+    "split": "held_out",
+    "kind": "paraphrase",
+    "project": "alpha",
+    "text": "When do old activity observations get removed?",
+    "gold_occurrence_ids": [
+      "evidence-7c7d18c36908677b6a6fbe28"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-16-exact",
+    "split": "held_out",
+    "kind": "exact",
+    "project": "beta",
+    "text": "How often does shipment tracking refresh?",
+    "gold_occurrence_ids": [
+      "evidence-50e3553fe5349f11e476b2cc"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-16-paraphrase",
+    "split": "held_out",
+    "kind": "paraphrase",
+    "project": "beta",
+    "text": "When do we stop checking the package location?",
+    "gold_occurrence_ids": [
+      "evidence-50e3553fe5349f11e476b2cc"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-17-exact",
+    "split": "held_out",
+    "kind": "exact",
+    "project": "alpha",
+    "text": "How are project IDs chosen?",
+    "gold_occurrence_ids": [
+      "evidence-a114c9df652fe779b9a13f60"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-17-paraphrase",
+    "split": "held_out",
+    "kind": "paraphrase",
+    "project": "alpha",
+    "text": "Why can two folders with the same name remain separate?",
+    "gold_occurrence_ids": [
+      "evidence-a114c9df652fe779b9a13f60"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-18-exact",
+    "split": "held_out",
+    "kind": "exact",
+    "project": "beta",
+    "text": "What approval is required for refunds?",
+    "gold_occurrence_ids": [
+      "evidence-0704137976515f4a5e73ab96"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-18-paraphrase",
+    "split": "held_out",
+    "kind": "paraphrase",
+    "project": "beta",
+    "text": "Why must another person sign off on returning money?",
+    "gold_occurrence_ids": [
+      "evidence-0704137976515f4a5e73ab96"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-19-exact",
+    "split": "held_out",
+    "kind": "exact",
+    "project": "alpha",
+    "text": "What happens during a vector index rebuild?",
+    "gold_occurrence_ids": [
+      "evidence-eec6b3b62ac7090955723aa9"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-19-paraphrase",
+    "split": "held_out",
+    "kind": "paraphrase",
+    "project": "alpha",
+    "text": "Can users still find exact words while embeddings are regenerated?",
+    "gold_occurrence_ids": [
+      "evidence-eec6b3b62ac7090955723aa9"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-20-exact",
+    "split": "held_out",
+    "kind": "exact",
+    "project": "beta",
+    "text": "How are duplicate SKUs imported?",
+    "gold_occurrence_ids": [
+      "evidence-77dc7bdf4899c6f6357438d4"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "q-20-paraphrase",
+    "split": "held_out",
+    "kind": "paraphrase",
+    "project": "beta",
+    "text": "Can a repeated product identifier partially update stock?",
+    "gold_occurrence_ids": [
+      "evidence-77dc7bdf4899c6f6357438d4"
+    ],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  },
+  {
+    "id": "none-beta",
+    "split": "held_out",
+    "kind": "no_evidence",
+    "project": "beta",
+    "text": "What is the private soufflé recipe?",
+    "gold_occurrence_ids": [],
+    "start": "2026-10-01T00:00:00+00:00",
+    "end": "2026-10-11T00:00:00+00:00"
+  }
+]

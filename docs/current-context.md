@@ -76,3 +76,10 @@ revision and active state on the existing connection, clearing snapshot dedup;
 workspace permission changes still rotate sessions. Regression reproduced
 before the fix. Full suite: 814 Python tests and 6 extension tests passed.
 Old ONE snapshots remain searchable by design; search TWO to check fresh capture.
+
+The next manual pause test exposed a second failure: the bridge's updated grant
+revision was being used as the source content-policy revision, so storage
+rejected resumed snapshots. Intake now applies the content-policy revision only
+after rechecking the current grant revision, pause state and active binding.
+A service regression exercises real handshake, pause/resume, snapshot retention
+and accepted acknowledgement. Full suite: 815 Python tests and 6 Node tests pass.

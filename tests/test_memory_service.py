@@ -216,6 +216,21 @@ class ServiceTests(unittest.TestCase):
         self.service.tick()
         self.assertTrue(ack.exists());self.assertIn(client,bridge.clients)
 
+    def test_resumed_bridge_snapshot_is_retained_and_acknowledged(self):
+        from semantic_memory.live_bridge import write_private_json,read_private_json
+        bridge,client,focus=self.handshake_fixture();self.service.tick()
+        document=self.root/'capture.md';document.write_text('THREE')
+        self.owner('pause');self.service.tick()
+        self.owner('resume');self.service.tick()
+        write_private_json(bridge.directory/'events'/(client+'.json'),dict(
+            token=bridge.token,session=bridge.session,client=client,seq=2,
+            at=self.service.clock(),kind='snapshot',revision=bridge.revision,
+            focused=True,window=focus.window,workspace=self.root.resolve().as_uri(),
+            document=document.resolve().as_uri(),version=2,spans=[{'text':'THREE'}]))
+        self.service.tick()
+        self.assertEqual(self.service.store.count('sources'),1)
+        self.assertTrue(read_private_json(bridge.directory/'acks'/(client+'.json'))['accepted'])
+
     def test_challenge_closing_after_ack_keeps_same_native_window_verified(self):
         from dataclasses import replace
         bridge,client,challenge=self.handshake_fixture()

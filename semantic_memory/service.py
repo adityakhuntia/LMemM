@@ -321,6 +321,9 @@ class MemoryService:
         with self.store.lock:
             if self.closed or paused(self.store) or revision(self.store.connection)!=capture_revision:raise ValueError('Capture no longer authorized')
             if not self.store.connection.execute('SELECT 1 FROM project_bindings WHERE workspace_root=? AND active=1',(envelope.workspace_locator,)).fetchone():raise ValueError('Capture no longer authorized')
+            # The bridge revision fences changing grants and pauses. Stored
+            # evidence uses the independently versioned content policy.
+            envelope=dataclasses.replace(envelope,policy_revision=self.policy.revision)
             result=self.store.ingest(envelope,self.policy);schedule_source(self.store,result.source_id)
             return result
 

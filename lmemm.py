@@ -57,7 +57,7 @@ USAGE = ("usage: lmemm.py [menu] | start [--no-labels] [--no-writing] [--every N
          " | context [SESSION] [--days N]"
          " | label [--dry-run] [--status] [--limit N] [--show] [--last [N]] [--ping]"
          " | next [--done ID | --dismiss ID]"
-         " | brief [--no-copy] | recap [--days N] [--no-copy] | ask QUESTION…"
+         " | brief [--local] [--no-copy] | recap [--days N] [--no-copy] | ask QUESTION…"
          " | tasks [--minutes N] [--session ID] [--dry-run] [--show]"
          " | trail … | status | pause | resume | pin | note | delete-session ID (--dry-run | --confirm ID)"
          " | delete-all (--dry-run | --confirm) | setup [--again] [--no-start]")
@@ -560,6 +560,7 @@ def cmd_brief(args):
     import tasks
     parser = argparse.ArgumentParser(prog="lmemm.py brief")
     parser.add_argument("--no-copy", action="store_true", help="print only; do not copy")
+    parser.add_argument("--local", action="store_true", help="no Claude call: the plain brief from what is stored")
     opts = parser.parse_args(args)
     try:
         items = store.load_items()
@@ -567,7 +568,14 @@ def cmd_brief(args):
         sys.exit(str(error))
     book = tasks.load_tasks()
     newest = max(items, key=lambda i: items[i].get("last_seen") or "", default=None)
-    text = brief.build(items, book, newest, memory_search.gather(items, book))
+    found = memory_search.gather(items, book)
+    provider = labels.ClaudeCli()
+    if provider.available() and not opts.local:
+        print("asking Claude to write it...", flush=True)
+        text, spent = brief.compose(items, book, newest, found, provider, labels.Governor())
+        print(f"({spent} tokens)\n" if spent else "(written locally, no tokens)\n")
+    else:
+        text = brief.build(items, book, newest, found)
     if not text:
         sys.exit("Nothing to brief yet. Use your Mac for a while with LMemM running.")
     print(text)

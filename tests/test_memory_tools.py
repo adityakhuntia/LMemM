@@ -130,6 +130,35 @@ class BriefAndRecapTests(TmpPaths):
             self.assertIn(part, text)
         self.assertLessEqual(len(text), brief.BRIEF_CHARS + 2)
 
+    def book_now(self):
+        b = self.book()
+        b["s"]["at"] = "2026-10-11T14:00:00"
+        return b
+
+    def test_claude_writes_the_brief_from_curated_evidence_without_code_noise(self):
+        items = world()
+        items["mail"]["content"]["excerpts"].append(excerpt("sig = repr( (window_model. signature(self.banner), page, self.flow_sig"))
+        provider = FakeAsk("I'm building a follow-up automation that replies after seven days.\n- The trigger runs every morning.\nNext: check the trigger on weekdays.")
+        text, tokens = brief.compose(items, self.book_now(), "chat", ms.pieces(items), provider, labels.Governor(), NOW)
+        self.assertTrue(text.startswith("# Context from my Mac"))
+        self.assertIn("follow-up automation", text)
+        self.assertGreater(tokens, 0)
+        sent = provider.calls[0][0]
+        self.assertIn("Build follow-up automation", sent)
+        self.assertNotIn("window_model", sent)
+
+    def test_the_brief_falls_back_to_the_plain_one_when_the_day_is_spent(self):
+        governor = labels.Governor()
+        governor.doc["tokens"] = governor.cap
+        provider = FakeAsk("x" * 100)
+        text, tokens = brief.compose(world(), self.book_now(), "chat", [], provider, governor, NOW)
+        self.assertEqual((provider.calls, tokens), ([], 0))
+        self.assertIn("Build follow-up automation", text)
+
+    def test_breadcrumbs_are_cut_from_what_you_wrote(self):
+        self.assertEqual(ms.breadcrumb_off("script.google.com · Auto Send > Therefore emails are not scheduled"),
+                         "Therefore emails are not scheduled")
+
     def test_no_things_means_no_brief(self):
         self.assertEqual(brief.build({}, {}, None, [], NOW), "")
 

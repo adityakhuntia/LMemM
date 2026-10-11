@@ -93,6 +93,20 @@ def off_limits(item):
     return item.get("app") in config.BROWSERS and not title.strip() and not labels._page(item)
 
 
+PROSE_WORD = re.compile(r"^[A-Za-z][a-z'’\-]*[.,;:!?]?$|^[A-Z][A-Za-z]*[.,;:!?]?$|^\d[\d,.%]*$")
+CODE_CHARS = re.compile(r"[{}\[\]()=_\\|<>~]")
+
+
+def prose(line):
+    """True for a line a person would read as a sentence: no code or file-path bits, and almost every word a plain word.
+    Screen reading brings status bars, JSON and menu text with it; those are not what you were doing."""
+    words = line.split()
+    if len(words) < 5 or CODE_CHARS.search(line):
+        return False
+    plain = sum(1 for w in words if PROSE_WORD.match(w))
+    return plain / len(words) >= 0.85
+
+
 def screen_lines(item):
     """Lines of on-screen text for this thing, oldest first: secrets out, UI noise and LMemM's own text out.
     Unlike labels, addresses and phone numbers stay (mail and messages are not redacted here)."""
@@ -101,7 +115,7 @@ def screen_lines(item):
         raw.extend(excerpt["text"].split("\n"))
     squashed = [re.sub(r"\s+", " ", part).strip() for x in raw for part in labels.LOG_JOINS.split(x)]
     kept = [l for l in squashed if l and labels.redact([l]) and not own_text(l)
-            and not labels.noisy_line(l) and not labels.mostly_common(l) and len(l.split()) >= 5]
+            and not labels.noisy_line(l) and not labels.mostly_common(l) and prose(l)]
     out, seen = [], set()
     for l in kept:
         key = re.sub(r"[^a-z0-9]", "", l.lower())

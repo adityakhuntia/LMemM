@@ -104,11 +104,19 @@ def written_pieces(events, items, spans):
             continue
         hit = next((iid for a, b, iid in spans if a - timedelta(seconds=6) <= at <= b + timedelta(seconds=6)), None)
         item = items.get(hit) if hit else None
-        for piece in drop_drafts(ev.get("added") or []):
+        for piece in drop_drafts([breadcrumb_off(x) for x in ev.get("added") or []]):
             if labels.redact([piece]) and not tasks.own_text(piece) and len(piece.split()) >= 3:
                 out.append({"kind": "wrote", "item": hit, "app": (item or {}).get("app") or ev.get("app"),
                             "title": _title(item) if item else "", "at": at, "text": piece[:PIECE_CHARS]})
     return out
+
+
+def breadcrumb_off(text):
+    """Reading a field sometimes brings the window's trail with it ('site · Page title > what you wrote'); keep what
+    follows the last ' > '."""
+    if " > " in text:
+        text = text.rsplit(" > ", 1)[1]
+    return text.strip()
 
 
 def drop_drafts(pieces_):

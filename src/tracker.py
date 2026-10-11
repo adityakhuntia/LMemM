@@ -1797,7 +1797,12 @@ class Tracker:
                 if name == "brief":
                     with self.lock:
                         items, front = copy.deepcopy(self.items), (self.last_frame or {}).get("item")
-                    text = brief.build(items, book, front, self.found())
+                    provider = labels.ClaudeCli()
+                    if provider.available():
+                        text, spent = brief.compose(items, book, front, self.found(), provider, labels.Governor())
+                        say(f"brief written by Claude: {spent} tokens" if spent else "brief built locally (no tokens)")
+                    else:
+                        text = brief.build(items, book, front, self.found())
                     empty = "Nothing to brief yet"
                 else:
                     text = recap.build(book, days=1)

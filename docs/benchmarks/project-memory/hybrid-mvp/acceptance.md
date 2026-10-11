@@ -30,3 +30,16 @@ The first attempted hosted synthetic Codex call correctly returned empty scope b
 Missing observations are not treated as passes. The acceptance harness rejects absent resource samples, unloaded-model claims, empty assertion output, unsupported statements/missing citations, exact-match regression and modified frozen fixture bytes.
 
 Post-review verification (2026-10-11): 807 Python tests, 6 Node bridge tests and seven refreshed real AppKit synthetic states passed. Ten material findings and evidence trust presentation were fixed in one regression pass. See [review and decisions](review-and-decisions.md). The mandatory pending acceptance rows above remain pending.
+
+## Live user smoke-test update — 2026-10-11
+
+Subsequent user testing confirmed real VS Code capture, pause/resume without
+reconnecting, project notes, semantic search, restart persistence, sleep/lock
+recovery and Alpha/Beta isolation. A supplied Beta citation screenshot shows
+retained note text, timestamp and the correct workspace path. Stability was
+reported good so far. Thus sleep/lock and extension setup now have user-reported
+manual evidence; the earlier pending row describes the original acceptance run.
+Original crash-sequence reproduction, a measured paired 30-minute resource run
+and three external testers are still pending. No full launch acceptance is claimed.
+Latest regression suite: 815 Python tests and 6 Node extension tests pass.
+See the updated [handover](../../../../handover.md) for a reproducible live demo.

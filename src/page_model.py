@@ -32,6 +32,7 @@ draws it and forwards presses to `press()`; it decides nothing.
 """
 
 import functools
+import readable
 import unicodedata
 from datetime import datetime
 
@@ -100,7 +101,7 @@ def group_of(iso, now):
 
 
 def title_of(item):
-    return item.get("title") or item.get("doing") or item.get("app") or "Untitled"
+    return readable.show(item)
 
 
 HUES = 8                              # the window has eight calm colours (never red: red is for a permission that is off)

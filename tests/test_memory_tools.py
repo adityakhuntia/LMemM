@@ -101,6 +101,28 @@ class TitleTests(TmpPaths):
             self.assertTrue(tasks.readable_title({"title": ok}))
 
 
+class DebrisTests(TmpPaths):
+    def test_debris_titles_fall_back_to_something_readable(self):
+        import readable
+        for bad in ('. $v$Slurt"" kn2sl', "now. Uh, I'm not 8vre if it18 at that level"):
+            self.assertFalse(readable.readable(bad), bad)
+        item = {"title": '. $v$Slurt"" kn2sl', "doing": "Talking to ChatGPT", "app": "ChatGPT"}
+        self.assertEqual(readable.show(item), "Talking to ChatGPT")
+        self.assertEqual(readable.show({"title": "x $ y #", "doing": 'Working on "x $ y #"', "app": "Mail"}), "Mail")
+
+    def test_old_proposals_with_debris_or_long_machine_notes_are_dropped(self):
+        import suggestions as sg
+        import projects
+        items = {"a": thing("a", title="Outreach tracker"), "b": thing("b", title="Auto Send executions"),
+                 "c": thing("c", title="now. Uh, I'm not 8vre if it18"), "d": thing("d", title="Slides deck draft")}
+        sug = sg.empty()
+        sug["projects"] = [{"id": "s1", "name": "Follow-up emails", "ids": ["a", "b", "c"], "reason": "You moved between these."},
+                           {"id": "s2", "name": "Debug", "ids": ["a", "b"], "reason": "Determine whether the script is responsible " * 4},
+                           {"id": "s3", "name": "Only one", "ids": ["a", "c"], "reason": "x"}]
+        sg.tidy(sug, projects.empty(), items)
+        self.assertEqual([(e["id"], e["ids"]) for e in sug["projects"]], [("s1", ["a", "b"])])
+
+
 class AskTests(TmpPaths):
     def test_it_answers_from_numbered_sources_and_lists_the_ones_used(self):
         found = ms.pieces(world())

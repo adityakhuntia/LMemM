@@ -14,6 +14,7 @@ Writes are atomic (temp file + rename). Schema 3; every newer field is additive.
 """
 
 import json
+import readable as titles
 import os
 from collections import Counter
 from datetime import datetime
@@ -105,7 +106,7 @@ def readable(i):
             entry["text"] = a["text"][-8:]
         acts[c] = entry
     out = {"id": i["id"], "app": i["app"], "project": notes.project_of(i),
-           "what": i.get("title") or i["doing"], "doing": i["doing"]}
+           "what": titles.show(i), "doing": i["doing"]}
     if i.get("notes"):
         out["your_notes"] = [{"id": notes.note_id(n), "at": nice_time(n["at"]), "text": n["text"],
                               "status": "done" if notes.is_done(i, n) else "open"} for n in i["notes"]]

@@ -17,6 +17,7 @@ Run it through lmemm.py:   python3 lmemm.py          (Ctrl-C to stop)
 """
 
 import copy
+import readable
 import hashlib
 import json
 import os
@@ -1485,7 +1486,7 @@ class Tracker:
             return
         item["resurfaced_at"] = meta["iso"]
         event["resurfaced"] = [notes.note_id(n) for n in due]
-        what = item.get("title") or item["doing"]
+        what = readable.show(item)
         count = f"{len(due)} pending edit{'s' * (len(due) != 1)}"
         line(hms(meta["ts"]), "", f"  📝 {count}: " + " · ".join(n["text"][:60] for n in due[:3]))
         macos.notify(f"LMemM · {count}", f"{what[:60]} — " + " · ".join(n["text"] for n in due[:3]))

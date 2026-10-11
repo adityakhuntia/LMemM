@@ -179,6 +179,14 @@ def cmd_start(args):
         parser.error("input monitoring requires --input-events --input-app com.microsoft.VSCode")
     if not opts.no_setup and not first_run_setup():
         sys.exit("Setup isn't finished. Run LMemM again to pick up where you left off.")
+    try:
+        import subprocess
+        here = os.path.dirname(os.path.abspath(__file__))
+        version = subprocess.run(["git", "log", "-1", "--format=%h %s"], cwd=here, capture_output=True, text=True, timeout=5).stdout.strip()
+        if version:
+            print(f"LMemM version: {version}", flush=True)
+    except (OSError, subprocess.SubprocessError):
+        pass
     tracker.Tracker(every=opts.every, input_apps=set(opts.input_app) or None,
                     input_retention_hours=opts.input_retention_hours, show_widget=not opts.no_widget,
                     trail=not opts.no_trail, live_labels=not opts.no_labels).run()

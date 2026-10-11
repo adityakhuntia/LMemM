@@ -94,6 +94,35 @@ class LiveLabellerTest(unittest.TestCase):
         self.assertFalse(live.poll())               # next run is `every` later
         self.assertFalse(live.busy)
 
+    def test_tasks_run_on_their_own_schedule_after_the_labels_and_unchanged_runs_stay_quiet(self):
+        calls = []
+        results = [{"tasks": [{"title": "t"}], "tokens": 900}, {"cached": True, "tasks": []}]
+        live = self.make(tasker=lambda items, gov: calls.append(1) or results[len(calls) - 1])
+        live.task_at = 300
+        self.t[0] = 101
+        live.poll()
+        self.assertEqual(calls, [])                         # labels ran, tasks not due yet
+        self.t[0] = 301
+        live.next_at = 0
+        live.poll()
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(any(m.startswith("tasks: 1 found") for m in self.said))
+        self.said.clear()
+        self.t[0] = 301 + config.TASK_EVERY
+        live.next_at = 0
+        live.poll()
+        self.assertEqual(len(calls), 2)
+        self.assertFalse(any(m.startswith("tasks") for m in self.said))     # nothing new: nothing printed
+
+    def test_tasks_wait_when_the_budget_is_tight(self):
+        calls = []
+        live = self.make(tasker=lambda items, gov: calls.append(1))
+        live.governor.doc["tokens"] = 41000                         # past the priority line (80%)
+        live.task_at = 0
+        self.t[0] = 101
+        live.poll()
+        self.assertEqual(calls, [])
+
     def test_does_not_run_while_paused_and_keeps_waiting(self):
         live = self.make()
         self.t[0] = 101

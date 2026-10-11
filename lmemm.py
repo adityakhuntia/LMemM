@@ -50,7 +50,7 @@ import notes  # noqa: E402
 import store  # noqa: E402
 import tracker  # noqa: E402
 
-USAGE = ("usage: lmemm.py [menu] | start [--every N] [--input-events --input-app APP]"
+USAGE = ("usage: lmemm.py [menu] | start [--no-labels] [--no-writing] [--every N] [--input-events --input-app APP]"
          " | memory [N] [--content] [--events]"
          " | notes [--all] [PROJECT] | notes done|reopen ID…"
          " | projects [--all] | projects new|rename|move|archive|restore|merge|delete …"
@@ -152,15 +152,16 @@ def cmd_start(args):
     parser.add_argument("--input-retention-hours", type=float, default=24)
     parser.add_argument("--no-widget", action="store_true", help="don't show the on-screen pill")
     parser.add_argument("--no-trail", action="store_true", help="don't run the accessibility event trail")
-    parser.add_argument("--labels", action="store_true",
-                        help="label settled things in the background with your Claude (limited to %d tokens a day)" % config.LABEL_DAILY_TOKENS)
-    parser.add_argument("--writing", action="store_true",
-                        help="OPT-IN: also read what you write in any text box (documents, chats, notes) so `tasks` can say what you did. "
-                             "Passwords and secure fields are never read; stays on this Mac; deleted after 48 h")
+    parser.add_argument("--no-labels", action="store_true",
+                        help="don't use your Claude in the background (labels and tasks are on by default, limited to %d tokens a day)" % config.LABEL_DAILY_TOKENS)
+    parser.add_argument("--no-writing", action="store_true",
+                        help="don't read what you write in text boxes (on by default so tasks can say what you did; passwords and "
+                             "secure fields are never read; stays on this Mac; deleted after 48 h)")
+    parser.add_argument("--labels", action="store_true", help=argparse.SUPPRESS)      # old flags: now the default
+    parser.add_argument("--writing", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--no-setup", action="store_true", help="skip first-run setup (it asks for permissions itself)")
     opts = parser.parse_args(args)
-    if opts.writing:
-        config.TRAIL_WRITING = True
+    config.TRAIL_WRITING = not opts.no_writing
     if opts.every <= 0 or not 0 < opts.input_retention_hours <= 24:
         parser.error("positive capture interval and input retention of at most 24 hours required")
     if opts.input_events != bool(opts.input_app) or not set(opts.input_app) <= SUPPORTED_INPUT_APPS:
@@ -169,7 +170,7 @@ def cmd_start(args):
         sys.exit("Setup isn't finished. Run LMemM again to pick up where you left off.")
     tracker.Tracker(every=opts.every, input_apps=set(opts.input_app) or None,
                     input_retention_hours=opts.input_retention_hours, show_widget=not opts.no_widget,
-                    trail=not opts.no_trail, live_labels=opts.labels).run()
+                    trail=not opts.no_trail, live_labels=not opts.no_labels).run()
 
 
 def first_run_setup(again=False):

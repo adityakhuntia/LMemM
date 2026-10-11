@@ -687,8 +687,11 @@ class LiveLabeller:
     `poll(now)` is called from the tick (a few comparisons); the work happens on its own thread."""
 
     def __init__(self, get_items, provider, say=print, paused=lambda: False, first_after=None, every=None,
-                 min_waiting=None, clock=time.monotonic, governor=None, threaded=True):
+                 min_waiting=None, clock=time.monotonic, governor=None, threaded=True, tasker=None):
         self.get_items, self.provider, self.say, self.paused = get_items, provider, say, paused
+        self.tasker = tasker                  # callable(items, governor) -> tasks.run result, or None (no tasks)
+        self.task_at = clock() + config.TASK_FIRST_AFTER
+        self.tasks_last = None
         self.first_after = config.LABEL_FIRST_AFTER if first_after is None else first_after
         self.every = config.LABEL_EVERY if every is None else every
         self.min_waiting = config.LABEL_MIN_WAITING if min_waiting is None else min_waiting
@@ -721,6 +724,38 @@ class LiveLabeller:
                 continue
         return False
 
+    def _labels(self, items, governor):
+        waiting = due(items, load_labels())
+        if len(waiting) < self.min_waiting and not self._old_enough(waiting):
+            self.last = {"waiting": len(waiting), "sent": 0, "labelled": 0, "stopped": None}
+            self.say(f"labels: {len(waiting)} thing(s) ready, waiting for {self.min_waiting} (or one that has waited "
+                     f"{round(config.LABEL_MAX_WAIT / 60)} min) so the call is worth its fixed cost")
+            return
+        result = run(items, self.provider, governor)
+        self.last = result
+        if result["calls"]:
+            self.say(f"labels: {result['labelled']} of {result['sent']} things labelled, "
+                     f"{result['tokens']} tokens ({governor.used}/{governor.cap} today)")
+        elif result["stopped"]:
+            self.say(f"labels paused: {result['stopped']}")
+            if result["stopped"] == LOGIN_HELP:       # asking again every 15 min cannot fix a login
+                self.next_at = self.clock() + 4 * self.every
+
+    def _tasks(self, items, governor):
+        """Every TASK_EVERY seconds, while the budget is not tight: what the last stretch was about."""
+        if not self.tasker or self.clock() < self.task_at or governor.mode() != "full":
+            return
+        self.task_at = self.clock() + config.TASK_EVERY
+        result = self.tasker(items, governor)
+        self.tasks_last = result
+        if result is None or result.get("cached"):
+            return
+        if result.get("tasks"):
+            self.say(f"tasks: {len(result['tasks'])} found, {result['tokens']} tokens ({governor.used}/{governor.cap} today)"
+                     f"  ·  see them with: python3 lmemm.py tasks --show")
+        elif result.get("stopped"):
+            self.say(f"tasks skipped: {result['stopped']}")
+
     def _work(self):
         try:
             items = self.get_items()
@@ -728,21 +763,8 @@ class LiveLabeller:
             if governor.mode() == "stopped":
                 self.last = {"stopped": "daily limit reached"}
                 return
-            waiting = due(items, load_labels())
-            if len(waiting) < self.min_waiting and not self._old_enough(waiting):
-                self.last = {"waiting": len(waiting), "sent": 0, "labelled": 0, "stopped": None}
-                self.say(f"labels: {len(waiting)} thing(s) ready, waiting for {self.min_waiting} (or one that has waited "
-                         f"{round(config.LABEL_MAX_WAIT / 60)} min) so the call is worth its fixed cost")
-                return
-            result = run(items, self.provider, governor)
-            self.last = result
-            if result["calls"]:
-                self.say(f"labels: {result['labelled']} of {result['sent']} things labelled, "
-                         f"{result['tokens']} tokens ({governor.used}/{governor.cap} today)")
-            elif result["stopped"]:
-                self.say(f"labels paused: {result['stopped']}")
-                if result["stopped"] == LOGIN_HELP:       # asking again every 15 min cannot fix a login
-                    self.next_at = self.clock() + 4 * self.every
+            self._labels(items, governor)
+            self._tasks(items, governor)
         except Exception as error:               # a label failure must never reach the tracker
             self.last = {"stopped": f"{type(error).__name__}: {error}"}
         finally:

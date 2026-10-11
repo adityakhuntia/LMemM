@@ -42,6 +42,9 @@ LABEL_MIN_WAITING = 3
 LABEL_MAX_WAIT = 1800                  # seconds: a settled thing waits this long for company, then goes alone           # ...and how many settled things must be waiting for a run to be worth its fixed cost
 LABEL_DAILY_TOKENS = 50000      # most tokens `lmemm.py label` may spend per day (counted from the CLI's own usage)
 TASK_MODEL = "sonnet"            # tasks need real reasoning over a whole session; one call per run
+TASK_FIRST_AFTER = 600           # seconds after start before the first automatic tasks run
+TASK_EVERY = 1800                # then at most this often (an unchanged story costs no tokens)
+TASK_MINUTES = 90                # how far back an automatic run reads
 TASK_OFF_APPS = set()            # apps `tasks` never reads. Empty for now: mail and messages are read. Secrets are always dropped
 LABEL_MODEL = "haiku"           # the `claude --model` alias used for labels
 LABEL_SETTLE = 120              # seconds a thing must sit unchanged before it is sent
@@ -57,7 +60,7 @@ LABEL_OFF_KINDS = {"chat", "chat_list", "email", "email_draft", "mailbox", "emai
 TRAIL_RETENTION_HOURS = 48      # raw events stay on this Mac this long, then are deleted
 TRAIL_MAX_MB = 50               # hard cap on the trail folder; oldest day goes first
 TRAIL_READ_FIELD_TEXT = False   # read the text INSIDE the focused text box (an editor's document)? off: only that one exists
-TRAIL_WRITING = os.environ.get("LMEMM_WRITING") == "1"   # OPT-IN: also record what you write in any text box (documents, chats, forms). Passwords and secure fields never. `start --writing`
+TRAIL_WRITING = os.environ.get("LMEMM_WRITING") == "1"   # also record what you write in any text box. `start` turns it on unless --no-writing; passwords and secure fields are never read
 TRAIL_WRITING_CHARS = 6000      # most text read from one box at a time
 TRAIL_TEXT_EVERY = 2.0          # seconds: least time between two text reads of one place
 TRAIL_FULL_MS = 90              # a full tree read stops after this long (Chromium apps cost ~0.5 ms a node)

@@ -308,7 +308,7 @@ class Tracker:
 
     def labels_report(self):
         if not self.labeller:
-            return "off (start with --labels)"
+            return "off (started with --no-labels, or no `claude` command)"
         last = self.labeller.last or {}
         if not self.labeller.last:
             return {"running": self.labeller.busy, "last": "no run yet"}
@@ -1684,11 +1684,19 @@ class Tracker:
         def snapshot():
             with self.lock:
                 return copy.deepcopy(self.items)
-        self.labeller = labels.LiveLabeller(snapshot, provider, say=lambda m: line(now_hms(), "", m),
+        def run_tasks(items, governor):
+            import context
+            import tasks
+            doc = context.find_session_doc(self.session)
+            if doc is None:
+                return None
+            return tasks.run(doc, items, provider, governor, minutes=config.TASK_MINUTES)
+        self.labeller = labels.LiveLabeller(snapshot, provider, say=lambda m: line(now_hms(), "", m), tasker=run_tasks,
                                             paused=lambda: bool(self.manual_paused or self.paused or any(self.flags.values())
                                                                 or self.panel.open))
         say(f"labels on  ·  first run in {round(self.labeller.first_after / 60)} min, then every "
-            f"{round(self.labeller.every / 60)} min  ·  at most {config.LABEL_DAILY_TOKENS} tokens a day")
+            f"{round(self.labeller.every / 60)} min  ·  tasks after {round(config.TASK_FIRST_AFTER / 60)} min, then every "
+            f"{round(config.TASK_EVERY / 60)} min  ·  at most {config.LABEL_DAILY_TOKENS} tokens a day")
 
     def hand_over(self):
         """Restart, reopen setup, or delete everything, once LMemM has saved and stopped. A restart

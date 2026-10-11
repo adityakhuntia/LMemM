@@ -44,6 +44,9 @@ fake_widget._Box = type("_Box", (Base,), {"initWithTone_dashed_": lambda self, *
 fake_widget._label = lambda *a, **k: (mock.MagicMock(), 20)
 fake_widget._short = lambda text, n: text
 fake_widget._symbol = lambda name: mock.MagicMock()
+fake_widget.recall_rows = lambda steps, w, *a: (Base(), 50 * len(steps))
+ACTIONS = []
+fake_widget.round_actions = lambda items, w: (ACTIONS.extend(t for _s, t, _c in items) or Base(), 60)
 SIZE = types.SimpleNamespace(width=1080, height=720)
 fake_widget._Flipped.frame = lambda self: types.SimpleNamespace(size=SIZE)
 sys.modules["widget"] = fake_widget
@@ -123,9 +126,8 @@ texts = [c.args[1] for c in kit.put_text.call_args_list if len(c.args) > 1]
 for want in ("For you now",):
     if want not in texts:
         FAILED.append("home is missing: " + want)
-labels_ = [c.args[1] for c in kit.button.call_args_list if len(c.args) > 1]
-for want in ("Copy context for AI", "Copy today’s recap", "Ask your memory…"):
-    if want not in labels_:
+for want in ("Brief", "Recap", "Ask"):
+    if want not in ACTIONS:
         FAILED.append("home is missing the button: " + want)
 w.open_step("n1"); step("side card: a step", render)
 w.open_step("n4"); step("side card: from earlier", render)

@@ -71,6 +71,16 @@ class EarlierTests(TmpPaths):
         old = ms.pieces(items) + [wrote("The trigger runs the sendDrafts function every morning", at=NOW - timedelta(hours=2))]
         self.assertIsNone(ms.earlier(old, items, "chat", NOW))
 
+    def test_lines_from_a_log_file_in_a_code_editor_are_never_quoted(self):
+        items = world()
+        log = wrote("The trigger runs the sendDrafts function every morning")
+        log.update(app="Code", title="labels_log.jsonl")
+        self.assertIsNone(ms.earlier(ms.pieces(items) + [log], items, "chat", NOW))
+        other = {"kind": "wrote", "item": "mail", "app": "Code", "title": "labels_log.jsonl", "at": NOW - timedelta(hours=1),
+                 "text": "The trigger runs the sendDrafts function every morning"}
+        found = ms.pieces({k: v for k, v in items.items() if k != "mail"}) + [wrote("Trigger runs sendDrafts every morning today"), other]
+        self.assertIsNone(ms.earlier(found, items, "chat", NOW))
+
     def test_it_becomes_a_step_that_goes_when_it_stops_being_true(self):
         items, doc = world(), nextsteps.empty()
         hit = {"text": "Trigger runs the sendDrafts function every morning", "from": "Mail · Draft", "item": "mail", "query": "x"}

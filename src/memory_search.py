@@ -214,18 +214,29 @@ EARLIER_MIN_WORDS = 4
 EARLIER_MIN_HITS = 2
 EARLIER_FRESH_SECONDS = 600
 EARLIER_KINDS = ("wrote", "screen", "note")
+EARLIER_HIT_WORDS = 5
+CODE_APPS = {"Code", "Visual Studio Code", "VS Code", "Terminal", "iTerm2", "Xcode", "Cursor", "PyCharm", "Sublime Text"}
+FILE_TITLE = re.compile(r"\.(jsonl?|py|js|ts|tsx|md|txt|log|csv|yml|yaml|toml|html|css|sh|swift)\b", re.I)
+
+
+def _worth_quoting(p):
+    """A line worth showing as "from earlier": prose you wrote or read in a document, not a line of a log, code or terminal."""
+    if p.get("app") in CODE_APPS or FILE_TITLE.search(p.get("title") or ""):
+        return False
+    text = (p.get("text") or "").strip()
+    return len(text.split()) >= EARLIER_HIT_WORDS and (p["kind"] == "note" or tasks.prose(text))
 
 
 def earlier(found, items, front_id, now=None):
     """What you wrote a moment ago on the thing in front, matched against everything else: the line you saw or wrote
     before that goes with it. -> {"text", "from", "item", "query"} or None. Needs two shared words, never the same thing."""
     now = now or datetime.now()
-    mine = [p for p in found if p["kind"] == "wrote" and p.get("item") == front_id and p.get("at")
+    mine = [p for p in found if p["kind"] == "wrote" and p.get("item") == front_id and p.get("at") and _worth_quoting(p)
             and 0 <= (now - p["at"]).total_seconds() <= EARLIER_FRESH_SECONDS and len(p["text"].split()) >= EARLIER_MIN_WORDS]
     if not mine or front_id not in items:
         return None
     query = max(mine, key=lambda p: p["at"])["text"]
-    pool = [p for p in found if p["kind"] in EARLIER_KINDS and p.get("item") in items and p["text"] != query]
+    pool = [p for p in found if p["kind"] in EARLIER_KINDS and p.get("item") in items and p["text"] != query and _worth_quoting(p)]
     for hit in search(query, pool, limit=1, now=now, exclude_item=front_id, min_hits=EARLIER_MIN_HITS):
         p = hit["piece"]
         return {"text": p["text"], "from": source_line(p, now), "item": p["item"], "query": query}

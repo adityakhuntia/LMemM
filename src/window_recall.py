@@ -11,7 +11,7 @@ import objc
 from AppKit import NSBezierPath, NSColor, NSImageView, NSMakeRect, NSTextField
 
 import setup_kit as kit
-from widget import RECALL, _Box, _Fields, _Flipped, _Ring, _Tap, _label, _short, _symbol
+from widget import RECALL, _Box, _Fields, _Flipped, _Ring, _Tap, _label, _short, _symbol, recall_rows, round_actions
 
 PANEL_W = 400
 HEAD_H = 44
@@ -94,86 +94,26 @@ class RecallPanes:
     # ------------------------------------------------------------ Home: the actions and the boxes
 
     def actions_row(self, doc, x, y, w):
-        """Copy context for AI · Copy today's recap · Ask your memory…"""
-        return y + self._chips(doc, x, y, [("Copy context for AI", False, lambda: self.open_text("brief")),
-                                           ("Copy today’s recap", False, lambda: self.open_text("recap")),
-                                           ("Ask your memory…", False, self.open_memory_ask)], w) + 14
+        """Brief · Recap · Ask: three round buttons."""
+        row, h = round_actions([("sparkles", "Brief", lambda: self.open_text("brief")),
+                                ("text.alignleft", "Recap", lambda: self.open_text("recap")),
+                                ("magnifyingglass", "Ask", self.open_memory_ask)], min(w, 300))
+        row.setFrameOrigin_((x, y))
+        doc.addSubview_(row)
+        return y + h + 16
 
     def for_you(self, doc, x, y, w):
-        """"For you now": up to four boxes, two to a row when the column is wide."""
+        """"For you now": up to four rows in one inset list, as in Settings."""
         steps = self.recall_now[:MAX_BOXES]
         kit.put_text(doc, "For you now", x, y, w, 15, 700, wrap=False, height=22)
         y += 30
         if not steps:
             h = kit.put_text(doc, EMPTY_FOR_YOU, x, y, min(w, 520), 13, 400, kit.mute())
             return y + h + 22
-        cols = 2 if w >= 600 else 1
-        cw = (w - 12) / 2 if cols == 2 else w
-        for i in range(0, len(steps), cols):
-            row = steps[i:i + cols]
-            heights = [self._step_box(doc, s, x + n * (cw + 12), y, cw) for n, s in enumerate(row)]
-            y += max(heights) + 12
-        return y + 10
-
-    def _step_box(self, doc, step, x, y, cw):
-        kind = step["kind"]
-        label, symbol, rgb, dashed = RECALL[kind]
-        tone = _rgb(kind)
-        box = _Box.alloc().initWithTone_dashed_(rgb, dashed)
-        icon = NSImageView.alloc().initWithFrame_(NSMakeRect(12, 10, 14, 14))
-        image = _symbol(symbol)
-        if image is not None:
-            icon.setImage_(image)
-            icon.setContentTintColor_(tone)
-            box.addSubview_(icon)
-        box.addSubview_(_label(label.upper(), 10.5, bold=True, color=tone, frame=(30, 9, cw - 80, 14))[0])
-        gone = _Tap.alloc().initWithFrame_callback_(NSMakeRect(cw - 32, 4, 26, 22), lambda sid=step["id"]: self.recall_answer(sid, "dismissed"))
-        gone.label = "Not now"
-        gone.addSubview_(_label("×", 15, color=NSColor.tertiaryLabelColor(), frame=(7, 1, 14, 18))[0])
-        box.addSubview_(gone)
-        mark = _Tap.alloc().initWithFrame_callback_(NSMakeRect(8, 32, 30, 26), lambda sid=step["id"]: self.recall_answer(sid, "done"))
-        mark.label = ("Copy: " if kind == "earlier" else "Done: ") + step["text"]
-        if kind == "earlier":
-            glyph = NSImageView.alloc().initWithFrame_(NSMakeRect(4, 3, 17, 17))
-            copy_image = _symbol("doc.on.doc")
-            if copy_image is not None:
-                glyph.setImage_(copy_image)
-                glyph.setContentTintColor_(tone)
-        else:
-            glyph = _Ring.alloc().initWithChecked_(False)
-            glyph.setFrame_(NSMakeRect(4, 4, 17, 17))
-        mark.addSubview_(glyph)
-        box.addSubview_(mark)
-        tw = cw - 44 - 28
-        line, lh = _label(_short(step["text"], 110), 13.5, color=NSColor.labelColor(), frame=(44, 34, tw, 17), wrap=True)
-        line.setMaximumNumberOfLines_(2)
-        line.setLineBreakMode_(4)
-        lh = min(lh, 36)
-        line.setFrame_(NSMakeRect(44, 33, tw, lh))
-        box.addSubview_(line)
-        yy = 33 + lh + 4
-        detail = step.get("detail") or {}
-        for key, name in FIELDS[:1] if kind != "earlier" else FIELDS[3:]:
-            if detail.get(key):
-                d, dh = _label(_short(f"{name}: {detail[key]}", 110), 12, color=NSColor.secondaryLabelColor(), frame=(44, yy, tw, 15), wrap=True)
-                d.setMaximumNumberOfLines_(2)
-                d.setLineBreakMode_(4)
-                dh = min(dh, 32)
-                d.setFrame_(NSMakeRect(44, yy, tw, dh))
-                box.addSubview_(d)
-                yy += dh + 4
-        apps_ = " · ".join(dict.fromkeys(t["app"] for t in (step.get("things") or []) if t.get("app")))
-        if apps_:
-            box.addSubview_(_label(apps_, 11, color=NSColor.tertiaryLabelColor(), frame=(44, yy, tw, 14))[0])
-            yy += 17
-        opener = _Tap.alloc().initWithFrame_callback_(NSMakeRect(40, 30, cw - 40 - 6, yy - 26), lambda sid=step["id"]: self.open_step(sid))
-        opener.label = "Read all: " + step["text"]
-        opener.addSubview_(_label("›", 15, color=NSColor.tertiaryLabelColor(), frame=(cw - 40 - 6 - 22, 4, 14, 18))[0])
-        box.addSubview_(opener)
-        height = yy + 10
-        box.setFrame_(NSMakeRect(x, y, cw, height))
-        doc.addSubview_(box)
-        return height
+        group, h = recall_rows(steps, min(w, 560), self.open_step, lambda sid: self.recall_answer(sid, "done"))
+        group.setFrameOrigin_((x, y))
+        doc.addSubview_(group)
+        return y + h + 22
 
     def recall_answer(self, sid, state):
         self.on_recall(sid, state)

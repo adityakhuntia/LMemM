@@ -85,10 +85,12 @@ DEFAULT_ICON = ("square.on.square", (0.45, 0.45, 0.5))
 DONE_SECONDS = 1.5                  # "Pricing created." stays this long, then the card closes
 SUGGEST_WORDS = "Group these?"
 # the boxes on the card, one look per kind: label, SF Symbol, colour, whether the edge is dashed (unfinished)
-RECALL = {"earlier": ("From earlier", "doc.on.doc", (0.45, 0.36, 0.78), False),
-          "resume": ("Pick up", "arrow.uturn.backward", (0.91, 0.45, 0.16), False),
-          "hanging": ("Left open", "circle.dotted", (0.72, 0.53, 0.04), True),
-          "next": ("Next step", "arrow.right", (0.18, 0.50, 0.52), False)}
+# (Apple's system purple, blue, orange and green; only the small icon square wears the colour)
+RECALL = {"earlier": ("From earlier", "doc.on.doc", (0.69, 0.32, 0.87), False),
+          "resume": ("Pick up", "arrow.uturn.backward", (0.04, 0.52, 1.0), False),
+          "hanging": ("Left open", "circle.dotted", (1.0, 0.58, 0.0), False),
+          "next": ("Next step", "arrow.right", (0.19, 0.73, 0.31), False)}
+ROW_H = 50
 RECALL_GLYPH = {"earlier": "❝", "resume": "↩", "hanging": "◌", "next": "→"}       # on the pill's hover line
 SAVED_SECONDS = 1.8                 # "Saved to Q3 plan" stays on the pill this long
 PROJECT_EXPLAINER = ("A project keeps related things and your notes together, so you can pick up "
@@ -370,6 +372,112 @@ class _Ring(_Flipped):
             NSColor.tertiaryLabelColor().setStroke()
             circle.setLineWidth_(1.5)
             circle.stroke()
+
+
+class _Group(_Flipped):
+    """An inset list, as in Settings: one soft rounded rectangle, hairlines between the rows."""
+
+    def initWithRows_(self, rows):
+        self = objc.super(_Group, self).initWithFrame_(NSMakeRect(0, 0, 10, 10))
+        self.rows = rows
+        return self
+
+    def drawRect_(self, rect):
+        size = self.bounds().size
+        NSColor.labelColor().colorWithAlphaComponent_(0.06).setFill()
+        NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(self.bounds(), 12, 12).fill()
+        NSColor.separatorColor().setFill()
+        for i in range(1, self.rows):
+            NSBezierPath.fillRect_(NSMakeRect(50, i * ROW_H, size.width - 50, 0.5))
+
+
+class _Chip(_Flipped):
+    """The small coloured rounded square that carries a kind's icon."""
+
+    def initWithRgb_symbol_(self, rgb, symbol):
+        self = objc.super(_Chip, self).initWithFrame_(NSMakeRect(0, 0, 28, 28))
+        self.rgb = rgb
+        image = _symbol(symbol)
+        if image is not None:
+            holder = NSImageView.alloc().initWithFrame_(NSMakeRect(6, 6, 16, 16))
+            holder.setImage_(image)
+            holder.setContentTintColor_(NSColor.whiteColor())
+            self.addSubview_(holder)
+        return self
+
+    def drawRect_(self, rect):
+        NSColor.colorWithRed_green_blue_alpha_(*self.rgb, 1.0).setFill()
+        NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(self.bounds(), 7, 7).fill()
+
+
+class _Round(_Flipped):
+    """A round button face: a soft circle behind a symbol."""
+
+    def initWithSymbol_(self, symbol):
+        self = objc.super(_Round, self).initWithFrame_(NSMakeRect(0, 0, 34, 34))
+        image = _symbol(symbol)
+        if image is not None:
+            holder = NSImageView.alloc().initWithFrame_(NSMakeRect(9, 9, 16, 16))
+            holder.setImage_(image)
+            holder.setContentTintColor_(NSColor.systemBlueColor())
+            self.addSubview_(holder)
+        return self
+
+    def drawRect_(self, rect):
+        NSColor.labelColor().colorWithAlphaComponent_(0.08).setFill()
+        NSBezierPath.bezierPathWithOvalInRect_(self.bounds()).fill()
+
+
+def recall_rows(steps, w, on_open, on_answer):
+    """The steps as one inset list: a coloured icon square, a one-line title, the kind in small type underneath.
+    The row opens the full card; only the circle (a copy mark for "from earlier") answers it. -> (view, height)."""
+    group = _Group.alloc().initWithRows_(len(steps))
+    group.setFrame_(NSMakeRect(0, 0, w, ROW_H * len(steps)))
+    for i, step in enumerate(steps):
+        label, symbol, rgb, _dashed = RECALL[step["kind"]]
+        top = i * ROW_H
+        row = _Tap.alloc().initWithFrame_callback_(NSMakeRect(0, top, w, ROW_H), lambda sid=step["id"]: on_open(sid))
+        row.label = "Open: " + step["text"]
+        chip = _Chip.alloc().initWithRgb_symbol_(rgb, symbol)
+        chip.setFrame_(NSMakeRect(12, 11, 28, 28))
+        row.addSubview_(chip)
+        title = _label(_short(step["text"], 70), 14, color=NSColor.labelColor(), frame=(50, 8, w - 50 - 48, 17))[0]
+        title.setLineBreakMode_(4)
+        row.addSubview_(title)
+        row.addSubview_(_label(label, 11.5, color=NSColor.secondaryLabelColor(), frame=(50, 26, w - 50 - 48, 15))[0])
+        group.addSubview_(row)
+        mark = _Tap.alloc().initWithFrame_callback_(NSMakeRect(w - 44, top, 44, ROW_H), lambda sid=step["id"]: on_answer(sid))
+        mark.label = ("Copy: " if step["kind"] == "earlier" else "Done: ") + step["text"]
+        if step["kind"] == "earlier":                    # the mark copies the line: a copy mark, not a tick
+            glyph = NSImageView.alloc().initWithFrame_(NSMakeRect(11, 17, 17, 17))
+            copy_image = _symbol("doc.on.doc")
+            if copy_image is not None:
+                glyph.setImage_(copy_image)
+                glyph.setContentTintColor_(NSColor.secondaryLabelColor())
+        else:
+            glyph = _Ring.alloc().initWithChecked_(False)
+            glyph.setFrame_(NSMakeRect(11, 17, 17, 17))
+        mark.addSubview_(glyph)
+        group.addSubview_(mark)
+    return group, ROW_H * len(steps)
+
+
+def round_actions(items, w):
+    """Round buttons with a small blue label under each: items are (symbol, text, callback). -> (view, height)."""
+    height = 60
+    holder = _Flipped.alloc().initWithFrame_(NSMakeRect(0, 0, w, height))
+    cell = w / len(items)
+    for i, (symbol, text, callback) in enumerate(items):
+        tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(i * cell, 0, cell, height), callback)
+        tap.label = text
+        face = _Round.alloc().initWithSymbol_(symbol)
+        face.setFrame_(NSMakeRect((cell - 34) / 2, 4, 34, 34))
+        tap.addSubview_(face)
+        name = _label(text, 11, color=NSColor.systemBlueColor(), frame=(0, 41, cell, 14))[0]
+        name.setAlignment_(1)
+        tap.addSubview_(name)
+        holder.addSubview_(tap)
+    return holder, height
 
 
 class _PillView(NSView):
@@ -1168,9 +1276,12 @@ class Widget:
     # -- what LMemM does for you: copy a brief, copy a recap, ask your memory
 
     def _actions(self, body, y):
-        y = self._action(body, y, "sparkles", "Copy context for AI", lambda: self._act("brief"))
-        y = self._action(body, y, "text.alignleft", "Copy today’s recap", lambda: self._act("recap"))
-        return self._action(body, y, "magnifyingglass", "Ask your memory…", self._open_ask)
+        row, h = round_actions([("sparkles", "Brief", lambda: self._act("brief")),
+                                ("text.alignleft", "Recap", lambda: self._act("recap")),
+                                ("magnifyingglass", "Ask", self._open_ask)], CARD_W - 16)
+        row.setFrameOrigin_((8, y + 2))
+        body.addSubview_(row)
+        return y + h + 4
 
     def _action(self, body, y, symbol, text, callback):
         tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(6, y, CARD_W - 12, 28), callback)
@@ -1250,70 +1361,11 @@ class Widget:
         return self._pause_row(body, y)
 
     def _recall_boxes(self, body, y):
-        for step in self.recall[:4]:
-            y = self._recall_box(body, y, step)
-        return y
-
-    def _recall_box(self, body, y, step):
-        label, symbol, rgb, dashed = RECALL[step["kind"]]
-        tone = NSColor.colorWithRed_green_blue_alpha_(*rgb, 1.0)
-        w, inner = CARD_W - 16, CARD_W - 16 - 2 * 12
-        box = _Box.alloc().initWithTone_dashed_(rgb, dashed)
-        icon = NSImageView.alloc().initWithFrame_(NSMakeRect(12, 9, 14, 14))
-        image = _symbol(symbol)
-        if image is not None:
-            icon.setImage_(image)
-            icon.setContentTintColor_(tone)
-            box.addSubview_(icon)
-        box.addSubview_(_label(label.upper(), 10.5, bold=True, color=tone, frame=(30, 8, 120, 14))[0])
-        gone = _Tap.alloc().initWithFrame_callback_(NSMakeRect(w - 30, 4, 24, 20),
-                                                    lambda sid=step["id"]: self._recall_answer(sid, "dismissed"))
-        gone.label = "Not now"
-        gone.addSubview_(_label("×", 15, color=NSColor.tertiaryLabelColor(), frame=(6, 1, 14, 18))[0])
-        box.addSubview_(gone)
-        text, h = _label(_short(step["text"], 100), 13, color=NSColor.labelColor(), frame=(36, 0, inner - 38, 17), wrap=True)
-        row_y = 28
-        tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(6, row_y - 4, 30, h + 10),
-                                                   lambda sid=step["id"]: self._recall_answer(sid, "done"))
-        tap.label = ("Copy: " if step["kind"] == "earlier" else "Done: ") + step["text"]
-        if step["kind"] == "earlier":                    # the mark copies the line: a copy mark, not a tick
-            ring = NSImageView.alloc().initWithFrame_(NSMakeRect(6, 3, 17, 17))
-            copy_image = _symbol("doc.on.doc")
-            if copy_image is not None:
-                ring.setImage_(copy_image)
-                ring.setContentTintColor_(tone)
-        else:
-            ring = _Ring.alloc().initWithChecked_(False)
-            ring.setFrame_(NSMakeRect(6, 4, 17, 17))
-        tap.addSubview_(ring)
-        box.addSubview_(tap)
-        text.setFrame_(NSMakeRect(36, row_y, inner - 38, h))
-        box.addSubview_(text)
-        yy = row_y + h + 8
-        detail = step.get("detail") or {}
-        for key, name in (("goal", "Making"), ("last_wrote", "Last wrote"), ("open", "Open"), ("from", "From")):
-            if detail.get(key):
-                text_line = _short(f"{name}: {detail[key]}", 110)
-                line, lh = _label(text_line, 12, color=NSColor.secondaryLabelColor(), frame=(12, yy, inner, 15), wrap=True)
-                line.setMaximumNumberOfLines_(2)            # two lines at most: the box is sized from this, so nothing overlaps
-                line.setLineBreakMode_(4)
-                lh = min(lh, 31)
-                line.setFrame_(NSMakeRect(12, yy, inner, lh))
-                box.addSubview_(line)
-                yy += lh + 4
-        things = " · ".join(dict.fromkeys(t["app"] for t in detail.get("things", []) if t.get("app")))
-        if things:
-            box.addSubview_(_label(things, 11, color=NSColor.tertiaryLabelColor(), frame=(12, yy, inner, 14))[0])
-            yy += 17
-        # the rest of the box opens the full card; only the mark on the left ticks it, only × sends it away
-        opener = _Tap.alloc().initWithFrame_callback_(NSMakeRect(36, row_y - 4, w - 36 - 6, yy - row_y + 4),
-                                                      lambda sid=step["id"]: self._open_detail(sid))
-        opener.label = "Read all: " + step["text"]
-        opener.addSubview_(_label("›", 15, color=NSColor.tertiaryLabelColor(), frame=(w - 28 - 36, 3, 14, 18))[0])
-        box.addSubview_(opener)
-        box.setFrame_(NSMakeRect(8, y + 4, w, yy + 8))
-        body.addSubview_(box)
-        return y + 4 + yy + 8
+        group, h = recall_rows(self.recall[:4], CARD_W - 16, self._open_detail,
+                               lambda sid: self._recall_answer(sid, "done"))
+        group.setFrameOrigin_((8, y + 4))
+        body.addSubview_(group)
+        return y + 4 + h + 4
 
     def _open_detail(self, sid):
         self.detail, self.detail_back = sid, "recall" if self.mode == "recall" else "here"

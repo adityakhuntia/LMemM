@@ -60,3 +60,12 @@ def revoke_grant(store, grant_id):
         if not c.execute('UPDATE memory_grants SET revoked=1 WHERE id=?',(grant_id,)).rowcount:
             raise ValueError('unavailable')
         return bump_revision(c)
+
+
+def revoke_project(store,project_id):
+    """Disable semantic access; ordinary UI archive never calls this operation."""
+    with store.transaction() as c:
+        if not c.execute('UPDATE project_bindings SET active=0 WHERE project_id=?',(project_id,)).rowcount:
+            raise ValueError('unavailable')
+        c.execute("UPDATE index_jobs SET state='cancelled',error='Project revoked' WHERE source_id IN (SELECT id FROM sources WHERE project_id=?)",(project_id,))
+        return bump_revision(c)

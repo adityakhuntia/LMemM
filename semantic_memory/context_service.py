@@ -93,3 +93,17 @@ def render_packet(result):
         else:raise ValueError('Packet metadata exceeds limit')
         prune_citations();raw=encode()
     return raw
+
+
+def serialize_authorized(store,ctx,result):
+    """Final service output boundary; stale computed packets are never reusable."""
+    with store.lock:
+        current_grant(store,ctx,result.project_id)
+        if result.policy_revision!=ctx.policy_revision:raise ValueError('unavailable')
+        ids=set(getattr(result,'citations',{}))
+        for item in (*getattr(result,'primary',()),*getattr(result,'related',())):ids.add(item.citation_id)
+        for oid in ids:
+            if resolve_source(store,ctx,result.project_id,oid) is None:raise ValueError('unavailable')
+        raw=render_packet(result)
+        current_grant(store,ctx,result.project_id)
+        return raw

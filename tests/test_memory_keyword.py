@@ -48,6 +48,7 @@ class MemoryKeywordTests(unittest.TestCase):
         a=self.add('a','Same shared text.');b=self.add('b','Same shared text.')
         self.assertEqual(len(self.query('shared')),1)
         delete_sources(self.store,{'a'})
+        self.ctx=authorize(self.store,self.grant.id,self.a.project_id)
         self.assertEqual([h.citation_id for h in self.query('shared')],[b])
         self.assertIsNone(search.resolve_source(self.store,self.ctx,self.a.project_id,a))
         detail=search.resolve_source(self.store,self.ctx,self.a.project_id,b)

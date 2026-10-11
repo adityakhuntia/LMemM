@@ -5,8 +5,24 @@ from .contracts import DeletionResult, BudgetStatus
 from .policy import utc
 from .relationships import recompute_support
 
-def semantic_bytes(store):
+def _database_bytes(store):
     return sum(p.stat().st_size for p in (store.path,Path(str(store.path)+'-wal'),Path(str(store.path)+'-shm'),Path(str(store.path)+'-journal')) if p.exists())
+
+def memory_usage(store,bridge_dir=None):
+    bridge=Path(bridge_dir) if bridge_dir is not None else store.path.parent/'bridge'
+    expected=store.path.parent/'bridge'
+    if bridge.is_symlink() or bridge.resolve()!=expected.resolve():
+        raise ValueError('Dedicated private bridge directory required')
+    bridge_bytes=0
+    if bridge.exists():
+        for p in bridge.rglob('*'):
+            if p.is_symlink():raise ValueError('Symlink in semantic bridge')
+            if p.is_file():bridge_bytes+=p.stat().st_size
+    database=_database_bytes(store)
+    return {'database_bytes':database,'bridge_bytes':bridge_bytes,'total_bytes':database+bridge_bytes}
+
+def semantic_bytes(store):
+    return memory_usage(store)['total_bytes']
 
 def delete_sources(store,source_ids):
     source_ids=set(source_ids)
@@ -29,6 +45,8 @@ def delete_sources(store,source_ids):
         c.execute('DELETE FROM blobs WHERE NOT EXISTS(SELECT 1 FROM occurrences WHERE blob_id=blobs.id)')
         c.execute("UPDATE jobs SET status='cancelled',error='evidence removed' WHERE status IN ('queued','running')")
         if count:
+            from .grants import bump_revision
+            bump_revision(c)
             generation=c.execute("SELECT value FROM meta WHERE key='generation'").fetchone()
             c.execute("INSERT OR REPLACE INTO meta VALUES('generation',?)",(str(int(generation[0])+1 if generation else 1),))
     return DeletionResult(count,occurrences)
@@ -42,9 +60,13 @@ def revoke_scope(store,scope,policy):
     for s in store.connection.execute('SELECT id,app_id,origin FROM sources'):
         if s['app_id'] in scope.app_ids and (s['origin'] is None or not scope.origins or s['origin'] in scope.origins):
             ids.add(s['id'])
-    # Revision barrier commits before any result can be accepted.
+    # Tombstones and revision barrier deny new reads before physical cleanup.
     with store.transaction() as c:
         c.execute("INSERT OR REPLACE INTO meta VALUES('revision',?)",(str(policy.revision),))
+        from .grants import bump_revision
+        bump_revision(c)
+        c.executemany('INSERT OR IGNORE INTO tombstones VALUES(?)',((sid,) for sid in ids))
+        c.execute("UPDATE index_jobs SET state='cancelled',error='Source revoked' WHERE source_id IN (SELECT source_id FROM tombstones)")
         c.execute("UPDATE jobs SET status='cancelled',error='scope revoked' WHERE status IN ('queued','running')")
     return delete_sources(store,ids)
 
@@ -85,3 +107,13 @@ def enforce_budget(store,now,raw_root=None,semantic_limit=250*1024*1024,raw_limi
         c.execute("INSERT OR REPLACE INTO meta VALUES('paused',?)",(reason or '',))
         c.execute("INSERT OR REPLACE INTO meta VALUES('semantic_limit',?)",(str(semantic_limit),))
     return BudgetStatus(semantic_bytes(store),raw_bytes,pruned,reason)
+
+
+def delete_memory_source(store,source_id):
+    result=delete_sources(store,{source_id})
+    if not result.sources:
+        with store.transaction() as c:
+            if c.execute('INSERT OR IGNORE INTO tombstones VALUES(?)',(source_id,)).rowcount:
+                from .grants import bump_revision
+                bump_revision(c)
+    return result

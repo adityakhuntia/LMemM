@@ -37,7 +37,7 @@ class IndexWorker:
             manifest=ModelManifest(**json.loads(job['manifest']))
             if manifest!=self.backend.manifest:raise ValueError('Embedding generation mismatch')
             source=c.execute('''SELECT s.* FROM sources s JOIN project_bindings p ON p.project_id=s.project_id
-                WHERE s.id=? AND p.active=1 AND s.at>=p.enrolled_at AND s.origin IS NULL''',(job['source_id'],)).fetchone()
+                WHERE s.id=? AND p.active=1 AND s.at>=p.enrolled_at AND s.origin IS NULL AND NOT EXISTS(SELECT 1 FROM tombstones t WHERE t.source_id=s.id)''',(job['source_id'],)).fetchone()
             if not source:
                 with store.transaction() as tx:tx.execute('DELETE FROM index_jobs WHERE source_id=?',(job['source_id'],))
                 return True
@@ -65,7 +65,7 @@ class IndexWorker:
             with store.transaction() as c:
                 current=c.execute('SELECT digest FROM sources WHERE id=?',(job['source_id'],)).fetchone()
                 still_current=c.execute("SELECT 1 FROM index_generations WHERE id=? AND state IN ('building','active')",(job['generation_id'],)).fetchone()
-                if not current or current[0]!=digest or revision(c)!=policy or paused(store) or not still_current:
+                if not current or current[0]!=digest or revision(c)!=policy or paused(store) or not still_current or c.execute('SELECT 1 FROM tombstones WHERE source_id=?',(job['source_id'],)).fetchone():
                     c.execute("UPDATE index_jobs SET state='queued' WHERE source_id=?",(job['source_id'],))
                     return True
                 limit=c.execute("SELECT value FROM meta WHERE key='semantic_limit'").fetchone()

@@ -168,6 +168,7 @@ def cmd_start(args):
     config.RECALL_GAP_MINUTES = max(opts.recall_after, 1)
     if opts.recall_after < 60:                       # trying it out: the first tasks run comes sooner, and more often
         config.TASK_FIRST_AFTER, config.TASK_EVERY, config.LABEL_FIRST_AFTER = 120, 300, 60
+        config.LABEL_MIN_WAITING, config.LABEL_MAX_WAIT, config.LABEL_EVERY = 2, 300, 300     # a short try-out still gets labels
     if opts.every <= 0 or not 0 < opts.input_retention_hours <= 24:
         parser.error("positive capture interval and input retention of at most 24 hours required")
     if opts.input_events != bool(opts.input_app) or not set(opts.input_app) <= SUPPORTED_INPUT_APPS:

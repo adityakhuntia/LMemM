@@ -165,6 +165,17 @@ class LiveLabellerTest(unittest.TestCase):
         self.assertEqual(self.provider.calls, [])
         self.assertTrue(any("ready, waiting for" in m for m in self.said))
 
+    def test_the_report_says_where_tasks_stand(self):
+        self.assertEqual(self.make().tasks_said(), "off")
+        live = self.make(tasker=lambda items, gov: {"tasks": [{"title": "t"}], "tokens": 1})
+        live.task_at = 300
+        self.assertIn("not run yet", live.tasks_said())
+        self.t[0] = 301
+        self.assertIn("did not run", live.tasks_said())
+        live.next_at = 10 ** 6
+        live.poll()
+        self.assertEqual(live.tasks_said(), "1 found")
+
     def test_an_expired_login_says_how_to_fix_it_and_backs_off(self):
         self.provider.error = labels.ProviderError(labels.LOGIN_HELP)
         live = self.make()

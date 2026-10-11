@@ -313,10 +313,10 @@ class Tracker:
             return "off (started with --no-labels, or no `claude` command)"
         last = self.labeller.last or {}
         if not self.labeller.last:
-            return {"running": self.labeller.busy, "last": "no run yet"}
+            return {"running": self.labeller.busy, "last": "no run yet", "tasks": self.labeller.tasks_said()}
         said = last.get("stopped") or (f"{last.get('waiting', 0)} ready, waiting for more" if not last.get("sent")
                                        else f"{last.get('labelled', 0)} labelled")
-        return {"running": self.labeller.busy, "last": said}
+        return {"running": self.labeller.busy, "last": said, "tasks": self.labeller.tasks_said()}
 
     # ------------------------------------------------------------ input timeline
 
@@ -1863,7 +1863,11 @@ class Tracker:
             f"{loop['capture_p95']} ms (max {loop['capture_max']}); browser lookups {lookups['asked']} asked, {lookups['saved']} saved")
         say("      slowest parts of the loop (p95 / max ms): "
             + ", ".join(f"{k} {v[0]}/{v[1]}" for k, v in c["slowest_parts_ms"].items()))
-        say(f"      labels: {c['labels'] if isinstance(c['labels'], str) else c['labels']['last']}")
+        if isinstance(c["labels"], str):
+            say(f"      labels: {c['labels']}")
+        else:
+            say(f"      labels: {c['labels']['last']}  ·  see them: python3 lmemm.py label --show")
+            say(f"      tasks: {c['labels']['tasks']}  ·  see them: python3 lmemm.py tasks --show")
         say(f"\nsaved to {os.path.relpath(config.paths().items_file)}")
 
 

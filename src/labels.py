@@ -762,6 +762,21 @@ class LiveLabeller:
         elif result.get("stopped"):
             self.say(f"tasks skipped: {result['stopped']}")
 
+    def tasks_said(self):
+        """One plain sentence on where tasks stand, for the report printed when LMemM stops."""
+        if self.tasker is None:
+            return "off"
+        result = self.tasks_last
+        if result is None:
+            wait = self.task_at - self.clock()
+            return (f"not run yet (first run {round(config.TASK_FIRST_AFTER / 60)} min after start)" if wait > 0
+                    else "was due but did not run (LMemM was paused, a card was open, or there was no session yet)")
+        if result.get("cached"):
+            return f"{len(result.get('tasks') or [])} found, nothing new since the last run"
+        if result.get("tasks"):
+            return f"{len(result['tasks'])} found"
+        return result.get("stopped") or "ran, found nothing"
+
     def _work(self, labels_due=True):
         try:
             items = self.get_items()

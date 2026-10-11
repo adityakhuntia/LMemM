@@ -504,6 +504,7 @@ class Widget:
         self.ask_fn = ask or (lambda question: None)             # ask your memory (ask.py)
         self.ask_state_fn = ask_state or (lambda: {"state": "idle"})
         self.ask_reset = ask_reset or (lambda: None)
+        self.detail, self.detail_back = None, "here"           # the recall step open in full, and where Back goes
         self.ask_seen = None                                      # the question whose answer you have seen
         self.recall_fn = recall or (lambda: [])       # nextsteps: pick up / left open / next step, most important first
         self.on_recall = on_recall or (lambda sid, state: None)
@@ -784,7 +785,7 @@ class Widget:
             return repr((self.mode, self.ask_state_fn().get("state"), self.ask_state_fn().get("question")))
         if self.mode in ("pick", "suggest"):          # fields in use: don't rebuild under the typing
             return repr((self.mode, self.sug))
-        return repr((self.data, self.mode, self.show_done, self.flow.signature(time.time()), self.sug, self.done_text, self.status,
+        return repr((self.detail if self.mode == "detail" else None, self.data, self.mode, self.show_done, self.flow.signature(time.time()), self.sug, self.done_text, self.status,
                      [(r["id"], r["text"]) for r in self.recall]))
 
     def render(self):
@@ -792,6 +793,8 @@ class Widget:
         self.shown = self._key()
         if self.mode == "suggest" and not self.sug:
             self.mode = "here"
+        if self.mode == "detail" and not any(r["id"] == self.detail for r in self.recall):
+            self.mode = self.detail_back if self.detail_back != "recall" or self.recall else "here"
         if self.mode == "recall" and not self.recall:
             self.mode = "suggest" if self.sug and not self.count else "here"
         view = notes.card_view(self.data, self.mode if self.mode == "project" else "here", self.show_done,
@@ -811,6 +814,8 @@ class Widget:
             y = self._pick(body, y)
         elif self.mode == "ask":
             y = self._ask(body, y)
+        elif self.mode == "detail":
+            y = self._detail(body, y)
         elif self.mode == "done":
             y = self._done(body, y)
         elif self.mode == "finished":
@@ -1220,30 +1225,29 @@ class Widget:
             icon.setContentTintColor_(tone)
             box.addSubview_(icon)
         box.addSubview_(_label(label.upper(), 10.5, bold=True, color=tone, frame=(30, 8, 120, 14))[0])
-        gone = _Tap.alloc().initWithFrame_callback_(NSMakeRect(w - 30, 4, 24, 22),
+        gone = _Tap.alloc().initWithFrame_callback_(NSMakeRect(w - 30, 4, 24, 20),
                                                     lambda sid=step["id"]: self._recall_answer(sid, "dismissed"))
         gone.label = "Not now"
         gone.addSubview_(_label("×", 15, color=NSColor.tertiaryLabelColor(), frame=(6, 1, 14, 18))[0])
         box.addSubview_(gone)
-        text, h = _label(_short(step["text"], 100), 13, color=NSColor.labelColor(), frame=(36, 0, inner - 24, 17), wrap=True)
+        text, h = _label(_short(step["text"], 100), 13, color=NSColor.labelColor(), frame=(36, 0, inner - 38, 17), wrap=True)
         row_y = 28
-        tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(6, row_y - 4, w - 12, h + 10),
+        tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(6, row_y - 4, 30, h + 10),
                                                    lambda sid=step["id"]: self._recall_answer(sid, "done"))
-        tap.label = "Done: " + step["text"]
-        if step["kind"] == "earlier":                    # a tap copies the line: a copy mark, not a tick
+        tap.label = ("Copy: " if step["kind"] == "earlier" else "Done: ") + step["text"]
+        if step["kind"] == "earlier":                    # the mark copies the line: a copy mark, not a tick
             ring = NSImageView.alloc().initWithFrame_(NSMakeRect(6, 3, 17, 17))
             copy_image = _symbol("doc.on.doc")
             if copy_image is not None:
                 ring.setImage_(copy_image)
                 ring.setContentTintColor_(tone)
-            tap.label = "Copy: " + step["text"]
         else:
             ring = _Ring.alloc().initWithChecked_(False)
             ring.setFrame_(NSMakeRect(6, 4, 17, 17))
-        text.setFrame_(NSMakeRect(30, 3, inner - 24, h))
         tap.addSubview_(ring)
-        tap.addSubview_(text)
         box.addSubview_(tap)
+        text.setFrame_(NSMakeRect(36, row_y, inner - 38, h))
+        box.addSubview_(text)
         yy = row_y + h + 8
         detail = step.get("detail") or {}
         for key, name in (("goal", "Making"), ("last_wrote", "Last wrote"), ("open", "Open"), ("from", "From")):
@@ -1260,11 +1264,70 @@ class Widget:
         if things:
             box.addSubview_(_label(things, 11, color=NSColor.tertiaryLabelColor(), frame=(12, yy, inner, 14))[0])
             yy += 17
-        elif step.get("task"):
-            pass
+        # the rest of the box opens the full card; only the mark on the left ticks it, only × sends it away
+        opener = _Tap.alloc().initWithFrame_callback_(NSMakeRect(36, row_y - 4, w - 36 - 6, yy - row_y + 4),
+                                                      lambda sid=step["id"]: self._open_detail(sid))
+        opener.label = "Read all: " + step["text"]
+        opener.addSubview_(_label("›", 15, color=NSColor.tertiaryLabelColor(), frame=(w - 28 - 36, 3, 14, 18))[0])
+        box.addSubview_(opener)
         box.setFrame_(NSMakeRect(8, y + 4, w, yy + 8))
         body.addSubview_(box)
         return y + 4 + yy + 8
+
+    def _open_detail(self, sid):
+        self.detail, self.detail_back = sid, "recall" if self.mode == "recall" else "here"
+        self._go("detail")
+
+    def _detail(self, body, y):
+        """One step in full: the whole sentence, every line of detail, where it comes from, and what you can do."""
+        step = next((r for r in self.recall if r["id"] == self.detail), None)
+        if step is None:
+            return self._empty(body, y)
+        label, symbol, rgb, _dashed = RECALL[step["kind"]]
+        tone = NSColor.colorWithRed_green_blue_alpha_(*rgb, 1.0)
+        back = _Tap.alloc().initWithFrame_callback_(NSMakeRect(PAD - 4, y - 4, 120, 16), lambda: self._go(self.detail_back))
+        back.addSubview_(_label("‹ Back", 12, color=NSColor.secondaryLabelColor(), frame=(4, 0, 110, 16))[0])
+        body.addSubview_(back)
+        y += 24
+        image = _symbol(symbol)
+        if image is not None:
+            icon = NSImageView.alloc().initWithFrame_(NSMakeRect(PAD, y + 1, 14, 14))
+            icon.setImage_(image)
+            icon.setContentTintColor_(tone)
+            body.addSubview_(icon)
+        body.addSubview_(_label(label.upper(), 10.5, bold=True, color=tone, frame=(PAD + 20, y, 160, 14))[0])
+        y += 24
+        text, h = _label(step["text"], 15, bold=True, frame=(PAD, y, CARD_W - 2 * PAD, 20), wrap=True)
+        body.addSubview_(text)
+        y += h + 12
+        detail = step.get("detail") or {}
+        for key, name in (("goal", "Making"), ("last_wrote", "Last wrote"), ("open", "Open"), ("from", "From")):
+            if detail.get(key):
+                body.addSubview_(_label(name.upper(), 10, bold=True, color=NSColor.tertiaryLabelColor(),
+                                        frame=(PAD, y, CARD_W - 2 * PAD, 13))[0])
+                y += 15
+                line, lh = _label(detail[key], 13, frame=(PAD, y, CARD_W - 2 * PAD, 17), wrap=True)
+                body.addSubview_(line)
+                y += lh + 12
+        things = step.get("things") or detail.get("things") or []
+        if things:
+            body.addSubview_(_label("WHERE", 10, bold=True, color=NSColor.tertiaryLabelColor(),
+                                    frame=(PAD, y, CARD_W - 2 * PAD, 13))[0])
+            y += 15
+            for t in things[:6]:
+                line, lh = _label(" · ".join(x for x in (t.get("app"), t.get("title")) if x), 12,
+                                  color=NSColor.secondaryLabelColor(), frame=(PAD, y, CARD_W - 2 * PAD, 16), wrap=True)
+                body.addSubview_(line)
+                y += lh + 4
+            y += 8
+        sid = step["id"]
+        primary = "Copy" if step["kind"] == "earlier" else "Mark done"
+        self._button(body, (8, y, CARD_W - 16, 33), primary,
+                     lambda: (self._recall_answer(sid, "done"), self._go(self.detail_back)), primary=True)
+        y += 39
+        self._button(body, (8, y, CARD_W - 16, 30), "Not now",
+                     lambda: (self._recall_answer(sid, "dismissed"), self._go(self.detail_back)))
+        return y + 34
 
     def _recall_answer(self, sid, state):
         self.on_recall(sid, state)

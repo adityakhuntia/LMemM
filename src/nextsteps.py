@@ -40,7 +40,7 @@ PER_KIND = {"earlier": 1, "resume": 1, "hanging": 3, "next": 3, "link": 2}
 PRIORITY = ("earlier", "resume", "hanging", "next", "link")
 TASK_DAYS = 3
 FROM_MODEL = ("next", "link")
-TEXT_CHARS = 140
+TEXT_CHARS = 300                 # kept in full for the detail card; the boxes shorten it themselves
 STATES = ("new", "done", "dismissed")
 
 

@@ -67,5 +67,7 @@ def revoke_project(store,project_id):
     with store.transaction() as c:
         if not c.execute('UPDATE project_bindings SET active=0 WHERE project_id=?',(project_id,)).rowcount:
             raise ValueError('unavailable')
+        for row in c.execute('SELECT id,project_ids FROM memory_grants WHERE revoked=0').fetchall():
+            if project_id in json.loads(row['project_ids']):c.execute('UPDATE memory_grants SET revoked=1 WHERE id=?',(row['id'],))
         c.execute("UPDATE index_jobs SET state='cancelled',error='Project revoked' WHERE source_id IN (SELECT id FROM sources WHERE project_id=?)",(project_id,))
         return bump_revision(c)

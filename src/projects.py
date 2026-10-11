@@ -360,6 +360,8 @@ def merge_plan(reg, items, src, target):
     when it cannot be done."""
     get(reg, src)
     get(reg, target)
+    from memory_notes import check_project_action
+    check_project_action("merge", {src, target} | set(descendants(reg, src)) | set(descendants(reg, target)), config.paths().semantic_dir)
     if src == target or target in descendants(reg, src):
         raise ValueError("A project cannot be merged into itself or into something inside it.")
     inside = {src} | set(descendants(reg, src))
@@ -411,6 +413,8 @@ def delete(reg, items, pid, forget=False):
     memory; otherwise they stay, unplaced. Returns {"projects": n, "things": n, "forget": [ids]}."""
     gone = {pid} | set(descendants(reg, pid))
     get(reg, pid)
+    from memory_notes import check_project_action
+    check_project_action("delete", gone, config.paths().semantic_dir)
     touched, orphaned = 0, []
     for item in items.values():
         mine = set(_members_of(item))

@@ -60,6 +60,10 @@ class MemoryService:
                 write_private_json(path,self.capabilities)
             self.owner_capability=self.capabilities['owner'];self.owner_grant_id=None
             self._refresh_owner()
+            from .note_sync import NativeNoteMirror
+            self.native_notes=NativeNoteMirror(self)
+            self.native_notes.publish_bindings()
+            self.native_notes.sync_fences()
             model_path=self.directory/'model.json'
             if model_path.exists():
                 try:
@@ -89,6 +93,7 @@ class MemoryService:
         if self.closed or not isinstance(params,dict):raise ValueError('unavailable')
         role,grant_id=self._role(capability)
         if method in READ_METHODS:
+            self.native_notes.sync_fences()
             allowed={'search_project_memory':{'project_id','query','start','end','limit'},'get_project_context':{'project_id','start','end'},'resolve_citation':{'project_id','citation_id'}}[method]
             if set(params)-allowed or 'project_id' not in params:raise ValueError('Invalid memory arguments')
             ctx=authorize(self.store,grant_id,params['project_id'])
@@ -100,11 +105,15 @@ class MemoryService:
                 with self.store.lock:
                     detail=resolve_source(self.store,ctx,params['project_id'],params.get('citation_id'))
                     if detail is None:raise ValueError('unavailable')
+                    self.native_notes.sync_fences()
+                    detail=resolve_source(self.store,ctx,params['project_id'],params.get('citation_id'))
+                    if detail is None:raise ValueError('unavailable')
                     return dataclasses.asdict(detail)
+            self.native_notes.sync_fences()
             return json.loads(serialize_authorized(self.store,ctx,result))
         if role!='owner':raise ValueError('unavailable')
         handlers={'enroll':self.enroll,'bindings':self.bindings,'status':self.status,'pause':self.pause,'resume':self.resume,
-                  'configure_model':self.configure_model,'connect_agent':self.connect_agent,'revoke_agent':self.revoke_agent,'revoke_project':self.revoke_project}
+                  'configure_model':self.configure_model,'connect_agent':self.connect_agent,'revoke_agent':self.revoke_agent,'revoke_project':self.revoke_project,'begin_note_mutation':self.begin_note_mutation,'reconcile_notes':self.reconcile_notes,'recover_native_notes':self.recover_native_notes}
         handler=handlers.get(method)
         if not handler:raise ValueError('unavailable')
         try:inspect.signature(handler).bind(**params)
@@ -116,7 +125,7 @@ class MemoryService:
         path=Path(root)
         if not path.is_dir():raise ValueError('Choose a local workspace folder')
         binding=bind_project(self.store,ui_project_id,str(path),timestamp(self.clock()))
-        self._refresh_owner();self.roots_dirty=True
+        self._refresh_owner();self.roots_dirty=True;self.native_notes.publish_bindings()
         return dataclasses.asdict(binding)
 
     def bindings(self):
@@ -133,7 +142,17 @@ class MemoryService:
         return {'revision':revoke_grant(self.store,grant_id)}
 
     def revoke_project(self,project_id):
-        result={'revision':revoke_project(self.store,project_id)};self.roots_dirty=True;self._refresh_owner();return result
+        result={'revision':revoke_project(self.store,project_id)};self.roots_dirty=True;self._refresh_owner();self.native_notes.publish_bindings();return result
+
+    def begin_note_mutation(self,project_id,mutation_id):
+        self.native_notes.fence(project_id,mutation_id)
+        return {'state':'Processing'}
+
+    def reconcile_notes(self,project_id,snapshots,mutation_id):
+        return dataclasses.asdict(self.native_notes.reconcile(project_id,snapshots,mutation_id))
+
+    def recover_native_notes(self):
+        return {'reconciled':self.native_notes.sync_pending(recover=True)}
 
     def configure_model(self,manifest):
         manifest=ModelManifest(**manifest)
@@ -169,6 +188,7 @@ class MemoryService:
             first=c.execute('SELECT min(at) FROM sources').fetchone()[0]
             enrolled=c.execute('SELECT min(enrolled_at) FROM project_bindings WHERE active=1').fetchone()[0]
             is_paused=paused(self.store)
+            pending+=c.execute('SELECT count(*) FROM note_fences').fetchone()[0]
             reason='Paused by user' if is_paused else self.model_error
             state='Paused' if is_paused else 'Needs attention' if failed or self.model_error else 'Processing' if pending else 'Ready' if enrolled else 'Disabled'
             generation=active_generation(self.store)
@@ -188,6 +208,7 @@ class MemoryService:
     def tick(self):
         if self.closed:return
         if threading.current_thread() is not threading.main_thread():raise RuntimeError('Native intake must run on the main thread')
+        self.native_notes.sync_pending()
         if self.roots_dirty:self._sync_bridge()
         if self.bridge and not paused(self.store):
             focus=self.focus_provider()

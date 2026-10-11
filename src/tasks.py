@@ -35,8 +35,12 @@ INSTRUCTION = (
     "A thing belongs to at most one task. A thing marked 'brief' (a short visit with nothing written there) goes in "
     "other unless its title or text names the same subject as a task. Glances at unrelated things (social media, news, "
     "system dialogs) go in other. Never guess beyond the evidence; if a task is unclear, say so in its goal. "
+    'Also give links: up to 4 pairs of things whose content connects them, for example an answer in a chat that is being '
+    'used in a document or in code, or a spec and the code written from it. Give a and b (THING numbers) and why (one '
+    'sentence naming the shared subject, only if the text shows it; never link things just because they were visited in turn). '
+    'Make open a safe next step the person could take themselves, not an instruction to change anything. '
     'Reply with JSON only, no prose: {"tasks":[{"title":"","goal":"","stage":"","things":[1,2],"open":null,'
-    '"project_guess":null}],"other":[3]}.')
+    '"project_guess":null}],"links":[{"a":1,"b":2,"why":""}],"other":[3]}.')
 
 MAX_PAYLOAD_TOKENS = 5000  # hard ceiling on what one call may carry (the CLI adds ~2.5k of its own on top)
 WROTE_CHARS = 700          # per thing: the newest of what the person wrote there
@@ -293,7 +297,7 @@ def parse(text, count):
         try:
             doc = json.loads(text[start:end + 1])
         except ValueError:
-            return {"tasks": [], "other": []}
+            return {"tasks": [], "other": [], "links": []}
     used, tasks = set(), []
     for row in doc.get("tasks") if isinstance(doc, dict) and isinstance(doc.get("tasks"), list) else []:
         if not isinstance(row, dict) or not str(row.get("title") or "").strip():
@@ -316,7 +320,18 @@ def parse(text, count):
         n = re.search(r"\d+", str(x))
         if n and 1 <= int(n.group()) <= count and int(n.group()) not in used:
             other.append(int(n.group()))
-    return {"tasks": tasks, "other": other}
+    links = []
+    for row in doc.get("links") if isinstance(doc, dict) and isinstance(doc.get("links"), list) else []:
+        if not isinstance(row, dict):
+            continue
+        ends = [re.search(r"\d+", str(row.get(k))) for k in ("a", "b")]
+        if not all(ends):
+            continue
+        a, b = int(ends[0].group()), int(ends[1].group())
+        why = clean(row.get("why"), 160)
+        if a != b and 1 <= a <= count and 1 <= b <= count and why:
+            links.append({"a": a, "b": b, "why": why})
+    return {"tasks": tasks, "other": other, "links": links[:4]}
 
 
 def clean(text, limit):
@@ -340,7 +355,7 @@ def load_tasks():
 def run(session_doc, items, provider, governor=None, minutes=None, dry_run=False, events=None, force=False):
     """Ask Claude what the stretch was about. Returns {"payload", "tasks", "other", "tokens", "stopped"}."""
     governor = governor or labels.Governor()
-    result = {"payload": None, "tasks": [], "other": [], "tokens": 0, "stopped": None, "things": 0}
+    result = {"payload": None, "tasks": [], "other": [], "links": [], "tokens": 0, "stopped": None, "things": 0}
     payload, ids = payload_for(session_doc, items, minutes, events)
     result["payload"], result["things"] = payload, len(ids)
     result["estimate"] = labels.OVERHEAD_TOKENS + labels.estimate_tokens(payload or "") + 100 * len(ids) // 4
@@ -354,7 +369,7 @@ def run(session_doc, items, provider, governor=None, minutes=None, dry_run=False
     last = book.get(session_doc.get("session", "?")) or {}
     digest = hashlib.sha1(payload.encode()).hexdigest()[:12]
     if not force and last.get("digest") == digest and last.get("tasks") is not None:
-        result.update(tasks=last["tasks"], other=last.get("other", []), stopped=None, cached=True)
+        result.update(tasks=last["tasks"], other=last.get("other", []), links=last.get("links", []), stopped=None, cached=True)
         return result                                  # nothing new since the last run: no call, no tokens
     if governor.mode() == "stopped" or est > governor.remaining():
         result["stopped"] = "daily limit reached" if governor.mode() == "stopped" else "not enough of today's limit left"
@@ -370,7 +385,8 @@ def run(session_doc, items, provider, governor=None, minutes=None, dry_run=False
         out.append({**{k: v for k, v in t.items() if k != "things"}, "items": members,
                     "seconds": sum(seconds.get(i, 0) for i in members)})
     result["tasks"], result["other"] = out, [ids[n - 1] for n in parsed["other"]]
+    result["links"] = [{"items": [ids[l["a"] - 1], ids[l["b"] - 1]], "why": l["why"]} for l in parsed["links"]]
     book[session_doc.get("session", "?")] = {"digest": digest, "at": datetime.now().isoformat(timespec="seconds"), "minutes": minutes,
-                                             "tasks": out, "other": result["other"]}
+                                             "tasks": out, "other": result["other"], "links": result["links"]}
     store.write_json(tasks_path(), book)
     return result

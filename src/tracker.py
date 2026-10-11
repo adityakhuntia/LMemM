@@ -1674,6 +1674,23 @@ class Tracker:
             self.finish()
         self.hand_over()
 
+    def on_tasks(self, result):
+        """What a tasks run leaves for the pill: the safe next steps (nextsteps.py) and, for a task that names
+        a project, the offer to make it one (the pill already shows those). Never raises into the tasks thread."""
+        try:
+            import nextsteps
+            with self.lock:
+                doc = nextsteps.load()
+                added = nextsteps.ingest(doc, result, self.items)
+                nextsteps.save(doc)
+            if added:
+                say(f"next: {len(added)} suggestion(s) ready  ·  see them with: python3 lmemm.py next")
+            for t in result.get("tasks") or []:
+                if t.get("project_guess") and len(t.get("items", [])) >= 2:
+                    self.offer_project(t["project_guess"], t["items"], t.get("goal") or "")
+        except Exception as error:
+            say(f"next steps skipped: {type(error).__name__}: {error}")
+
     def start_labels(self):
         """--labels: label settled things in the background with the laptop's Claude (labels.py)."""
         provider = labels.ClaudeCli()
@@ -1690,7 +1707,10 @@ class Tracker:
             doc = context.find_session_doc(self.session)
             if doc is None:
                 return None
-            return tasks.run(doc, items, provider, governor, minutes=config.TASK_MINUTES)
+            result = tasks.run(doc, items, provider, governor, minutes=config.TASK_MINUTES)
+            if not result.get("cached"):
+                self.on_tasks(result)
+            return result
         self.labeller = labels.LiveLabeller(snapshot, provider, say=lambda m: line(now_hms(), "", m), tasker=run_tasks,
                                             paused=lambda: bool(self.manual_paused or self.paused or any(self.flags.values())
                                                                 or self.panel.open))

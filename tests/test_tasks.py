@@ -97,8 +97,8 @@ class TaskTests(TmpPaths):
         self.assertEqual(provider.calls, [])
 
     def test_garbage_replies_give_no_tasks(self):
-        self.assertEqual(tasks.parse("not json", 3), {"tasks": [], "other": []})
-        self.assertEqual(tasks.parse('{"tasks": "x"}', 3), {"tasks": [], "other": []})
+        self.assertEqual(tasks.parse("not json", 3), {"tasks": [], "other": [], "links": []})
+        self.assertEqual(tasks.parse('{"tasks": "x"}', 3), {"tasks": [], "other": [], "links": []})
 
     def test_mail_and_messages_are_read_for_now_unless_switched_off(self):
         w = world()
@@ -131,6 +131,14 @@ class TaskTests(TmpPaths):
         payload, _ = tasks.payload_for(doc(), w, events=[])
         self.assertIn("maria.lopez@example.com", payload)
         self.assertNotIn("sk-abcdef", payload)
+
+    def test_links_are_checked_and_mapped_to_things(self):
+        reply = json.dumps({"tasks": [], "links": [{"a": 1, "b": 2, "why": "The reminder text from the chat is in the script, mail a@b.com"},
+                                                    {"a": 1, "b": 1, "why": "same"}, {"a": 1, "b": 9, "why": "gone"},
+                                                    {"a": 2, "b": 3, "why": ""}, "junk"]})
+        self.assertEqual(tasks.parse(reply, 3)["links"], [{"a": 1, "b": 2, "why": "The reminder text from the chat is in the script, mail an address"}])
+        result = tasks.run(doc(), world(), FakeAsk(reply), events=[])
+        self.assertEqual(result["links"][0]["items"], ["chatgpt", "script"])
 
 
 def ev(kind, t, **kw):

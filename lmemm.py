@@ -56,6 +56,7 @@ USAGE = ("usage: lmemm.py [menu] | start [--no-labels] [--no-writing] [--every N
          " | projects [--all] | projects new|rename|move|archive|restore|merge|delete …"
          " | context [SESSION] [--days N]"
          " | label [--dry-run] [--status] [--limit N] [--show] [--last [N]] [--ping]"
+         " | next [--done ID | --dismiss ID]"
          " | tasks [--minutes N] [--session ID] [--dry-run] [--show]"
          " | trail … | status | pause | resume | pin | note | delete-session ID (--dry-run | --confirm ID)"
          " | delete-all (--dry-run | --confirm) | setup [--again] [--no-start]")
@@ -486,11 +487,50 @@ def cmd_tasks(args):
     if result["stopped"]:
         sys.exit("Stopped: " + result["stopped"])
     show(result, opts.minutes)
+    if not result.get("cached"):
+        import nextsteps
+        book = nextsteps.load()
+        if nextsteps.ingest(book, result, items):
+            print("Suggestions ready: python3 lmemm.py next")
+        nextsteps.save(book)
     if result.get("cached"):
         print("(nothing new since the last run: no call made, 0 tokens. Use --force to ask again.)")
         return
     print(f"({result['things']} things read, {result['tokens']} tokens; today {governor.used} of {governor.cap}."
           f" `python3 lmemm.py label --last` shows the exact prompt and reply.)")
+
+
+def cmd_next(args):
+    """The safe next steps the pill offers: what follows from your tasks, and which things belong together."""
+    import nextsteps
+    parser = argparse.ArgumentParser(prog="lmemm.py next")
+    parser.add_argument("--done", metavar="ID", help="mark a suggestion done")
+    parser.add_argument("--dismiss", metavar="ID", help="dismiss a suggestion: it will not come back today")
+    opts = parser.parse_args(args)
+    try:
+        items = store.load_items()
+    except ValueError as error:
+        sys.exit(str(error))
+    doc = nextsteps.load()
+    for sid, state in ((opts.done, "done"), (opts.dismiss, "dismissed")):
+        if sid:
+            try:
+                nextsteps.answer(doc, sid, state)
+            except ValueError as error:
+                sys.exit(str(error))
+            nextsteps.save(doc)
+            print(f"{sid}: {state}")
+    view = nextsteps.view(doc, items)
+    nextsteps.save(doc)
+    if not view["count"]:
+        print("Nothing to suggest right now. Suggestions come from `tasks`, which runs on its own while LMemM is running.")
+        return
+    for step in view["steps"]:
+        mark = "Link" if step["kind"] == "link" else "Next"
+        print(f"{step['id']}  {mark}: {step['text']}   ({step['age']})")
+        for t in step["things"]:
+            print(f"      - {t['app']}: {(t['title'] or '')[:60]}")
+    print("\n`python3 lmemm.py next --done ID` or `--dismiss ID` answers one.")
 
 
 def cmd_delete_session(args):
@@ -663,6 +703,8 @@ def main():
         cmd_label(rest)
     elif cmd == "tasks":
         cmd_tasks(rest)
+    elif cmd == "next":
+        cmd_next(rest)
     else:
         sys.exit(USAGE)
 

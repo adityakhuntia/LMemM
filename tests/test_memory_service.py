@@ -192,3 +192,38 @@ class ServiceTests(unittest.TestCase):
                 self.assertEqual(json.loads(row['manifest'])['dimension'],2)
                 activate_generation(self.service.store,row['id'])
                 self.assertFalse(self.service.store.connection.execute("SELECT 1 FROM index_jobs WHERE state!='done'").fetchone())
+
+    def handshake_fixture(self):
+        from semantic_memory.live_focus import Focus
+        from semantic_memory.live_bridge import write_private_json
+        self.enroll();self.service.tick();bridge=self.service.bridge;client='a'*32
+        challenge=Focus(10,20,(0,0,800,600),title='LMemM '+client)
+        self.service.focus_provider=lambda:challenge
+        event=bridge.directory/'events'/(client+'.json')
+        write_private_json(event,dict(token=bridge.token,session=bridge.session,client=client,seq=1,at=self.service.clock(),kind='connect',revision=bridge.revision,focused=True,window=None))
+        return bridge,client,challenge
+
+    def test_replayed_connect_cannot_revoke_verified_window_after_challenge_closes(self):
+        from dataclasses import replace
+        bridge,client,challenge=self.handshake_fixture();self.service.tick()
+        ack=bridge.directory/'acks'/(client+'.json');self.assertTrue(ack.exists())
+        self.service.focus_provider=lambda:replace(challenge,title='capture-test.md')
+        self.service.tick()
+        self.assertTrue(ack.exists());self.assertIn(client,bridge.clients)
+
+    def test_challenge_closing_after_ack_keeps_same_native_window_verified(self):
+        from dataclasses import replace
+        bridge,client,challenge=self.handshake_fixture()
+        calls=iter([challenge,challenge,replace(challenge,title='capture-test.md')])
+        self.service.focus_provider=lambda:next(calls)
+        self.service.tick()
+        self.assertTrue((bridge.directory/'acks'/(client+'.json')).exists())
+
+    def test_switching_native_window_during_handshake_rejects_registration(self):
+        from dataclasses import replace
+        bridge,client,challenge=self.handshake_fixture()
+        calls=iter([challenge,challenge,replace(challenge,window=21)])
+        self.service.focus_provider=lambda:next(calls)
+        self.service.tick()
+        self.assertFalse((bridge.directory/'acks'/(client+'.json')).exists())
+        self.assertNotIn(client,bridge.clients)

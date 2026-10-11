@@ -326,12 +326,20 @@ class MemoryService:
                 try:
                     message=read_private_json(path)
                     if path.stem!=message.get('client'):continue
+                    # Connect messages remain on disk until the extension publishes
+                    # its next event. Replaying one after the acknowledged challenge
+                    # tab closes must not tear down the verified registration.
+                    prior=self.bridge.clients.get(message.get('client'))
+                    if message.get('kind')=='connect' and prior and type(message.get('seq')) is int and message['seq']<=prior['seq']:continue
                     before=self.focus_provider()
                     if focus!=before:continue
                     with self.store.lock:capture_revision=revision(self.store.connection)
                     envelope=self.bridge.accept(message,before)
                     after=self.focus_provider()
-                    if message.get('kind')=='connect' and (before!=after or after is None or 'LMemM '+message['client'] not in after.title):
+                    # Bridge.accept verified the challenge title before acknowledging.
+                    # The extension may close that tab as soon as it sees the ack;
+                    # require the same native identity, not the old title afterward.
+                    if message.get('kind')=='connect' and (before!=after or after is None):
                         self.bridge.clients.pop(message['client'],None)
                         (self.bridge.directory/'acks'/(message['client']+'.json')).unlink(missing_ok=True);continue
                     if envelope and before==after:

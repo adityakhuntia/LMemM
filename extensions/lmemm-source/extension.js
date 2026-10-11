@@ -45,7 +45,7 @@ function poll(){
    catch{failNote(c,'Native registration was lost.');c.window=null;c.last=null;c.pending=null;challenge=vscode.window.createWebviewPanel('lmemmHandshake','LMemM '+c.client,vscode.ViewColumn.Active,{enableScripts:false});challenge.webview.html='<p>LMemM is re-verifying this native window.</p>';}
   }
   if(!c.window){
-   try{const ack=readPrivate(path.join(c.directory,'acks',c.client+'.json'));if(ack.session===c.session&&Number.isInteger(ack.window)){c.window=ack.window;if(challenge){challenge.dispose();challenge=null;}return;}}catch{}
+   try{const ack=readPrivate(path.join(c.directory,'acks',c.client+'.json'));if(ack.session===c.session&&Number.isInteger(ack.window)){c.window=ack.window;if(challenge){const panel=challenge;challenge=null;panel.dispose();}}}catch{}
    if(!c.window){publish('connect');status.text='LMemM: waiting for native focus';return;}
   }
   try{const ack=readPrivate(path.join(c.directory,'acks',c.client+'.json'));if(c.pending&&ack.session===c.session&&ack.accepted&&ack.seq===c.pending.seq){c.last=c.pending.digest;c.pending=null;}}catch{}

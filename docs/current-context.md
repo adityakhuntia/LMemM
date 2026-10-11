@@ -51,3 +51,18 @@ The local test launcher now honors CLI arguments and opens the window on startup
 The affected session was saved and relaunched; native app registration and normal
 menu-bar placement were observed. Follow-up full suite: 811 tests passed. This
 fix does not establish the unrelated original foreground-switch abort acceptance.
+
+## Follow-up: source verification loop
+
+A real manual VS Code connection exposed stale `connect` replay deleting an
+already accepted acknowledgement after the challenge tab closed. The service
+now ignores replayed connect sequences and verifies stable native identity
+rather than requiring the acknowledged tab's old title to remain visible.
+Actual native-window changes still invalidate registration. The extension now
+publishes immediately after reading its first acknowledgement, avoiding an
+extra polling interval before its initial snapshot/heartbeat. Two reproduced
+failure tests were RED→GREEN; a native-window-change rejection test also passes.
+The extension handshake test now requires a snapshot on the first ack poll.
+Full suite: 814 Python tests and 6 Node tests passed. The local extension was
+reinstalled, test tracker restarted, and Alpha opened in a fresh VS Code window.
+A fresh manual connection is still needed to establish live capture acceptance.

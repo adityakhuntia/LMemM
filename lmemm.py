@@ -166,6 +166,8 @@ def cmd_start(args):
     opts = parser.parse_args(args)
     config.TRAIL_WRITING = not opts.no_writing
     config.RECALL_GAP_MINUTES = max(opts.recall_after, 1)
+    if opts.recall_after < 60:                       # trying it out: the first tasks run comes sooner, and more often
+        config.TASK_FIRST_AFTER, config.TASK_EVERY, config.LABEL_FIRST_AFTER = 120, 300, 60
     if opts.every <= 0 or not 0 < opts.input_retention_hours <= 24:
         parser.error("positive capture interval and input retention of at most 24 hours required")
     if opts.input_events != bool(opts.input_app) or not set(opts.input_app) <= SUPPORTED_INPUT_APPS:

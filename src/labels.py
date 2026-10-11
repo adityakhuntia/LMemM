@@ -701,15 +701,21 @@ class LiveLabeller:
         self.last = None                      # the last result, for `status`
 
     def poll(self):
-        """True when a run was started."""
-        if self.busy or self.clock() < self.next_at or self.paused():
+        """True when a run was started. Labels and tasks keep their own clocks: either one being due starts a run."""
+        if self.busy or self.paused():
             return False
-        self.next_at = self.clock() + self.every
+        now = self.clock()
+        labels_due = now >= self.next_at
+        tasks_due = self.tasker is not None and now >= self.task_at
+        if not (labels_due or tasks_due):
+            return False
+        if labels_due:
+            self.next_at = now + self.every
         self.busy = True
         if self.threaded:
-            threading.Thread(target=self._work, daemon=True).start()
+            threading.Thread(target=self._work, args=(labels_due,), daemon=True).start()
         else:
-            self._work()
+            self._work(labels_due)
         return True
 
     @staticmethod
@@ -756,14 +762,15 @@ class LiveLabeller:
         elif result.get("stopped"):
             self.say(f"tasks skipped: {result['stopped']}")
 
-    def _work(self):
+    def _work(self, labels_due=True):
         try:
             items = self.get_items()
             governor = self.governor or Governor()
             if governor.mode() == "stopped":
                 self.last = {"stopped": "daily limit reached"}
                 return
-            self._labels(items, governor)
+            if labels_due:
+                self._labels(items, governor)
             self._tasks(items, governor)
         except Exception as error:               # a label failure must never reach the tracker
             self.last = {"stopped": f"{type(error).__name__}: {error}"}

@@ -119,6 +119,11 @@ def _text_width(text, font):
     return NSAttributedString.alloc().initWithString_attributes_(text, {NSFontAttributeName: font}).size().width
 
 
+def _short(text, n):
+    text = " ".join(str(text).split())
+    return text if len(text) <= n else text[:n - 1].rstrip() + "…"
+
+
 def _label(text, size=11, bold=False, color=None, frame=(0, 0, 10, 10), wrap=False, strike=False):
     """A text field. wrap=True lets it run to several lines; the frame's height is then
     set from the text. Returns (field, height)."""
@@ -1129,7 +1134,7 @@ class Widget:
         gone.label = "Not now"
         gone.addSubview_(_label("×", 15, color=NSColor.tertiaryLabelColor(), frame=(6, 1, 14, 18))[0])
         box.addSubview_(gone)
-        text, h = _label(step["text"], 13, color=NSColor.labelColor(), frame=(36, 0, inner - 24, 17), wrap=True)
+        text, h = _label(_short(step["text"], 100), 13, color=NSColor.labelColor(), frame=(36, 0, inner - 24, 17), wrap=True)
         row_y = 28
         tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(6, row_y - 4, w - 12, h + 10),
                                                    lambda sid=step["id"]: self._recall_answer(sid, "done"))
@@ -1144,10 +1149,14 @@ class Widget:
         detail = step.get("detail") or {}
         for key, name in (("goal", "Making"), ("last_wrote", "Last wrote"), ("open", "Open")):
             if detail.get(key):
-                line, lh = _label(f"{name}: {detail[key]}", 12, color=NSColor.secondaryLabelColor(),
-                                  frame=(12, yy, inner, 15), wrap=True)
+                text_line = _short(f"{name}: {detail[key]}", 110)
+                line, lh = _label(text_line, 12, color=NSColor.secondaryLabelColor(), frame=(12, yy, inner, 15), wrap=True)
+                line.setMaximumNumberOfLines_(2)            # two lines at most: the box is sized from this, so nothing overlaps
+                line.setLineBreakMode_(4)
+                lh = min(lh, 31)
+                line.setFrame_(NSMakeRect(12, yy, inner, lh))
                 box.addSubview_(line)
-                yy += min(lh, 32) + 3
+                yy += lh + 4
         things = " · ".join(dict.fromkeys(t["app"] for t in detail.get("things", []) if t.get("app")))
         if things:
             box.addSubview_(_label(things, 11, color=NSColor.tertiaryLabelColor(), frame=(12, yy, inner, 14))[0])

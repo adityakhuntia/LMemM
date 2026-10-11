@@ -114,6 +114,16 @@ class LiveLabellerTest(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertFalse(any(m.startswith("tasks") for m in self.said))     # nothing new: nothing printed
 
+    def test_tasks_do_not_wait_for_the_next_label_run(self):
+        calls = []
+        live = self.make(tasker=lambda items, gov: calls.append(1) or {"cached": True})
+        live.next_at = 10 ** 6                               # labels are not due for a long time
+        live.task_at = 50
+        self.t[0] = 60
+        self.assertTrue(live.poll())
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(self.provider.calls, [])            # and no label call was made
+
     def test_tasks_wait_when_the_budget_is_tight(self):
         calls = []
         live = self.make(tasker=lambda items, gov: calls.append(1))

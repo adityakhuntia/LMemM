@@ -1737,8 +1737,9 @@ class Tracker:
             if added:
                 say("pill: " + ", ".join(sorted({a["kind"] for a in added})) + f"  ({len(added)} new)  ·  open the pill to see them")
             for t in result.get("tasks") or []:
-                if t.get("project_guess") and len(t.get("items", [])) >= 2:
-                    self.offer_project(t["project_guess"], t["items"], t.get("goal") or "")
+                name = t.get("project_guess") or (" ".join(t["title"].split()[:4]) if len(t.get("items", [])) >= 3 else None)
+                if name and len(t.get("items", [])) >= 2:
+                    self.offer_project(name, t["items"], t.get("goal") or "")
         except Exception as error:
             say(f"next steps skipped: {type(error).__name__}: {error}")
 

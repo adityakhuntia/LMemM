@@ -23,6 +23,8 @@ class IndexWorker:
     def __init__(self,store,backend):self.store=store;self.backend=backend
 
     def run_one(self):
+        with self.store.lock:
+            if self.store.query_waiters:return False
         if not self.store.model_lock.acquire(blocking=False):return False
         try:return self._run()
         finally:self.store.model_lock.release()

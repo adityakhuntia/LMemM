@@ -113,3 +113,9 @@ class IndexWorkerTests(IndexFixture, unittest.TestCase):
         self.worker.run_one()
         self.assertEqual(self.store.connection.execute('SELECT count(*) FROM chunk_vectors').fetchone()[0],0)
         with self.assertRaises(ValueError):vector_index.activate_generation(self.store,self.gen)
+
+    def test_pending_query_takes_priority_between_background_jobs(self):
+        self.add()
+        self.store.query_waiters=1
+        self.assertFalse(self.worker.run_one())
+        self.assertEqual(self.backend.calls,0)

@@ -34,6 +34,7 @@ class SemanticStore:
         self.path = Path(path)
         self.readonly = readonly
         self.model_lock = threading.Lock()
+        self.query_waiters = 0
         if readonly:
             self.lock = threading.RLock()
             self.connection = sqlite3.connect(self.path.resolve().as_uri() + '?mode=ro', uri=True, check_same_thread=False)

@@ -143,6 +143,8 @@ class Tracker:
         self.trail = None
         self.widget = None                   # the on-screen pill (widget.py), made in run()
         self.menubar = None                  # the menu-bar item (menubar.py), made in run()
+        self.memory_client = None
+        self.memory_events = []
         self.main_window = None              # the window (window.py), made the first time it is opened
         self.page_data_said = False
         self.menu_refreshed = 0.0
@@ -184,6 +186,8 @@ class Tracker:
 
     def set_manual_pause(self, paused, until=None):
         self.manual_paused = paused
+        if self.memory_client and (paused or not any(self.flags.values())):
+            self.memory_client.request("pause" if paused else "resume", {}, "lifecycle")
         self.pause_until = until if paused else None
         self.pending = None
         self.pin = False
@@ -356,6 +360,8 @@ class Tracker:
 
     def set_flag(self, k, v):
         self.flags[k] = v
+        if v and self.memory_client:
+            self.memory_client.request("pause", {"reason": "System " + k}, "system-pause")
         if v:
             self.close_interval()
             if self.input_monitor:
@@ -368,6 +374,8 @@ class Tracker:
         if self.quit_requested:
             raise KeyboardInterrupt
         self.process_control()
+        if self.memory_client:
+            self.memory_events.extend(self.memory_client.poll())
         self.poll_input()
         self.maintain()
         if self.widget:
@@ -1527,6 +1535,8 @@ class Tracker:
         signal.signal(signal.SIGUSR2, lambda *_: setattr(self, "note_request", True))
         app = dictation.start_app()
         self.nsapp = app
+        if (Path(p.semantic_dir) / "memory.sqlite").exists():
+            self.start_memory()
         hotkey_ok = dictation.register_hotkey(lambda: setattr(self, "note_request", True))
         dictation.ensure_listener()        # build the speech helper now, not on first ⌃⌥N
         if self.show_widget:
@@ -1607,8 +1617,17 @@ class Tracker:
             argv = [python] + sys.argv
         os.execv(python, argv)
 
+    def start_memory(self):
+        if self.memory_client is None:
+            from memory_client import MemoryClient
+            self.memory_client = MemoryClient(config.paths().semantic_dir)
+            self.memory_client.start()
+        return self.memory_client
+
     def finish(self):
         p = config.paths()
+        if self.memory_client:
+            self.memory_client.stop()
         if self.input_monitor:
             self.poll_input()
             self.input_monitor.stop()

@@ -79,7 +79,12 @@ def search_project(store,backend,ctx,query):
             use_vectors=json.loads(generation['manifest'])['digest']==backend.manifest.digest
     if use_vectors:
         # Same lock as background indexing; UI calls this off its event loop.
-        with store.model_lock:
+        with store.lock:store.query_waiters+=1
+        try:
+            store.model_lock.acquire()
+        finally:
+            with store.lock:store.query_waiters-=1
+        try:
             with store.lock:
                 current_grant(store,ctx,query.project_id)
                 use_vectors=not paused(store) and active_generation(store)==generation
@@ -91,6 +96,7 @@ def search_project(store,backend,ctx,query):
                 except (RuntimeError,ValueError,OSError):
                     # Evidence remains useful when a local model is unavailable.
                     current_grant(store,ctx,query.project_id)
+        finally:store.model_lock.release()
     with store.lock:
         current_grant(store,ctx,query.project_id)
         scores={};by_chunk={}

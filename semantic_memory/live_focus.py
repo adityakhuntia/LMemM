@@ -16,7 +16,7 @@ def match_window(pid, bounds, windows):
                all(abs(a-b) <= 2 for a,b in zip(bounds,w['bounds']))]
     return Focus(pid,matches[0]['window'],tuple(bounds)) if len(matches)==1 else None
 
-def focused_context():
+def focused_context(excluded_pids=()):
     try:
         import AppKit
         import Quartz
@@ -28,6 +28,8 @@ def focused_context():
         if app.bundleIdentifier() != 'com.microsoft.VSCode':
             return None
         pid=app.processIdentifier()
+        import os
+        if pid==os.getpid() or pid in excluded_pids:return None
         error, focused=AX.AXUIElementCopyAttributeValue(AX.AXUIElementCreateSystemWide(),'AXFocusedUIElement',None)
         if error in (-25204,-25205,-25212):
             error,focused=AX.AXUIElementCopyAttributeValue(AX.AXUIElementCreateApplication(pid),'AXFocusedUIElement',None)

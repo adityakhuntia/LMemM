@@ -140,6 +140,8 @@ class Tracker:
         self.last_place_key = None           # the trail's place, to notice a move inside one window
         self.live_labels = live_labels
         self.recall_doc = self.load_recall()
+        self.earlier_cands, self.found_cache = [], (0.0, [])
+        self.ask_state, self.pending_flash = {"state": "idle"}, None
         self.recall_at = time.time() + config.RECALL_FIRST_AFTER - config.RECALL_EVERY    # first look soon after start
         self.labeller = None                 # labels.LiveLabeller, made in run() when asked for
         self.sections = {}                   # main-loop part -> capture_plan.Timings (see mark())
@@ -406,6 +408,9 @@ class Tracker:
         self.mark("housekeeping")
         if time.time() - self.recall_at >= config.RECALL_EVERY:
             self.refresh_recall()
+        if self.pending_flash and self.widget:
+            text, self.pending_flash = self.pending_flash, None
+            self.widget.flash(text)
         if self.widget:
             here = self.front_sig()
             if here != self.pill_place:             # you switched tab or app: update the pill now, not within a second
@@ -1620,7 +1625,9 @@ class Tracker:
                                         on_decline=self.widget_decline, picker=self.widget_picker,
                                         on_unfile=self.widget_unfile, busy=lambda: self.panel.open, status=self.widget_status,
                                         on_pause=self.widget_pause, on_resume=self.widget_resume,
-                                        recall=self.widget_recall, on_recall=self.widget_recall_answer)
+                                        recall=self.widget_recall, on_recall=self.widget_recall_answer,
+                                        on_action=self.widget_action, ask=self.widget_ask, ask_state=self.widget_ask_state,
+                                        ask_reset=self.widget_ask_reset)
             try:
                 self.menubar = menubar.MenuBar(self.menu_pick)
                 say(f"Menu-bar item: {self.menubar.where()}")
@@ -1638,6 +1645,7 @@ class Tracker:
         self.thread = threading.Thread(target=self.worker, daemon=True)
         self.thread.start()
         threading.Thread(target=self.quick_worker, daemon=True).start()
+        threading.Thread(target=self.earlier_worker, daemon=True).start()
         self.capture_thread = threading.Thread(target=self.capture_worker, daemon=True)
         self.capture_thread.start()
         if self.use_trail:
@@ -1698,10 +1706,14 @@ class Tracker:
             return []
 
     def widget_recall_answer(self, sid, state):
-        """You ticked a box (done) or pressed × (dismissed): it does not come back today."""
+        """You ticked a box (done) or pressed × (dismissed): it does not come back today. Ticking "from earlier"
+        copies the line first."""
         try:
             import nextsteps
             with self.lock:
+                step = next((s for s in self.recall_doc["steps"] if s["id"] == sid and s["kind"] == "earlier"), None)
+                if step and state == "done" and (step.get("detail") or {}).get("copy"):
+                    self.copy_text(step["detail"]["copy"], "Copied")
                 nextsteps.answer(self.recall_doc, sid, state)
                 nextsteps.save(self.recall_doc)
         except ValueError as error:
@@ -1718,12 +1730,117 @@ class Tracker:
             with self.lock:
                 front = (self.last_frame or {}).get("item")
                 doc = self.recall_doc
-                added = nextsteps.refresh(doc, self.items, book, front_id=front)
+                added = nextsteps.refresh(doc, self.items, book, front_id=front, extra=self.earlier_cands)
                 nextsteps.save(doc)
             if added:
                 say("pill: " + ", ".join(sorted({a["kind"] for a in added})) + f"  ({len(added)} new)  ·  open the pill to see them")
         except Exception as error:
             say(f"recall skipped: {type(error).__name__}: {error}")
+
+    # -- what LMemM does for you: a ready brief, a recap, your memory answered, a line from earlier (memory_search.py)
+
+    @staticmethod
+    def copy_text(text, said):
+        try:
+            subprocess.run(["pbcopy"], input=text.encode("utf-8"), timeout=5, check=True)
+        except (OSError, subprocess.SubprocessError):
+            say("couldn't copy to the clipboard")
+            return False
+        say(f"{said} ({len(text)} characters)")
+        return True
+
+    def found(self, max_age=45):
+        """Everything searchable, from disk, cached for max_age seconds. Call from a worker thread, never the main loop."""
+        import memory_search
+        import tasks
+        at, found = self.found_cache
+        if time.time() - at < max_age and found:
+            return found
+        with self.lock:
+            items = copy.deepcopy(self.items)
+        found = memory_search.gather(items, tasks.load_tasks())
+        self.found_cache = (time.time(), found)
+        return found
+
+    def earlier_worker(self):
+        """Every 30 s: is what you just wrote something you saw or wrote before? Sets the "from earlier" step."""
+        import memory_search
+        import nextsteps
+        while True:
+            time.sleep(30)
+            try:
+                if self.manual_paused or self.paused is not None or not config.TRAIL_WRITING:
+                    continue
+                front = (self.last_frame or {}).get("item")
+                if not front:
+                    continue
+                with self.lock:
+                    items = copy.deepcopy(self.items)
+                hit = memory_search.earlier(self.found(max_age=25), items, front)
+                cand = nextsteps.earlier_candidate(hit, items)
+                changed = [cand] if cand else []
+                if changed != self.earlier_cands:
+                    self.earlier_cands = changed
+                    self.refresh_recall()
+            except Exception as error:
+                say(f"from earlier skipped: {type(error).__name__}: {error}")
+
+    def widget_action(self, name):
+        """A row on the card: "brief" (copy a context brief for Claude or ChatGPT) or "recap" (copy what you did).
+        Runs off the main loop and confirms on the pill."""
+        def work():
+            try:
+                import brief
+                import recap
+                import tasks
+                book = tasks.load_tasks()
+                if name == "brief":
+                    with self.lock:
+                        items, front = copy.deepcopy(self.items), (self.last_frame or {}).get("item")
+                    text = brief.build(items, book, front, self.found())
+                    empty = "Nothing to brief yet"
+                else:
+                    text = recap.build(book, days=1)
+                    empty = "Nothing to recap yet"
+                if not text:
+                    self.flash_later(empty)
+                elif self.copy_text(text, "Copied the brief" if name == "brief" else "Copied the recap"):
+                    self.flash_later("Copied: paste it in Claude" if name == "brief" else "Copied the recap")
+            except Exception as error:
+                say(f"{name} skipped: {type(error).__name__}: {error}")
+        threading.Thread(target=work, daemon=True).start()
+
+    def flash_later(self, text):
+        self.pending_flash = text                  # shown by the main loop (AppKit is not touched from a thread)
+
+    def widget_ask(self, question):
+        """Ask your memory: one question, answered from what was seen and written (ask.py). One Claude call at most."""
+        question = " ".join((question or "").split())[:300]
+        if not question or self.ask_state.get("state") == "working":
+            return
+        self.ask_state = {"state": "working", "question": question}
+
+        def work():
+            try:
+                import ask
+                provider = labels.ClaudeCli()
+                if not provider.available():
+                    raise RuntimeError("the `claude` command was not found")
+                result = ask.answer(question, self.found(max_age=20), provider, labels.Governor())
+                self.ask_state = {"state": "done", "question": question, **result}
+                say(f"asked memory: {len(result['sources'])} source(s), {result['tokens']} tokens")
+                self.flash_later("Your answer is ready")
+            except Exception as error:
+                say(f"ask failed: {type(error).__name__}: {error}")
+                self.ask_state = {"state": "done", "question": question, "answer": "That didn't work. Try again.", "sources": []}
+        threading.Thread(target=work, daemon=True).start()
+
+    def widget_ask_state(self):
+        return self.ask_state
+
+    def widget_ask_reset(self):
+        if self.ask_state.get("state") != "working":
+            self.ask_state = {"state": "idle"}
 
     def on_tasks(self, result):
         """What a tasks run leaves for the pill: the safe next steps (nextsteps.py) and, for a task that names

@@ -255,7 +255,7 @@ class RecallPillTests(unittest.TestCase):
         return rules.pill_state(**{**self.base, **kw})
 
     def test_a_recall_kind_gives_its_own_mark(self):
-        for kind in ("resume", "hanging", "next"):
+        for kind in ("earlier", "resume", "hanging", "next"):
             self.assertEqual(self.st(recall=kind), "r_" + kind)
 
     def test_notes_and_problems_and_the_note_card_still_come_first(self):

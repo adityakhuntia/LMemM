@@ -84,15 +84,17 @@ DEFAULT_ICON = ("square.on.square", (0.45, 0.45, 0.5))
 DONE_SECONDS = 1.5                  # "Pricing created." stays this long, then the card closes
 SUGGEST_WORDS = "Group these?"
 # the boxes on the card, one look per kind: label, SF Symbol, colour, whether the edge is dashed (unfinished)
-RECALL = {"resume": ("Pick up", "arrow.uturn.backward", (0.91, 0.45, 0.16), False),
+RECALL = {"earlier": ("From earlier", "doc.on.doc", (0.45, 0.36, 0.78), False),
+          "resume": ("Pick up", "arrow.uturn.backward", (0.91, 0.45, 0.16), False),
           "hanging": ("Left open", "circle.dotted", (0.72, 0.53, 0.04), True),
           "next": ("Next step", "arrow.right", (0.18, 0.50, 0.52), False)}
-RECALL_GLYPH = {"resume": "↩", "hanging": "◌", "next": "→"}       # on the pill's hover line
+RECALL_GLYPH = {"earlier": "❝", "resume": "↩", "hanging": "◌", "next": "→"}       # on the pill's hover line
 SAVED_SECONDS = 1.8                 # "Saved to Q3 plan" stays on the pill this long
 PROJECT_EXPLAINER = ("A project keeps related things and your notes together, so you can pick up "
                      "where you left off. You can change this any time.")
 # the marks: an SF Symbol, and whether it is neutral or red (a permission that is off)
-MARKS = {"r_resume": ("arrow.uturn.backward", False, "Pick up where you left off"),
+MARKS = {"r_earlier": ("doc.on.doc", False, "A line from earlier"),
+         "r_resume": ("arrow.uturn.backward", False, "Pick up where you left off"),
          "r_hanging": ("circle.dotted", False, "Something left open"),
          "r_next": ("arrow.right", False, "A next step"),
          "paused": ("pause.fill", False, "Paused"),
@@ -496,7 +498,13 @@ class Widget:
 
     def __init__(self, provider, on_tick, on_add=None, heard=None, hotkey="⌃⌥N",
                  suggestion=None, on_project=None, on_decline=None, picker=None, on_unfile=None,
-                 busy=None, status=None, on_pause=None, on_resume=None, recall=None, on_recall=None):
+                 busy=None, status=None, on_pause=None, on_resume=None, recall=None, on_recall=None,
+                 on_action=None, ask=None, ask_state=None, ask_reset=None):
+        self.on_action = on_action or (lambda name: None)       # "brief" / "recap": copy it (tracker.widget_action)
+        self.ask_fn = ask or (lambda question: None)             # ask your memory (ask.py)
+        self.ask_state_fn = ask_state or (lambda: {"state": "idle"})
+        self.ask_reset = ask_reset or (lambda: None)
+        self.ask_seen = None                                      # the question whose answer you have seen
         self.recall_fn = recall or (lambda: [])       # nextsteps: pick up / left open / next step, most important first
         self.on_recall = on_recall or (lambda sid, state: None)
         self.recall = []
@@ -521,7 +529,7 @@ class Widget:
         self.fields = _Fields.alloc().initWithChange_submit_cancel_(self._typed, self._submitted, self._cancelled)
         self.hotkey = hotkey
         self.card_open = False
-        self.mode = "here"                  # "here" | "project" | "suggest" | "pick" | "done"
+        self.mode = "here"                  # "here" | "project" | "suggest" | "pick" | "ask" | "done"
         self.show_done = False
         self.flow = rules.FinishFlow()      # finished notes: hold, fold, clear, undo (rules.py R10)
         self.celebrate_now = False          # play the big check once, on the render after a clear
@@ -709,6 +717,9 @@ class Widget:
             quiet = not self.count and not self.status.get("paused")
             self.mode, self.show_done, self.scroll = (
                 "recall" if self.recall and quiet else "suggest" if self.sug and quiet else "here"), False, None
+            ask = self.ask_state_fn()
+            if ask.get("state") in ("working", "done") and ask.get("question") != self.ask_seen:
+                self.mode = "ask"           # an answer you have not seen yet comes first
             self.query, self.also = "", True
             self.celebrate_now = False      # opening it later shows the calm state, never the celebration
             self.data = self.provider()
@@ -769,6 +780,8 @@ class Widget:
     # -- the card
 
     def _key(self):
+        if self.mode == "ask":                        # rebuilt when the answer arrives, never under the typing
+            return repr((self.mode, self.ask_state_fn().get("state"), self.ask_state_fn().get("question")))
         if self.mode in ("pick", "suggest"):          # fields in use: don't rebuild under the typing
             return repr((self.mode, self.sug))
         return repr((self.data, self.mode, self.show_done, self.flow.signature(time.time()), self.sug, self.done_text, self.status,
@@ -796,6 +809,8 @@ class Widget:
             y = self._suggest(body, y)
         elif self.mode == "pick":
             y = self._pick(body, y)
+        elif self.mode == "ask":
+            y = self._ask(body, y)
         elif self.mode == "done":
             y = self._done(body, y)
         elif self.mode == "finished":
@@ -833,7 +848,7 @@ class Widget:
         self.celebrate_now = False          # played once, never on a re-render
         self.card_height = height
         self._place_card()
-        if self.mode == "pick":
+        if self.mode == "pick" or (self.mode == "ask" and self.search is not None):
             self._focus(self.search)
         self.layout()                           # the pill's mark follows what the card shows
 
@@ -1071,6 +1086,7 @@ class Widget:
         if kind == "fresh":
             y = self._state(body, y, "square.and.pencil", "soft", "No notes yet",
                             f"Press {self.hotkey} and say what to remember.")
+            y = self._actions(body, y)
             return self._pause_row(body, y)
         if kind == "caught":
             n = view["done_here"]
@@ -1078,6 +1094,7 @@ class Widget:
                             celebrate=self.celebrate_now)
             y = self._add_row(body, y - 4)       # caught up with the past, not with the future (F6)
             y = self._done_row(body, y, n)
+            y = self._actions(body, y)
             y = self._pause_row(body, y)
             return self._toast(body, y)
         y = self._header(body, y, view["title"], view["caption"])
@@ -1098,8 +1115,81 @@ class Widget:
             y = self._done_row(body, y, view["done_here"])
         if self.recall:
             y = self._recall_boxes(body, y + 6)
+        y = self._actions(body, y + 4)
         y = self._pause_row(body, y)
         return self._toast(body, y)
+
+    # -- what LMemM does for you: copy a brief, copy a recap, ask your memory
+
+    def _actions(self, body, y):
+        y = self._action(body, y, "sparkles", "Copy context for AI", lambda: self._act("brief"))
+        y = self._action(body, y, "text.alignleft", "Copy today’s recap", lambda: self._act("recap"))
+        return self._action(body, y, "magnifyingglass", "Ask your memory…", self._open_ask)
+
+    def _action(self, body, y, symbol, text, callback):
+        tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(6, y, CARD_W - 12, 28), callback)
+        mute = NSColor.secondaryLabelColor()
+        image = _symbol(symbol)
+        if image is not None:
+            holder = NSImageView.alloc().initWithFrame_(NSMakeRect(PAD - 6, 7, 14, 14))
+            holder.setImage_(image)
+            holder.setContentTintColor_(mute)
+            tap.addSubview_(holder)
+        tap.addSubview_(_label(text, 13, color=NSColor.labelColor(), frame=(PAD - 6 + 22, 5, CARD_W - 80, 17))[0])
+        body.addSubview_(tap)
+        return y + 28
+
+    def _act(self, name):
+        self.on_action(name)
+        self.close_card()
+        self.flash("Working on it…")
+
+    def _open_ask(self):
+        self.ask_reset()
+        self.search = None
+        self._go("ask")
+
+    def _ask(self, body, y):
+        """The question box; then "looking…"; then the answer with where it came from."""
+        st = self.ask_state_fn()
+        y = self._header(body, y, "Ask your memory", "", back=("Back", lambda: self._go("here")))
+        if st.get("state") == "idle":
+            box = _Tap.alloc().initWithFrame_callback_(NSMakeRect(8, y - 6, CARD_W - 16, 34), lambda: None)
+            box.fill = True
+            self.search = _field("", "What was that figure from the sheet?", 13, False, (12, 8, CARD_W - 16 - 24, 18), self.fields)
+            box.addSubview_(self.search)
+            body.addSubview_(box)
+            y += 36
+            hint, h = _label("Answered from what you’ve seen and written. Return to ask.", 11,
+                             color=NSColor.tertiaryLabelColor(), frame=(PAD, y + 2, CARD_W - 2 * PAD, 14), wrap=True)
+            body.addSubview_(hint)
+            return y + h + 6
+        q, qh = _label(_short(st.get("question", ""), 120), 12, color=NSColor.secondaryLabelColor(),
+                       frame=(PAD, y - 4, CARD_W - 2 * PAD, 16), wrap=True)
+        body.addSubview_(q)
+        y += qh + 4
+        if st.get("state") == "working":
+            body.addSubview_(_label("Looking through what you’ve seen…", 13, frame=(PAD, y, CARD_W - 2 * PAD, 18))[0])
+            return y + 28
+        self.ask_seen = st.get("question")
+        text, h = _label(st.get("answer", ""), 14, frame=(PAD, y, CARD_W - 2 * PAD, 18), wrap=True)
+        body.addSubview_(text)
+        y += h + 10
+        for src in st.get("sources") or []:
+            box = _Box.alloc().initWithTone_dashed_((0.45, 0.36, 0.78), False)
+            line, lh = _label(_short(src["text"], 110), 12, frame=(12, 8, CARD_W - 16 - 24, 15), wrap=True)
+            line.setMaximumNumberOfLines_(2)
+            line.setLineBreakMode_(4)
+            lh = min(lh, 31)
+            line.setFrame_(NSMakeRect(12, 8, CARD_W - 16 - 24, lh))
+            box.addSubview_(line)
+            box.addSubview_(_label(_short(src["line"], 60), 11, color=NSColor.tertiaryLabelColor(),
+                                   frame=(12, 8 + lh + 3, CARD_W - 16 - 24, 14))[0])
+            box.setFrame_(NSMakeRect(8, y, CARD_W - 16, lh + 8 + 3 + 14 + 8))
+            body.addSubview_(box)
+            y += lh + 8 + 3 + 14 + 8 + 6
+        y = self._action(body, y + 2, "magnifyingglass", "Ask something else", self._open_ask)
+        return y
 
     # -- what LMemM brings back: pick up, left open, next step (nextsteps.py)
 
@@ -1110,6 +1200,7 @@ class Widget:
         y = self._recall_boxes(body, y - 6)
         if self.sug:
             y = self._link(body, y + 2, f"Part of a project? {self.sug['peek']}", "›", lambda: self._go("suggest"))
+        y = self._actions(body, y + 4)
         return self._pause_row(body, y)
 
     def _recall_boxes(self, body, y):
@@ -1139,15 +1230,23 @@ class Widget:
         tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(6, row_y - 4, w - 12, h + 10),
                                                    lambda sid=step["id"]: self._recall_answer(sid, "done"))
         tap.label = "Done: " + step["text"]
-        ring = _Ring.alloc().initWithChecked_(False)
-        ring.setFrame_(NSMakeRect(6, 4, 17, 17))
+        if step["kind"] == "earlier":                    # a tap copies the line: a copy mark, not a tick
+            ring = NSImageView.alloc().initWithFrame_(NSMakeRect(6, 3, 17, 17))
+            copy_image = _symbol("doc.on.doc")
+            if copy_image is not None:
+                ring.setImage_(copy_image)
+                ring.setContentTintColor_(tone)
+            tap.label = "Copy: " + step["text"]
+        else:
+            ring = _Ring.alloc().initWithChecked_(False)
+            ring.setFrame_(NSMakeRect(6, 4, 17, 17))
         text.setFrame_(NSMakeRect(30, 3, inner - 24, h))
         tap.addSubview_(ring)
         tap.addSubview_(text)
         box.addSubview_(tap)
         yy = row_y + h + 8
         detail = step.get("detail") or {}
-        for key, name in (("goal", "Making"), ("last_wrote", "Last wrote"), ("open", "Open")):
+        for key, name in (("goal", "Making"), ("last_wrote", "Last wrote"), ("open", "Open"), ("from", "From")):
             if detail.get(key):
                 text_line = _short(f"{name}: {detail[key]}", 110)
                 line, lh = _label(text_line, 12, color=NSColor.secondaryLabelColor(), frame=(12, yy, inner, 15), wrap=True)
@@ -1191,7 +1290,11 @@ class Widget:
             self.render()
 
     def _submitted(self, text):
-        if self.mode == "pick" and text.strip():
+        if self.mode == "ask" and text.strip():
+            self.ask_fn(text)
+            self.search = None
+            self.render()
+        elif self.mode == "pick" and text.strip():
             self._file(" ".join(text.split()))
         elif self.mode == "suggest":
             self._accept()

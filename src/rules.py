@@ -71,7 +71,7 @@ def empty_kind(view):
     return "caught" if view.get("done_here") else "fresh"
 
 
-RECALL_KINDS = ("resume", "hanging", "next")      # in the order the pill picks its mark: pick up, left open, next step
+RECALL_KINDS = ("earlier", "resume", "hanging", "next")      # the order the pill picks its mark: from earlier, pick up, left open, next step
 
 
 def pill_state(note_open, saved, hover, card_open, count, has_suggestion, mark=None, empty=None, cleared=False, recall=None):

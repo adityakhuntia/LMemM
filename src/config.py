@@ -42,6 +42,7 @@ LABEL_MIN_WAITING = 3
 LABEL_MAX_WAIT = 1800                  # seconds: a settled thing waits this long for company, then goes alone           # ...and how many settled things must be waiting for a run to be worth its fixed cost
 LABEL_DAILY_TOKENS = 50000      # most tokens `lmemm.py label` may spend per day (counted from the CLI's own usage)
 TASK_MODEL = "sonnet"            # tasks need real reasoning over a whole session; one call per run
+ASK_MODEL = "sonnet"             # "Ask your memory": a few short sources in, a short answer out
 TASK_FIRST_AFTER = 600           # seconds after start before the first automatic tasks run
 TASK_EVERY = 1800                # then at most this often (an unchanged story costs no tokens)
 TASK_MINUTES = 90                # how far back an automatic run reads

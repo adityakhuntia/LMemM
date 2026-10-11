@@ -57,6 +57,7 @@ USAGE = ("usage: lmemm.py [menu] | start [--no-labels] [--no-writing] [--every N
          " | context [SESSION] [--days N]"
          " | label [--dry-run] [--status] [--limit N] [--show] [--last [N]] [--ping]"
          " | next [--done ID | --dismiss ID]"
+         " | brief [--no-copy] | recap [--days N] [--no-copy] | ask QUESTION…"
          " | tasks [--minutes N] [--session ID] [--dry-run] [--show]"
          " | trail … | status | pause | resume | pin | note | delete-session ID (--dry-run | --confirm ID)"
          " | delete-all (--dry-run | --confirm) | setup [--again] [--no-start]")
@@ -543,6 +544,80 @@ def cmd_next(args):
     print("\n`python3 lmemm.py next --done ID` or `--dismiss ID` answers one.")
 
 
+def _copy(text):
+    import subprocess
+    try:
+        subprocess.run(["pbcopy"], input=text.encode("utf-8"), timeout=5, check=True)
+        return True
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def cmd_brief(args):
+    """A ready context brief for Claude or ChatGPT: what you are doing, what you wrote, what is open. No model, copied."""
+    import brief
+    import memory_search
+    import tasks
+    parser = argparse.ArgumentParser(prog="lmemm.py brief")
+    parser.add_argument("--no-copy", action="store_true", help="print only; do not copy")
+    opts = parser.parse_args(args)
+    try:
+        items = store.load_items()
+    except ValueError as error:
+        sys.exit(str(error))
+    book = tasks.load_tasks()
+    newest = max(items, key=lambda i: items[i].get("last_seen") or "", default=None)
+    text = brief.build(items, book, newest, memory_search.gather(items, book))
+    if not text:
+        sys.exit("Nothing to brief yet. Use your Mac for a while with LMemM running.")
+    print(text)
+    if not opts.no_copy and _copy(text):
+        print("\n(copied: paste it into Claude or ChatGPT)")
+
+
+def cmd_recap(args):
+    """What you did, ready for a standup. No model, copied."""
+    import recap
+    import tasks
+    parser = argparse.ArgumentParser(prog="lmemm.py recap")
+    parser.add_argument("--days", type=int, default=1)
+    parser.add_argument("--no-copy", action="store_true")
+    opts = parser.parse_args(args)
+    text = recap.build(tasks.load_tasks(), days=max(opts.days, 1))
+    if not text:
+        sys.exit("No tasks yet for that time. LMemM works them out while it runs.")
+    print(text)
+    if not opts.no_copy and _copy(text):
+        print("\n(copied)")
+
+
+def cmd_ask(args):
+    """Ask your memory: an answer from what you saw and wrote, and where it came from (one Claude call)."""
+    import ask
+    import memory_search
+    import tasks
+    question = " ".join(args).strip()
+    if not question:
+        sys.exit('usage: lmemm.py ask "what was that figure from the sheet yesterday?"')
+    try:
+        items = store.load_items()
+    except ValueError as error:
+        sys.exit(str(error))
+    provider, governor = labels.ClaudeCli(), labels.Governor()
+    if not provider.available():
+        sys.exit("The `claude` command was not found. Install Claude Code and sign in, then try again.")
+    found = memory_search.gather(items, tasks.load_tasks())
+    try:
+        result = ask.answer(question, found, provider, governor)
+    except labels.ProviderError as error:
+        sys.exit(str(error))
+    print(result["answer"])
+    for src in result["sources"]:
+        print(f"  [{src['n']}] {src['line']}\n      {src['text']}")
+    print(f"\n({'asked Claude, ' + str(result['tokens']) + ' tokens' if result['asked'] else 'nothing matched, no call made'};"
+          f" today {governor.used} of {governor.cap})")
+
+
 def cmd_delete_session(args):
     from input_store import delete_session, plan_session_deletion
     parser = argparse.ArgumentParser(prog="lmemm.py delete-session")
@@ -715,6 +790,12 @@ def main():
         cmd_tasks(rest)
     elif cmd == "next":
         cmd_next(rest)
+    elif cmd == "brief":
+        cmd_brief(rest)
+    elif cmd == "recap":
+        cmd_recap(rest)
+    elif cmd == "ask":
+        cmd_ask(rest)
     else:
         sys.exit(USAGE)
 

@@ -22,6 +22,7 @@ arrive with a `tasks` run); the other two are worked out here from what is store
     hanging  an unsent draft, a note you left open, a question a task never closed, once you have moved on
     next     the open step of a task, while you are still on it
     link     two things that go together          (projects are offered through suggestions.py, as before)
+    earlier  while you write: a line you saw or wrote before that goes with it (memory_search.earlier); a tap copies it
 """
 
 import json
@@ -35,8 +36,8 @@ import tasks
 
 KEEP_HOURS = 12
 MAX_OPEN = 6
-PER_KIND = {"resume": 1, "hanging": 3, "next": 3, "link": 2}
-PRIORITY = ("resume", "hanging", "next", "link")
+PER_KIND = {"earlier": 1, "resume": 1, "hanging": 3, "next": 3, "link": 2}
+PRIORITY = ("earlier", "resume", "hanging", "next", "link")
 TASK_DAYS = 3
 FROM_MODEL = ("next", "link")
 TEXT_CHARS = 140
@@ -235,17 +236,26 @@ def candidates(items, book, now, front_id=None):
     return out
 
 
+def earlier_candidate(found_earlier, items):
+    """The refresh() tuple for memory_search.earlier(...), or None."""
+    if not found_earlier or found_earlier.get("item") not in items:
+        return None
+    return ("earlier", f"“{tasks.clean(found_earlier['text'], 100)}”", [found_earlier["item"]], None,
+            {"from": found_earlier["from"], "copy": found_earlier["text"]})
+
+
 def notes_open(item):
     import notes
     return [n["text"] for n in notes.open_notes(item)]
 
 
-def refresh(doc, items, book, now=None, front_id=None):
+def refresh(doc, items, book, now=None, front_id=None, extra=None):
     """Bring resume and hanging steps up to date: add what is true now, drop what no longer is (you came back to
-    the note, you sent the draft). Steps from the model are untouched. Returns the new steps."""
+    the note, you sent the draft). Steps from the model are untouched. `extra`: candidates worked out elsewhere (the
+    "from earlier" one), kept in the same way. Returns the new steps."""
     now = now or datetime.now()
     keys, added = set(), []
-    for kind, text, ids, task, detail in candidates(items, book, now, front_id):
+    for kind, text, ids, task, detail in candidates(items, book, now, front_id) + list(extra or []):
         keys.add(_key(kind, tasks.clean(text, TEXT_CHARS)))
         step = _add(doc, kind, text, ids, task, now, detail)
         if step:

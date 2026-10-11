@@ -19,7 +19,7 @@ LMemM - the one command.
                                       and why, grouped by project, with no operational detail
     lmemm.py trail start|show|places|status|pause|resume|forget|probe
                                       the event trail: what you are doing, from app events (see docs/specs)
-    lmemm.py status | pause | resume  the running tracker
+    lmemm.py status | pause | resume | open  control the running tracker or open its window
     lmemm.py pin                      force-save the current screen
     lmemm.py note                     open the note window (same as ⌃⌥N)
     lmemm.py delete-session ID (--dry-run | --confirm ID)
@@ -478,7 +478,7 @@ def main():
         cmd_suggest_for(rest)
     elif cmd == "projects":
         cmd_projects(rest)
-    elif cmd in {"status", "pause", "resume"}:
+    elif cmd in {"status", "pause", "resume", "open"}:
         cmd_control(cmd)
     elif cmd == "trail":
         import trail_cli

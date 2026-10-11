@@ -222,7 +222,9 @@ class Tracker:
             self.control_file.unlink(missing_ok=True)
 
     def apply_control(self, doc):
-        if doc.get("action") in {"pause", "resume"}:
+        if doc.get("action") == "open":
+            self.open_window()
+        elif doc.get("action") in {"pause", "resume"}:
             self.set_manual_pause(doc["action"] == "pause")
         elif doc.get("action") == "notes_done" and isinstance(doc.get("ids"), list):
             with self.lock:
@@ -1617,7 +1619,8 @@ class Tracker:
 
     def hand_over(self):
         """Restart, reopen setup, or delete everything, once LMemM has saved and stopped. A restart
-        replaces this process in place, so macOS sees the same app (permissions.relaunch does the same)."""
+        uses a fresh process: replacing a launched AppKit process in place can leave
+        its status item unregistered with macOS even though floating panels work."""
         if not self.after_exit:
             return
         python, script = sys.executable, os.path.abspath(sys.argv[0])
@@ -1633,7 +1636,7 @@ class Tracker:
             argv = [python, script, "setup", "--again"]
         else:
             argv = [python] + sys.argv
-        os.execv(python, argv)
+        subprocess.Popen(argv)
 
     def start_memory(self):
         if self.memory_client is None:

@@ -189,7 +189,7 @@ class TrackerWiringTests(unittest.TestCase):
         self.assertIn("careful=True", ast.unparse(fns["confirm_leaving"]))
         hand = ast.unparse(fns["hand_over"])
         self.assertIn("delete_all", hand)
-        self.assertIn("execv", hand)
+        self.assertIn("subprocess.Popen", hand)
         run = ast.unparse(fns["run"])
         self.assertLess(run.index("self.finish()"), run.index("self.hand_over()"))       # saved and stopped first
 

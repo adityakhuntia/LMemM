@@ -40,3 +40,14 @@ cd /Users/divyaanshseth/Documents/LMemM/LMemM
 Do not start a second tracker if the user's terminal is already running one. Open a project → Memory → Enable Memory. Setup, extension connection, agent disclosure and test steps are in the [runbook](hybrid-memory-runbook.md). Automated tests did not enroll personal sources or leave a test service running.
 
 The execution decisions and final findings are preserved in the linked review record; commit history and acceptance records are durable. Superseded October 7 plans remain historical, not competing scope.
+
+## Follow-up: manual test launch repair
+
+The isolated manual session lives under ignored `data/memory-mvp-test-20261011/`.
+A setup-again action exposed in-place AppKit relaunch losing macOS registration;
+the pill survived but the menu-bar item stayed at `(0, 0)`. Tracker and permission
+restarts now spawn a fresh process, and `lmemm.py open` offers direct window access.
+The local test launcher now honors CLI arguments and opens the window on startup.
+The affected session was saved and relaunched; native app registration and normal
+menu-bar placement were observed. Follow-up full suite: 811 tests passed. This
+fix does not establish the unrelated original foreground-switch abort acceptance.

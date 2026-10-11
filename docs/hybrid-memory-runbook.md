@@ -40,3 +40,20 @@ A real AppKit window was run with synthetic evidence, without live capture or pe
 These prove native drawing and callback wiring. A separate hosted Codex resume passed using two synthetic notes and exact citations. The original foreground-switch crash sequence, physical lock/sleep, real VS Code enrollment and external tester usability remain pending in [acceptance](benchmarks/project-memory/hybrid-mvp/acceptance.md).
 
 Refresh evidence retries a failed or unexpectedly stopped memory service. Saved agent connections are restored by project; Revoke Codex access revokes this project’s listed Codex grants. Search defaults to two days and returns its effective start/end; choose All retained explicitly to widen it.
+
+## Opening the window and restart durability
+
+If the menu-bar icon is difficult to find, run `.venv/bin/python lmemm.py open`
+from the root checkout to bring up the running normal session's main window.
+For the isolated manual test session prepared October 11, use
+`.venv/bin/python data/memory-mvp-test-20261011/launch.py open` instead.
+Its `start.command` opens a visible Terminal and automatically opens the main window.
+
+A live test exposed a menu-bar registration failure after an in-place AppKit
+restart: the pill continued working but the status item stayed at `(0, 0)`.
+Tracker and permission-setup restarts now launch a fresh process. The isolated
+launcher also dispatches setup/control arguments correctly. Existing test data
+was saved before the affected process was stopped and relaunched. Fresh native
+registration and a normally positioned status item were observed; a direct-open
+command also produced an onscreen main window. Four regression cases cover
+restart arguments, setup handoff, permission relaunch and direct window opening.

@@ -114,6 +114,7 @@ LOCK_APPS = {"loginwindow", "ScreenSaverEngine"}   # frontmost while locked / sc
 class Paths:
     data_dir: str                 # screenshots + their capture metadata
     pidfile: str                  # running tracker; .control.json / .status.json beside it
+    base_dir: str = None          # when a run has its own folder (runs.py): where the shared things stay
 
     @property
     def memory_dir(self):
@@ -136,8 +137,12 @@ class Paths:
         return os.path.join(self.memory_dir, "sessions")
 
     @property
-    def onboarding_file(self):    # where first-run setup stands (step, answers); beside the pid file's data
-        return os.path.join(self.data_dir, "onboarding.json")
+    def onboarding_file(self):    # where first-run setup stands (step, answers); shared by every run
+        return os.path.join(self.base_dir or self.data_dir, "onboarding.json")
+
+    @property
+    def usage_file(self):         # today's token count: shared by every run, or the daily cap would restart with each one
+        return os.path.join(self.base_dir or self.data_dir, "memory", "labels_usage.json")
 
     @property
     def control_file(self):

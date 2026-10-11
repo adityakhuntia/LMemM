@@ -57,6 +57,7 @@ USAGE = ("usage: lmemm.py [menu] | start [--demo] [--no-labels] [--no-writing] [
          " | context [SESSION] [--days N]"
          " | label [--dry-run] [--status] [--limit N] [--show] [--last [N]] [--ping]"
          " | next [--done ID | --dismiss ID]"
+         " | fresh (--dry-run | --confirm) | any reading command takes --run NAME (default: the latest run)"
          " | brief [--local] [--no-copy] | recap [--days N] [--no-copy] | ask QUESTION…"
          " | tasks [--minutes N] [--session ID] [--dry-run] [--show]"
          " | trail … | status | pause | resume | pin | note | delete-session ID (--dry-run | --confirm ID)"
@@ -161,6 +162,8 @@ def cmd_start(args):
                              "secure fields are never read; stays on this Mac; deleted after 48 h)")
     parser.add_argument("--recall-after", type=int, metavar="MINUTES", default=config.RECALL_GAP_MINUTES,
                         help="how long away counts as 'left' for pick up / left open on the pill (default %d); try 3 to see them quickly" % config.RECALL_GAP_MINUTES)
+    parser.add_argument("--pr", metavar="NUMBER", help="the PR this run is for, used in the run's folder name (default: found with `gh`)")
+    parser.add_argument("--no-run-folder", action="store_true", help="write into data/ itself, not a new folder under data/runs/")
     parser.add_argument("--demo", action="store_true",
                         help="put one sample of each pill box on the pill within seconds, to try the look and the taps")
     parser.add_argument("--labels", action="store_true", help=argparse.SUPPRESS)      # old flags: now the default
@@ -179,6 +182,10 @@ def cmd_start(args):
         parser.error("input monitoring requires --input-events --input-app com.microsoft.VSCode")
     if not opts.no_setup and not first_run_setup():
         sys.exit("Setup isn't finished. Run LMemM again to pick up where you left off.")
+    if not opts.no_run_folder:
+        import runs
+        folder = runs.begin(opts.pr, cwd=os.path.dirname(os.path.abspath(__file__)))
+        print(f"This run's data: {folder}", flush=True)
     try:
         import subprocess
         here = os.path.dirname(os.path.abspath(__file__))
@@ -236,6 +243,51 @@ def cmd_delete_all(args):
             print(f"deleted {result['files']} file(s) from {data_dir}. Next start runs setup again.")
     except ValueError as error:
         sys.exit(str(error))
+
+
+def cmd_fresh(args):
+    """Delete the old data (what was read before runs had their own folders, garbled text included) and keep what
+    must stay: setup, today's token count, your user block, and every folder under data/runs/."""
+    import shutil
+    parser = argparse.ArgumentParser(prog="lmemm.py fresh")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--dry-run", action="store_true")
+    group.add_argument("--confirm", action="store_true")
+    opts = parser.parse_args(args)
+    base = config.paths().base_dir or config.paths().data_dir
+    if tracker.running_pid():
+        sys.exit("LMemM is running. Stop it first (Ctrl-C in its tab), then run this again.")
+    keep = {"onboarding.json", "runs"}
+    doomed = []
+    for name in sorted(os.listdir(base)) if os.path.isdir(base) else []:
+        path = os.path.join(base, name)
+        if name in keep:
+            continue
+        if name == "memory":
+            doomed += [os.path.join(path, m) for m in sorted(os.listdir(path)) if m not in {"labels_usage.json", "memory.json"}]
+        else:
+            doomed.append(path)
+    print(f"{'Would delete' if opts.dry_run else 'Deleting'} {len(doomed)} item(s) in {base}, keeping setup, the token count, "
+          f"your user block and data/runs/:")
+    for path in doomed[:30]:
+        print("  ", os.path.relpath(path, base))
+    if len(doomed) > 30:
+        print(f"   ... and {len(doomed) - 30} more")
+    if opts.dry_run:
+        print("\nNothing was deleted. Run with --confirm to delete these.")
+        return
+    for path in doomed:
+        shutil.rmtree(path) if os.path.isdir(path) and not os.path.islink(path) else os.remove(path)
+    import runs
+    user = runs._user_block(base)
+    mem = os.path.join(base, "memory", "memory.json")
+    if os.path.exists(mem):
+        os.remove(mem)
+    if user:
+        os.makedirs(os.path.dirname(mem), exist_ok=True)
+        with open(mem, "w") as fh:
+            json.dump({"schema_version": 1, "things": [], "items": [], "user": user}, fh)
+    print("Done. The next `python3 lmemm.py start` begins fresh in its own folder.")
 
 
 def cmd_memory(args):
@@ -770,6 +822,10 @@ def cmd_projects(args):
         sys.exit(str(error))
 
 
+READS_A_RUN = {"memory", "notes", "projects", "context", "label", "next", "tasks", "brief", "recap", "ask", "trail",
+               "suggest-for", "delete-session"}
+
+
 def main():
     args = sys.argv[1:]
     if not args:
@@ -777,6 +833,14 @@ def main():
         return
     cmd = args[0] if not args[0].startswith("-") else "start"
     rest = args[1:] if args[0] == cmd else args
+    if cmd in READS_A_RUN:                                  # these read one run's data: the latest, or --run NAME
+        import runs
+        try:
+            folder = runs.select(rest)
+        except ValueError as error:
+            sys.exit(str(error))
+        if folder:
+            print(f"(run: {os.path.basename(folder)})", file=sys.stderr)
     if cmd == "menu":
         interactive_menu()
     elif cmd == "start":
@@ -795,7 +859,9 @@ def main():
         cmd_control(cmd)
     elif cmd == "trail":
         import trail_cli
-        trail_cli.main(sys.argv[2:])
+        trail_cli.main(rest)
+    elif cmd == "fresh":
+        cmd_fresh(rest)
     elif cmd == "pin":
         tracker.pin()
     elif cmd == "note":

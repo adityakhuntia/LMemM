@@ -406,7 +406,7 @@ class Governor:
     def __init__(self, cap=None, today=None):
         self.cap = config.LABEL_DAILY_TOKENS if cap is None else cap
         self.today = today or datetime.now().strftime("%Y-%m-%d")
-        self.path = os.path.join(config.paths().memory_dir, "labels_usage.json")
+        self.path = config.paths().usage_file
         doc = {}
         try:
             with open(self.path) as fh:

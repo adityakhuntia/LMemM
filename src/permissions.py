@@ -162,10 +162,11 @@ class MacSystem:
         subprocess.Popen(["open", settings_url(pane)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def relaunch(self):
-        """Start LMemM again in place (same process, so macOS sees the same app). Setup
-        has already written where it is; the new run resumes there."""
+        """Resume saved setup in a fresh native app process, preserving registration."""
+        from AppKit import NSApplication
         self._stop.set()
-        os.execv(sys.executable, [sys.executable] + sys.argv)
+        subprocess.Popen([sys.executable] + sys.argv)
+        NSApplication.sharedApplication().terminate_(None)
 
     # -- the Mac's account
 

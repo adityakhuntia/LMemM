@@ -125,8 +125,16 @@ class Paths:
         return os.path.join(self.memory_dir, "memory.json")
 
     @property
+    def semantic_file(self):
+        return os.path.join(self.memory_dir, "semantic.sqlite3")
+
+    @property
     def trail_dir(self):          # the event trail: one JSONL file per day
         return os.path.join(self.data_dir, "trail")
+
+    @property
+    def semantic_dir(self):
+        return os.path.join(self.data_dir, "project-memory")
 
     @property
     def projects_file(self):      # the project tree (projects.py); small, so it is read fresh each time

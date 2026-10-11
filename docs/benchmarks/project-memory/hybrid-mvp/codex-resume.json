@@ -1,0 +1,8 @@
+{
+  "synthetic_only": true,
+  "returncode": 0,
+  "mcp_calls": 1,
+  "response": "The recorded decision is to use SQLite because all project data must stay on this Mac (evidence: `evidence-996296af4dfef185be5c1da9`); this establishes intent, not proof of implementation. The next recorded task is to verify rollback before the beta (evidence: `evidence-02cf709d6588022042310b93`); assuming verification is complete or a beta date is set would go beyond the evidence.",
+  "all_expected_citations_present": true,
+  "passed": true
+}

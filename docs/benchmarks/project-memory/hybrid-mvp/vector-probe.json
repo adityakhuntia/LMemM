@@ -1,0 +1,16 @@
+{
+  "chunks": 10000,
+  "dimensions": 384,
+  "runs": 5,
+  "scoring_seconds": [
+    1.1639392089564353,
+    1.1797299161553383,
+    1.1719937499146909,
+    1.1896628339309245,
+    1.265502749942243
+  ],
+  "python_peak_bytes": 685129,
+  "sqlite_bytes": 25935872,
+  "results": 50,
+  "note": "Synthetic vector scoring only; tracemalloc adds overhead and is not process RSS or full warm search."
+}

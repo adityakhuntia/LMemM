@@ -203,6 +203,9 @@ class ResurfaceOnReopenTests(unittest.TestCase):
     def test_widget_card_follows_the_thing_in_front_and_ticks_save(self):
         ts = self.visit("Q3 plan", "Pricing section goes here")
         self.note(ts, "add a pricing table")
+        # The pill requires confirmed foreground metadata, independently of OCR.
+        self.capture.last_sig = {"app": self.capture.cur_place[0],
+                                 "window": self.capture.cur_place[1]}
         card = self.capture.widget_card()
         self.assertEqual([n["text"] for n in card["left"]], ["add a pricing table"])
         self.capture.widget_tick([card["left"][0]["id"]], True)

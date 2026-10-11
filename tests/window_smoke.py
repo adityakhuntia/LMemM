@@ -222,5 +222,18 @@ w.dialog = {"kind": "x"}
 if w.key(keynav.DOWN): FAILED.append("keys must not move behind a card")
 w.dialog = None
 w.focus_search(); w.go_back(); w._regular(True); w._regular(False)
+# Exercise real native-pane drawing and callbacks against fakes in every status.
+from memory_model import new_memory_state,memory_view
+memory_calls=[]
+w.on_memory=lambda action,payload:memory_calls.append((action,payload))
+state=new_memory_state();state['tab']='Memory'
+for memory_status in ('Disabled','Ready','Processing','Paused','Needs attention'):
+    binding=None if memory_status=='Disabled' else {'workspace_root':'/synthetic/repo','active':True}
+    snapshot=memory_view(state,binding,{'state':memory_status,'model_state':'missing'}, {'primary':[{'text':'Retained synthetic evidence','at':'2026-10-10','citation_id':'c1','locator':'/synthetic/repo/a.py'}]})
+    w.memory_view=lambda pid,v=snapshot:v
+    w.nav=page_model.press(reg,w.nav,'go',ids['q3'])
+    step('Memory '+memory_status,render)
+w._memory_action('source',{'citation_id':'c1'})
+if ('source',{'citation_id':'c1'}) not in memory_calls:FAILED.append('Memory citation callback not forwarded')
 print("FAILED:", FAILED) if FAILED else print("all pages drew")
 sys.exit(1 if FAILED else 0)

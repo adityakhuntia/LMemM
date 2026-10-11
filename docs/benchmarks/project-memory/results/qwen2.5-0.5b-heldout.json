@@ -1,0 +1,183 @@
+{
+  "split": "heldout",
+  "synthetic_corpus": true,
+  "actual_local_model": true,
+  "model": "qwen2.5:0.5b",
+  "manifest_hash": "a8b0c51577010a279d933d14c2a8ab4b268079d44c5c8830c0a93900f1827c67",
+  "metrics": {
+    "claim_precision": 0.125,
+    "claim_recall": 0.16666666666666666,
+    "unsupported_assertions": 0,
+    "true_positive": 1,
+    "false_positive": 7,
+    "false_negative": 5,
+    "association_precision": 1.0,
+    "artifact_recall": 0.8333333333333334,
+    "association_true_positive": 5,
+    "association_false_positive": 0,
+    "association_false_negative": 1
+  },
+  "quality_pass": false,
+  "rows": [
+    {
+      "id": "held_code",
+      "expected": "observation",
+      "predicted": [
+        "observation",
+        "observation"
+      ],
+      "supported_claims": [
+        "observation",
+        "observation"
+      ],
+      "error": null,
+      "seconds": 1.2086608340032399,
+      "output": "{\"candidates\": [{\"type\": \"observation\", \"subject_id\": \"project-197924140d20a9bb8b332a38\", \"evidence_ids\": [\"evidence-1a779f5456b99f326aa8ba14\"], \"statement\": \"Changed retry.py so a failed transaction leaves no partially written rows.\", \"extraction_status\": \"explicit\", \"reason\": \"The evidence directly quotes the source text of the project's code changes.\"}, {\"type\": \"observation\", \"subject_id\": \"project-e53708460beb9ab5c62433ae\", \"evidence_ids\": [\"evidence-1a779f5456b99f326aa8ba14\"], \"statement\": \"Changed retry.py so a failed transaction leaves no partially written rows.\", \"extraction_status\": \"explicit\", \"reason\": \"The evidence directly quotes the source text of the project's code changes.\"}]}"
+    },
+    {
+      "id": "held_decision",
+      "expected": "decision",
+      "predicted": [
+        "observation",
+        "observation"
+      ],
+      "supported_claims": [],
+      "error": null,
+      "seconds": 1.1484716669656336,
+      "output": "{\"candidates\": [{\"type\": \"observation\", \"subject_id\": \"project-e53708460beb9ab5c62433ae\", \"evidence_ids\": [\"evidence-9743efd65cf0e0f82a660676\"], \"statement\": \"Changed retry.py so a failed transaction leaves no partially written rows.\", \"extraction_status\": \"explicit\", \"reason\": \"time based expiry made tests flaky\"}, {\"type\": \"observation\", \"subject_id\": \"project-197924140d20a9bb8b332a38\", \"evidence_ids\": [\"evidence-9743efd65cf0e0f82a660676\"], \"statement\": \"Changed retry.py so a failed transaction leaves no partially written rows.\", \"extraction_status\": \"explicit\", \"reason\": \"time based expiry made tests flaky\"}]}"
+    },
+    {
+      "id": "held_task",
+      "expected": "task",
+      "predicted": [
+        "observation",
+        "observation"
+      ],
+      "supported_claims": [
+        "observation"
+      ],
+      "error": null,
+      "seconds": 1.127406292129308,
+      "output": "{\"candidates\": [{\"type\": \"observation\", \"subject_id\": \"project-197924140d20a9bb8b332a38\", \"evidence_ids\": [\"evidence-0b630efa87c86d634a5bebab\"], \"statement\": \"Next task for project one: test a crash during transaction recovery.\", \"extraction_status\": \"explicit\", \"reason\": \"Changed retry.py so a failed transaction leaves no partially written rows.\"}, {\"type\": \"observation\", \"subject_id\": \"project-e53708460beb9ab5c62433ae\", \"evidence_ids\": [\"evidence-0b630efa87c86d634a5bebab\"], \"statement\": \"Changed retry.py so a failed transaction leaves no partially written rows.\", \"extraction_status\": \"explicit\", \"reason\": \"Changed retry.py so a failed transaction leaves no partially written rows.\"}]}"
+    },
+    {
+      "id": "held_ai",
+      "expected": "suggestion",
+      "predicted": [
+        "observation",
+        "observation"
+      ],
+      "supported_claims": [],
+      "error": null,
+      "seconds": 1.109605916077271,
+      "output": "{\"candidates\": [{\"type\": \"observation\", \"subject_id\": \"project-197924140d20a9bb8b332a38\", \"evidence_ids\": [\"evidence-ecec0ee182c0f3abe6476e19\"], \"statement\": \"Next task for project one: test a crash during transaction recovery.\", \"extraction_status\": \"explicit\", \"reason\": \"The AI output recommends moving all keys into Redis. The user has not agreed.\"}, {\"type\": \"observation\", \"subject_id\": \"project-e53708460beb9ab5c62433ae\", \"evidence_ids\": [\"evidence-ecec0ee182c0f3abe6476e19\"], \"statement\": \"Changed retry.py so a failed transaction leaves no partially written rows.\", \"extraction_status\": \"explicit\", \"reason\": \"Next task for project one: test a crash during transaction recovery.\"}]}"
+    },
+    {
+      "id": "held_reference",
+      "expected": "belongs_to",
+      "predicted": [
+        "observation",
+        "observation"
+      ],
+      "supported_claims": [],
+      "error": null,
+      "seconds": 1.2344840420410037,
+      "output": "{\"candidates\": [{\"type\": \"observation\", \"subject_id\": \"project-197924140d20a9bb8b332a38\", \"evidence_ids\": [\"evidence-3b5dcb82d8aa08e152fcaa1a\"], \"statement\": \"Changed retry.py so a failed transaction leaves no partially written rows.\", \"extraction_status\": \"explicit\", \"reason\": \"Changed retry.py so a failed transaction leaves no partially written rows.\"}, {\"type\": \"observation\", \"subject_id\": \"project-e53708460beb9ab5c62433ae\", \"evidence_ids\": [\"evidence-3b5dcb82d8aa08e152fcaa1a\"], \"statement\": \"Next task for project one: test a crash during transaction recovery.\", \"extraction_status\": \"explicit\", \"reason\": \"Next task for project one: test a crash during transaction recovery.\"}]}"
+    },
+    {
+      "id": "held_unrelated",
+      "expected": "none",
+      "predicted": [
+        "observation",
+        "observation"
+      ],
+      "supported_claims": [],
+      "error": null,
+      "seconds": 1.1283468748442829,
+      "output": "{\"candidates\": [{\"type\": \"observation\", \"subject_id\": \"project-e53708460beb9ab5c62433ae\", \"evidence_ids\": [\"evidence-4f3f25e77a0f2635d4418872\"], \"statement\": \"Next task for project one: test a crash during transaction recovery.\", \"extraction_status\": \"explicit\", \"reason\": \"The statement directly mentions a task for project one.\"}, {\"type\": \"observation\", \"subject_id\": \"project-197924140d20a9bb8b332a38\", \"evidence_ids\": [\"evidence-4f3f25e77a0f2635d4418872\"], \"statement\": \"Changed retry.py so a failed transaction leaves no partially written rows.\", \"extraction_status\": \"explicit\", \"reason\": \"The statement directly mentions a task for project one.\"}]}"
+    },
+    {
+      "id": "held_ambiguous",
+      "expected": "none",
+      "predicted": [
+        "observation",
+        "observation"
+      ],
+      "supported_claims": [],
+      "error": null,
+      "seconds": 1.1790305839385837,
+      "output": "{\"candidates\": [{\"type\": \"observation\", \"subject_id\": \"project-197924140d20a9bb8b332a38\", \"evidence_ids\": [\"evidence-df491d6c8f175345d5b4897b\"], \"statement\": \"Changed retry.py so a failed transaction leaves no partially written rows.\", \"extraction_status\": \"explicit\", \"reason\": \"Changed retry.py so a failed transaction leaves no partially written rows.\"}, {\"type\": \"observation\", \"subject_id\": \"project-e53708460beb9ab5c62433ae\", \"evidence_ids\": [\"evidence-df491d6c8f175345d5b4897b\"], \"statement\": \"Next task for project one: test a crash during transaction recovery.\", \"extraction_status\": \"explicit\", \"reason\": \"Next task for project one: test a crash during transaction recovery.\"}]}"
+    },
+    {
+      "id": "held_decision_unknown",
+      "expected": "decision",
+      "predicted": [
+        "observation",
+        "observation"
+      ],
+      "supported_claims": [],
+      "error": null,
+      "seconds": 1.1776143750175834,
+      "output": "{\"candidates\": [{\"type\": \"observation\", \"subject_id\": \"project-197924140d20a9bb8b332a38\", \"evidence_ids\": [\"evidence-3f8687b3ea2956d69d5a1cc7\"], \"statement\": \"Next task for project one: test a crash during transaction recovery.\", \"extraction_status\": \"explicit\", \"reason\": \"The statement quotes the evidence directly.\"}, {\"type\": \"observation\", \"subject_id\": \"project-e53708460beb9ab5c62433ae\", \"evidence_ids\": [\"evidence-3f8687b3ea2956d69d5a1cc7\"], \"statement\": \"Changed retry.py so a failed transaction leaves no partially written rows.\", \"extraction_status\": \"explicit\", \"reason\": \"The statement quotes the evidence directly.\"}]}"
+    }
+  ],
+  "latencies_seconds": [
+    2.1253894169349223,
+    1.170135207939893,
+    1.1344553341623396,
+    1.2086608340032399,
+    1.2960735829547048,
+    1.2144581249449402,
+    1.12488374998793,
+    1.1484716669656336,
+    1.2200054158456624,
+    1.1320329590234905,
+    1.1207109158858657,
+    1.127406292129308,
+    1.2827167499344796,
+    1.1152957919985056,
+    1.1389636669773608,
+    1.109605916077271,
+    1.2670582090504467,
+    1.1569705840665847,
+    1.2540650411974639,
+    1.2344840420410037,
+    1.2920394588727504,
+    1.1505011250264943,
+    1.1308939158916473,
+    1.1283468748442829,
+    1.2720731671433896,
+    1.1513326249551028,
+    1.2113821250386536,
+    1.1790305839385837,
+    1.2202658338937908,
+    1.1117581250146031,
+    1.286342040868476,
+    1.1776143750175834
+  ],
+  "semantic_bytes": 151552,
+  "python_peak_rss_bytes": 33652736,
+  "energy_metrics": "not measured",
+  "resource_pass": false,
+  "selection_pass": false,
+  "runtime_peak_bytes": 762822656,
+  "runtime_weight_hashes": [
+    "sha256:c5396e06af294bd101b30dce59131a76d2b773e76950acc870eda801d3ab0515",
+    "sha256:66b9ea09bd5b7099cbb4fc820f31b575c0366fa439b08245566692c6784e281e",
+    "sha256:eb4402837c7829a690fa845de4d7f3fd842c2adee476d5341da8a46ea9255175",
+    "sha256:832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e"
+  ],
+  "p95_seconds": 1.2960735829547048,
+  "timing_samples": 32,
+  "idle_cpu_percent": null,
+  "resource_incomplete": [
+    "60-second idle CPU sample"
+  ],
+  "resource_partial_pass": true,
+  "metric_scope": "Candidate type classification, not proposition accuracy. unsupported_assertions counts misclassified decision candidates, not supported assertions.",
+  "acceptance_incomplete": [
+    "proposition/reason accuracy",
+    "forbidden-source leakage",
+    "full enabled-worker resource baseline"
+  ]
+}

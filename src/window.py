@@ -134,7 +134,11 @@ class MainWindow(RecallPanes):
 
     def __init__(self, on_press, data, on_tick=None, on_add_note=None, on_project=None, on_project_undo=None, suggest=None, prefs=None,
                  recall=None, on_recall=None, ask=None, ask_state=None, ask_reset=None, text=None, text_state=None,
-                 text_reset=None, copy=None):
+                 text_reset=None, copy=None, on_memory=None, memory_view=None):
+        self.on_memory=on_memory or (lambda action,payload:None)
+        self.memory_view=memory_view
+        self.memory_pane=None
+        self.memory_snapshot=None
         self.on_press = on_press
         self.data = data
         self.on_tick = on_tick or (lambda ids, done: None)               # tick or reopen notes (the pill's own function)
@@ -458,15 +462,16 @@ class MainWindow(RecallPanes):
         now = time.time()
         page = page_model.view(reg, items, self.nav, fading=self.flow.holding(now), sugg=self.suggest(),
                                prefs=self.prefs(self.nav["sec"]) if self.nav["view"] == "settings" else None)
+        self.memory_snapshot=self.memory_view(page['main'].get('pid')) if self.memory_view and page['main']['kind']=='project' else None
         self.flow_sig = self.flow_signature()
-        sig = repr((window_model.signature(self.banner), page, self.flow_sig, self.sel, self.cur))
+        sig = repr((window_model.signature(self.banner), page, self.flow_sig, self.sel, self.cur,self.memory_snapshot))
         if sig == self.shown:
             return
         self.shown = sig
         self.krows = {"side": [], "main": []}
         top = self._banner((self.banner or {}).get("banner"))
         main = page["main"]
-        split = main["kind"] == "project" and not main.get("empty")      # a project: its top stays put, Things scrolls
+        split = main["kind"] == "project" and (not main.get("empty") or self.memory_snapshot is not None)      # a project: its top stays put, Things scrolls
         head = self._head(main) if split else self._no_head()
         thing = main["kind"] == "thing"
         self.item_here = main.get("item") if thing else None
@@ -483,7 +488,12 @@ class MainWindow(RecallPanes):
         if moved:
             self.cur = {"zone": self.cur["zone"], "id": None}
         self._fill(self.side_scroll, SIDE_W, lambda doc: self._side(doc, page["side"]))
-        self._fill(self.main_scroll, self.W - SIDE_W, lambda doc: self._main(doc, main, split), top=moved)
+        if self.memory_snapshot and self.memory_snapshot['tab']=='Memory':
+            from memory_view import MemoryPane
+            if self.memory_pane is None:self.memory_pane=MemoryPane(self._memory_action)
+            self.memory_pane.render(self.memory_snapshot,self.W-SIDE_W,self.col_x,self.main_w)
+            self.main_scroll.setDocumentView_(self.memory_pane.host)
+        else:self._fill(self.main_scroll, self.W - SIDE_W, lambda doc: self._main(doc, main, split), top=moved)
         self.draw_panel(TOP, self.H - TOP)
 
     def _fill(self, scroll, width, build, top=False):
@@ -977,9 +987,46 @@ class MainWindow(RecallPanes):
 
     # ------------------------------------------------------------ the page
 
+    def _memory_action(self,action,payload=None):
+        payload=payload or {}
+        try:
+            if action=='choose_root':
+                from AppKit import NSOpenPanel
+                panel=NSOpenPanel.openPanel();panel.setCanChooseDirectories_(True);panel.setCanChooseFiles_(False);panel.setAllowsMultipleSelection_(False)
+                panel.setMessage_('Enable Memory for one workspace. Retain only new approved visible excerpts and project notes.')
+                if panel.runModal()!=1:return
+                action='enroll';payload={'root':str(panel.URL().path())}
+            elif action in {'confirm_model','confirm_agent','confirm_disconnect'}:
+                from AppKit import NSAlert
+                titles={'confirm_model':'Install local semantic search?', 'confirm_agent':'Allow Codex to read this project’s memory?', 'confirm_disconnect':'Disconnect project Memory?'}
+                details={'confirm_model':'Download approximately 46 MB of MiniLM weights to LMemM’s embedding-models folder. The cloud-disabled local Ollama runtime must already be installed. No source text is sent during installation.',
+                         'confirm_agent':'Codex can search retained project excerpts and intentional notes, read cited context, and resolve sources. Invoking these tools sends that text to the agent and its configured provider. Capture permission is separate. You can revoke access here.',
+                         'confirm_disconnect':'Stop source capture and revoke all agent grants containing this project. Retained data remains local; it becomes inaccessible until explicitly re-enabled.'}
+                alert=NSAlert.alloc().init();alert.setMessageText_(titles[action]);alert.setInformativeText_(details[action]);alert.addButtonWithTitle_('Continue');alert.addButtonWithTitle_('Cancel')
+                if alert.runModal()!=1000:return
+                action={'confirm_model':'install_model','confirm_agent':'connect_agent','confirm_disconnect':'disconnect'}[action];payload={'approved':True}
+            elif action=='copy_preview':
+                from AppKit import NSPasteboard
+                import json
+                preview=self.memory_snapshot.get('preview')
+                if preview:
+                    paste=NSPasteboard.generalPasteboard();paste.clearContents();paste.setString_forType_(json.dumps(preview,ensure_ascii=False,indent=2),'public.utf8-plain-text')
+                return
+            elif action=='reconnect_extension':
+                from AppKit import NSAlert,NSPasteboard
+                import config,os
+                path=os.path.join(config.paths().semantic_dir,'bridge','grant.json')
+                paste=NSPasteboard.generalPasteboard();paste.clearContents();paste.setString_forType_(path,'public.utf8-plain-text')
+                alert=NSAlert.alloc().init();alert.setMessageText_('Reconnect VS Code source sharing');alert.setInformativeText_('In VS Code, run “LMemM: Connect Project Memory” from the Command Palette and paste the copied grant path. Approve the local workspace. This grants capture only, not agent access.');alert.runModal();return
+            self.on_memory(action,payload)
+        except (ValueError,OSError) as error:
+            if self.memory_snapshot:self.memory_snapshot['error']=str(error)
+        self.shown=None;self.render()
+
     def _main(self, doc, page, split=False):
         x, w = self.col_x, self.main_w
         if split:
+            if page.get("empty"):return self._empty(doc,page["empty"],x,20,w)
             return self._things(doc, page, x, 6, w)
         y = 30
         kind = page["kind"]
@@ -1326,6 +1373,13 @@ class MainWindow(RecallPanes):
         y += kit.put_text(doc, general["keep_line"], x, y, w, 12, 400, kit.mute()) + 24
         y = self._row(doc, x, y, w, "Add a note", "Press this anywhere to write or dictate a note.",
                       lambda row, rw: kit.put_text(row, general["hotkey"], rw - 116, 0, 100, 15, 600, align=RIGHT, wrap=False, height=60, middle=True))
+        if self.memory_view:
+            y=self._section(doc,general['memory']['title'],x,y+16,w)
+            y+=kit.put_text(doc,general['memory']['line'],x,y,w,13,400,kit.mute())+12
+            kit.button(doc,'Choose project…',x,y,160,32,lambda:self.press('home'),kind='outline',size=13,weight=600)
+            kit.button(doc,'Pause Memory',x+174,y,150,32,lambda:self._memory_action('pause'),kind='quiet',size=13,weight=500)
+            kit.button(doc,'Resume Memory',x+338,y,150,32,lambda:self._memory_action('resume'),kind='quiet',size=13,weight=500)
+            y+=52
         return self._row(doc, x, y, w, "Setup", "Go through the first-run questions again. Your memory and notes stay.",
                          lambda row, rw: kit.button(row, "Reopen setup…", rw - 14 - 130, 14, 130, 32, lambda: self.on_press("setup"), kind="outline", size=13, weight=600))
 
@@ -1385,6 +1439,11 @@ class MainWindow(RecallPanes):
         kit.put_text(host, page["title"], x + 54, y, w - 54 - 170, 26, 700, wrap=False, height=32)
         self._label(host, page["meta"], x + 54, y + 33, w - 54, size=13, weight=400)
         y += 62
+        if self.memory_snapshot:
+            for i,tab in enumerate(self.memory_snapshot['tabs']):
+                kit.button(host,tab,x+i*124,y,116,32,lambda t=tab:self._memory_action('tab',{'tab':t}),kind='outline' if self.memory_snapshot['tab']==tab else 'quiet',size=14,weight=600)
+            y+=48
+            if self.memory_snapshot['tab']=='Memory' or page.get('empty'):return y
         self._label(host, "PICK UP WHERE YOU LEFT OFF", x, y, w)
         y += 22
         if page["pick_up"]:

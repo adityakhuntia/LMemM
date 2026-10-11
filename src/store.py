@@ -200,14 +200,18 @@ def save_memory(items):
     """Write the one memory file: the readable view first, the full items after. Clears
     out any pre-schema-3 .index.json / pending.json left over from before they merged."""
     memory_dir = config.paths().memory_dir
-    ordered = sorted(items.values(), key=lambda i: i["last_seen"], reverse=True)
-    write_json(config.paths().items_file, {
-        "schema_version": SCHEMA,
-        "updated": nice_time(datetime.now().isoformat(timespec="seconds")),
-        **({"user": load_user()} if load_user() else {}),
-        "things": [readable(i) for i in ordered],
-        "items": ordered,
-    })
+    from memory_notes import prepare_native_sync, commit_native_sync, native_sync_lock
+    with native_sync_lock(config.paths().semantic_dir):
+        marker = prepare_native_sync(items, config.paths().semantic_dir)
+        ordered = sorted(items.values(), key=lambda i: i["last_seen"], reverse=True)
+        write_json(config.paths().items_file, {
+            "schema_version": SCHEMA,
+            "updated": nice_time(datetime.now().isoformat(timespec="seconds")),
+            **({"user": load_user()} if load_user() else {}),
+            "things": [readable(i) for i in ordered],
+            "items": ordered,
+        })
+        commit_native_sync(config.paths().semantic_dir, marker)
     for stale in (".index.json", "pending.json"):
         try:
             os.remove(os.path.join(memory_dir, stale))

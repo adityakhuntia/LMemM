@@ -47,8 +47,8 @@ CTRL, SHIFT, OPT, CMD = 1 << 18, 1 << 17, 1 << 19, 1 << 20
 
 def front():
     app = macos.NSWorkspace.sharedWorkspace().frontmostApplication()
-    if app is None:
-        return None
+    if app is None or app.processIdentifier() == os.getpid():
+        return None                         # never inspect our own UI from a worker
     return {"app": app.localizedName(), "bundle_id": app.bundleIdentifier(), "pid": app.processIdentifier()}
 
 
@@ -96,6 +96,8 @@ class AXReader:
         return time.monotonic() - self.enabled_at.get(pid, -1e9) < seconds
 
     def read(self, front, full):
+        if front["pid"] == os.getpid():
+            return None                     # own-process AX can invoke AppKit off the main thread
         if not self.trusted():
             return None
         el = self.app_element(front["pid"], front["bundle_id"])
@@ -233,6 +235,8 @@ class Tap:
 
 def click_target(reader, x, y):
     """What was clicked: its role and, for buttons/links/tabs/rows, its name. Never a text field's contents."""
+    if front() is None:
+        return None, None                   # own window/menu: no background AX hit-testing
     AS = reader.AS
     err, el = AS.AXUIElementCopyElementAtPosition(AS.AXUIElementCreateSystemWide(), x, y, None)
     if err != 0 or el is None:

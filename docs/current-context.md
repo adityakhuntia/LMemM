@@ -1,83 +1,85 @@
 # LMemM — current context
 
-Updated 2026-10-07, America/New_York. Historical context and handover are in
-`docs/history/`. This file records current decisions and verification limits.
+Updated 2026-10-11. Active work is now on **local `main`**, explicitly authorized by the user. `origin/main` was fetched at `42d7f0e`, which is included. No push was made. The old feature worktree is retained as a checkpoint, not the active implementation workspace. Root `context.md` is preserved untracked; the named `preserve user context before memory MVP main integration` stash is also retained. Do not stage that file, read/stage the worktree `.env` canary, or replay the stash blindly.
 
-## Integration and closed work
+## Implemented MVP
 
-- Aditya's `refactor/cohesive-core` through `42c38b7` includes every published
-  `feat/input-timeline` commit through `7ccec46`. Integrated locally in `627f0e4`.
-- Our foreground-evidence spec/plan were preserved under `docs/specs/` and
-  `docs/plans/`, matching the refactor's document layout. No foreground-window
-  product implementation has started; the plan must be adapted to `macos.py`,
-  `config.py`, `store.py` and the agreed AI-agent MVP before execution.
-- Refactor module extraction, pending-note controls/reminders and Left/Plan
-  widget integration: **closed at the verification level below**.
-- Repaired pending-note deletion: manifest recovery rebuilds `pending.json`
-  using private atomic writes; deleted quotes disappear while retained notes stay.
-- Repaired note-state provenance: unvisited items changed by controls are included
-  in contributions; an explicit empty completion map preserves reopen operations.
-- Repaired same-second offline command collisions using nanosecond evidence IDs.
-- Existing keyboard/cursor summaries, content excerpts, identity repair,
-  dictation safeguards, retention and provenance work remain integrated.
-- Validated integration and repairs published to GitHub `main` and
-  `feat/input-timeline` at **0f3b862**. Current checkout is main. Feature/refactor
-  branches are preserved; branch cleanup is not performed.
+The approved [spec](specs/2026-10-10-hybrid-project-memory-mvp.md) and [plan](plans/2026-10-10-hybrid-project-memory-mvp.md) have been implemented through the backend, service, native integration and MCP tasks:
 
-## Verification
+- Versioned SQLite project bindings, scoped grants, retained evidence chunks and exact citations.
+- Keyword + local MiniLM embeddings, incremental bounded vector generations, hybrid ranking and supported one-hop references.
+- Explicit note decisions/reasons/tasks, cited context packets, deletion/revocation/quota fences.
+- Private app-supervised service with asynchronous native client, pause/quit/lock lifecycle hooks and an owned cloud-disabled model runtime.
+- Durable native JSON-note reconciliation for new explicitly project-scoped notes, including edits/done/reopen/delete. Legacy/ambiguous OCR notes are not imported.
+- Native Overview / Memory tabs, time filters, Return-only search, project-note entry, retained-source inspection, setup and normal VSIX packaging.
+- Official SDK read-only MCP adapter, separate agent disclosure approval, exact grant-specific context preview and explicit copy.
 
-- Full native regression suite: **110 tests passed**, 2026-10-07. Whitespace and
-  syntax checks passed; new regression tests failed before their fixes.
-- Independent review identified three note-provenance defects; fixes were
-  reviewed again with no remaining blockers in the reviewed integration.
-- Native smoke: generated foreground window, periodic display capture, actual
-  Vision OCR, memory persistence, saved note, widget rendering and marking done
-  passed. Only temporary data was used, removed on exit. No live input listener
-  or microphone was started.
-- Initial note-trigger capture was rejected by context validation; this is not
-  a hotkey/note-capture acceptance pass. Earlier widget-only native checks passed.
+Browser semantic intake, repository crawling, graph visualization, agent writes and model-generated claims are outside this MVP. The local selected embedding model is `all-minilm:22m`, 384 dimensions; weights are installed only after explicit setup.
 
-## Open QA and current limitations
+## Verification and acceptance
 
-- Real Google Meet behavior, sustained CPU/RAM/power benchmarks, longer sessions
-  and multiple displays remain unverified. No claim of optimized performance.
-- Latest Ctrl+Tab/Cmd+Tab live repeat, full pause/lock/exclusion lifecycle,
-  real two-session Google Docs and real speech/hotkey acceptance remain open.
-- Screenshots still cover displays; selecting the first eligible CG window can
-  yield wrong foreground bounds. Surrounding UI and self-observation remain
-  known evidence-quality problems. Native smoke does not resolve them.
-- App/site exclusions are heuristic defaults, not user-configurable access
-  policies. Input alone is explicitly opted in and restricted to VS Code.
-- Storage is local plaintext. OCR/activity/decision quotes do not establish
-  authorship, intent, verified decisions or completed work.
-- Widget projects are derived labels. No knowledge graph, semantic inference,
-  MCP service or agent retrieval boundary exists yet.
+Post-review full suite: **807 Python tests passed**, plus **6 Node bridge tests** and seven refreshed real AppKit synthetic states. All ten material independent-review findings, plus provenance presentation, were addressed in one regression/fix pass. See the [review and decisions](benchmarks/project-memory/hybrid-mvp/review-and-decisions.md).
 
-## MVP decision and next work
+Frozen production held-out retrieval: hybrid Recall@5 20/20; keyword 15/20; paraphrase 10/10 versus keyword 5/10; exact 10/10 both. Fresh deterministic assertion set: 8/8 supported claims across 20 cases, zero unsupported reasons/citations. These are small synthetic measurements.
 
-The user selected **resume work on a project** as the first agent workflow.
-The agreed MVP is accurate project knowledge exposed to AI agents through MCP,
-with acceptable measured performance and low resource use. Broader companion
-features come after this. Graph understanding is now in **brainstorming**;
-see [discussion brief](knowledge-graph-discussion.md).
+10k authorized-chunk synthetic hybrid search: warm p95 0.251s, absolute probe RSS 59.9MB, 60-second probe idle sampled. Document vectors were duplicated to isolate index cost; this is not paired native runtime acceptance. Device: Apple M2 Pro, 32GiB RAM, macOS 27.0.
 
-Recommended order: define one agent workflow and evidence quality criteria;
-enforce app/site access and foreground source boundaries; establish performance
-baseline; build explicit project/artifact associations and source-backed facts;
-expose scoped read-only MCP retrieval; evaluate inferred relationships before
-allowing them to affect agent answers. Tab-switch patterns are weak evidence,
-not proof of a shared project.
+Real AppKit synthetic pane states were displayed and captured by window ID. A real hosted Codex resume test used only two synthetic notes, called the MCP context tool, and cited both exact evidence IDs. No personal project evidence was enrolled or transmitted.
 
-## Useful commands
+**Still pending:** original open-project/app-switch native shutdown retest, physical sleep/lock acceptance, the paired 30-minute native resource workload (including runtime RSS/energy and live indexing latency), real extension installation/enrollment acceptance, and three consented external testers. Do not call launch complete or claim the original shutdown is fixed solely from tests. See [acceptance](benchmarks/project-memory/hybrid-mvp/acceptance.md).
 
-```bash
-.venv/bin/python lmemm.py --input-events --input-app com.microsoft.VSCode
-.venv/bin/python lmemm.py notes
-.venv/bin/python lmemm.py notes done NOTE_ID
-.venv/bin/python lmemm.py notes reopen NOTE_ID
-.venv/bin/python lmemm.py memory 100 --events --content
-PYTHON=.venv/bin/python ./scripts/test.sh -v
+## Run locally
+
+Use the root checkout now:
+
+```sh
+cd /Users/divyaanshseth/Documents/LMemM/LMemM
+.venv/bin/python lmemm.py start
 ```
 
-One tracker at a time; restart after code/permission changes. README is the user
-guide and docs/architecture.md describes the integrated modules.
+Do not start a second tracker if the user's terminal is already running one. Open a project → Memory → Enable Memory. Setup, extension connection, agent disclosure and test steps are in the [runbook](hybrid-memory-runbook.md). Automated tests did not enroll personal sources or leave a test service running.
+
+The execution decisions and final findings are preserved in the linked review record; commit history and acceptance records are durable. Superseded October 7 plans remain historical, not competing scope.
+
+## Follow-up: manual test launch repair
+
+The isolated manual session lives under ignored `data/memory-mvp-test-20261011/`.
+A setup-again action exposed in-place AppKit relaunch losing macOS registration;
+the pill survived but the menu-bar item stayed at `(0, 0)`. Tracker and permission
+restarts now spawn a fresh process, and `lmemm.py open` offers direct window access.
+The local test launcher now honors CLI arguments and opens the window on startup.
+The affected session was saved and relaunched; native app registration and normal
+menu-bar placement were observed. Follow-up full suite: 811 tests passed. This
+fix does not establish the unrelated original foreground-switch abort acceptance.
+
+## Follow-up: source verification loop
+
+A real manual VS Code connection exposed stale `connect` replay deleting an
+already accepted acknowledgement after the challenge tab closed. The service
+now ignores replayed connect sequences and verifies stable native identity
+rather than requiring the acknowledged tab's old title to remain visible.
+Actual native-window changes still invalidate registration. The extension now
+publishes immediately after reading its first acknowledgement, avoiding an
+extra polling interval before its initial snapshot/heartbeat. Two reproduced
+failure tests were RED→GREEN; a native-window-change rejection test also passes.
+The extension handshake test now requires a snapshot on the first ack poll.
+Full suite: 814 Python tests and 6 Node tests passed. The local extension was
+reinstalled, test tracker restarted, and Alpha opened in a fresh VS Code window.
+A fresh manual connection is still needed to establish live capture acceptance.
+
+### Pause/resume source connection follow-up (2026-10-11)
+
+Manual capture reached Alpha (`CAPTURE_ALPHA_ONE` retained), but the saved TWO
+edit was absent after pause/resume. Pause/resume rebuilt the bridge session,
+leaving VS Code on an obsolete token. They now publish the current intake
+revision and active state on the existing connection, clearing snapshot dedup;
+workspace permission changes still rotate sessions. Regression reproduced
+before the fix. Full suite: 814 Python tests and 6 extension tests passed.
+Old ONE snapshots remain searchable by design; search TWO to check fresh capture.
+
+The next manual pause test exposed a second failure: the bridge's updated grant
+revision was being used as the source content-policy revision, so storage
+rejected resumed snapshots. Intake now applies the content-policy revision only
+after rechecking the current grant revision, pause state and active binding.
+A service regression exercises real handshake, pause/resume, snapshot retention
+and accepted acknowledgement. Full suite: 815 Python tests and 6 Node tests pass.

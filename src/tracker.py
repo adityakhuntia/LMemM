@@ -164,6 +164,9 @@ class Tracker:
         self.trail = None
         self.widget = None                   # the on-screen pill (widget.py), made in run()
         self.menubar = None                  # the menu-bar item (menubar.py), made in run()
+        self.memory_client = None
+        self.memory_events = []
+        self.memory_controller = None
         self.main_window = None              # the window (window.py), made the first time it is opened
         self.page_data_said = False
         self.menu_refreshed = 0.0
@@ -205,6 +208,8 @@ class Tracker:
 
     def set_manual_pause(self, paused, until=None):
         self.manual_paused = paused
+        if self.memory_client and (paused or not any(self.flags.values())):
+            self.memory_client.request("pause" if paused else "resume", {}, "lifecycle")
         self.pause_until = until if paused else None
         self.pending = None
         self.pin = False
@@ -238,7 +243,9 @@ class Tracker:
             self.control_file.unlink(missing_ok=True)
 
     def apply_control(self, doc):
-        if doc.get("action") in {"pause", "resume"}:
+        if doc.get("action") == "open":
+            self.open_window()
+        elif doc.get("action") in {"pause", "resume"}:
             self.set_manual_pause(doc["action"] == "pause")
         elif doc.get("action") == "notes_done" and isinstance(doc.get("ids"), list):
             with self.lock:
@@ -393,6 +400,8 @@ class Tracker:
 
     def set_flag(self, k, v):
         self.flags[k] = v
+        if v and self.memory_client:
+            self.memory_client.request("pause", {"reason": "System " + k}, "system-pause")
         if v:
             self.close_interval()
             if self.input_monitor:
@@ -406,6 +415,11 @@ class Tracker:
             raise KeyboardInterrupt
         self._tick_mark = time.perf_counter()
         self.process_control()
+        if self.memory_client:
+            events=self.memory_client.poll()
+            if self.memory_controller:
+                self.memory_controller.poll(events)
+            else:self.memory_events.extend(events)
         self.poll_input()
         self.maintain()
         self.mark("housekeeping")
@@ -875,9 +889,24 @@ class Tracker:
                                                       ask=self.widget_ask, ask_state=self.widget_ask_state,
                                                       ask_reset=self.widget_ask_reset, text=self.window_text,
                                                       text_state=self.window_text_state, text_reset=self.window_text_reset,
-                                                      copy=self.window_copy)   # its button sends a menu row id
+                                                      copy=self.window_copy, on_memory=self.window_memory_action,
+                                                      memory_view=self.window_memory_view)   # its button sends a menu row id
         self.adopt_projects()                       # things filed by name since the last time
         self.main_window.show(self.window_view(self.widget_status()))
+
+    def _memory_controller(self):
+        if self.memory_controller is None:
+            from memory_controller import MemoryController
+            self.memory_controller=MemoryController(self.start_memory,lambda:self.items,lambda:self.save(force=True))
+        return self.memory_controller
+
+    def window_memory_view(self,pid):
+        controller=self._memory_controller();controller.select(pid)
+        if self.memory_client is None:controller.poll([])
+        return controller.view()
+
+    def window_memory_action(self,action,payload):
+        with self.lock:self._memory_controller().action(action,payload)
 
     def show_memory_file(self):
         subprocess.run(["open", "-R", config.paths().items_file], check=False)
@@ -1622,6 +1651,8 @@ class Tracker:
         signal.signal(signal.SIGUSR2, lambda *_: setattr(self, "note_request", True))
         app = dictation.start_app()
         self.nsapp = app
+        if (Path(p.semantic_dir) / "memory.sqlite").exists():
+            self.start_memory()
         hotkey_ok = dictation.register_hotkey(lambda: setattr(self, "note_request", True))
         dictation.ensure_listener()        # build the speech helper now, not on first ⌃⌥N
         if self.show_widget:
@@ -1931,7 +1962,8 @@ class Tracker:
 
     def hand_over(self):
         """Restart, reopen setup, or delete everything, once LMemM has saved and stopped. A restart
-        replaces this process in place, so macOS sees the same app (permissions.relaunch does the same)."""
+        uses a fresh process: replacing a launched AppKit process in place can leave
+        its status item unregistered with macOS even though floating panels work."""
         if not self.after_exit:
             return
         python, script = sys.executable, os.path.abspath(sys.argv[0])
@@ -1947,10 +1979,19 @@ class Tracker:
             argv = [python, script, "setup", "--again"]
         else:
             argv = [python] + sys.argv
-        os.execv(python, argv)
+        subprocess.Popen(argv)
+
+    def start_memory(self):
+        if self.memory_client is None:
+            from memory_client import MemoryClient
+            self.memory_client = MemoryClient(config.paths().semantic_dir)
+            self.memory_client.start()
+        return self.memory_client
 
     def finish(self):
         p = config.paths()
+        if self.memory_client:
+            self.memory_client.stop()
         if self.input_monitor:
             self.poll_input()
             self.input_monitor.stop()

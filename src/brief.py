@@ -33,7 +33,7 @@ def build(items, book, front_id=None, found=None, now=None):
     """The brief as text. `found`: memory_search.pieces(...) (for what you wrote); None -> only what is in the items."""
     now = now or datetime.now()
     task, at = pick_task(book, items, front_id, now)
-    ids = [i for i in (task or {}).get("items", []) if i in items] or ([front_id] if front_id in items else [])
+    ids = [i for i in (task or {}).get("items", []) if i in items] or recent_ids(items, front_id, now)
     if not ids:
         return ""
     lines = [f"# Context from my Mac ({now.strftime('%-d %b %H:%M')})", ""]
@@ -45,16 +45,21 @@ def build(items, book, front_id=None, found=None, now=None):
             lines.append(f"**Open:** {task['open']}")
         lines.append("")
     else:
-        lines += [f"**I'm working on:** {tasks.clean(items[ids[0]].get('title') or items[ids[0]].get('doing'), 90)}", ""]
+        lines += [f"**In front when I copied this:** {items[ids[0]].get('app')}: "
+                  f"{tasks.clean(items[ids[0]].get('title') or items[ids[0]].get('doing'), 90)}", ""]
     wrote = [p for p in (found or []) if p["kind"] == "wrote" and p.get("item") in ids][-WROTE_PIECES:]
     if wrote:
         lines.append("**What I wrote recently:**")
         lines += [f"- {p['text']}" for p in wrote]
         lines.append("")
-    lines.append("**Windows involved:**")
+    lines.append("**Windows involved:**" if task else "**Windows I had open in the last %d minutes:**" % RECENT_MINUTES)
     for iid in ids[:8]:
         it = items[iid]
         lines.append(f"- {it.get('app')}: {tasks.clean(it.get('title') or it.get('doing'), 90)}")
+    if not task:                                    # nothing worked out yet: a few lines of what was on those windows
+        seen = [(items[i].get("app"), l) for i in ids[:3] for l in tasks.screen_lines(items[i])[-2:]]
+        if seen:
+            lines += ["", "**On screen:**"] + [f"- {app}: {l[:160]}" for app, l in seen]
     open_notes = open_note_texts(items, ids)
     if open_notes:
         lines += ["", "**My open notes:**"] + [f"- {t}" for t in open_notes[:5]]
@@ -83,20 +88,26 @@ RECENT_HOURS = 3                  # how far back a task run still counts as back
 RECENT_MINUTES = 25
 
 
+def recent_ids(items, front_id, now):
+    """The things from the last RECENT_MINUTES, the one in front first (at most 6)."""
+    floor = now - timedelta(minutes=RECENT_MINUTES)
+    recent = sorted(((memory_search._when(it.get("last_seen")), iid) for iid, it in items.items()
+                     if not tasks.off_limits(it)), key=lambda x: x[0] or datetime.min, reverse=True)
+    ids = [iid for at, iid in recent if at and at >= floor][:6]
+    if front_id in ids:
+        ids.remove(front_id)
+    if front_id in items:
+        ids.insert(0, front_id)
+    return ids
+
+
 def evidence(items, book, front_id, found, now=None):
     """The curated text the model writes the brief from (or '' when there is nothing to say). Anchored on what you did
     in the last RECENT_MINUTES, with the front window first; a longer task only counts as background when it shares
     a window with that."""
     now = now or datetime.now()
     floor = now - timedelta(minutes=RECENT_MINUTES)
-    recent = sorted(((memory_search._when(it.get("last_seen")), iid) for iid, it in items.items()
-                     if not tasks.off_limits(it)), key=lambda x: x[0] or datetime.min, reverse=True)
-    ids = [iid for at, iid in recent if at and at >= floor][:6]
-    if front_id in items and front_id not in ids:
-        ids.insert(0, front_id)
-    elif front_id in ids:
-        ids.remove(front_id)
-        ids.insert(0, front_id)
+    ids = recent_ids(items, front_id, now)
     if not ids:
         return ""
     out = ["RIGHT NOW (the last %d minutes; the first window was in front when I pressed the button):" % RECENT_MINUTES]
@@ -132,6 +143,9 @@ def nextsteps_recent(book, now):
     return sorted(rows, key=lambda x: x[0], reverse=True)
 
 
+LAST = {"mode": ""}              # how the last compose() went: "claude", "no evidence", "limit", "error", "short"
+
+
 def compose(items, book, front_id, found, provider, governor=None, now=None):
     """The brief as Claude writes it from curated evidence: (text, tokens). Falls back to the plain local brief
     (tokens 0) when there is nothing to send, the day's limit is spent, or the call fails."""
@@ -140,18 +154,23 @@ def compose(items, book, front_id, found, provider, governor=None, now=None):
     plain = build(items, book, front_id, found, now)
     data = evidence(items, book, front_id, found, now)
     if not data:
+        LAST["mode"] = "no evidence"
         return plain, 0
     payload = f"{labels.MARK_OPEN}\n{labels._defang(data)}\n{labels.MARK_CLOSE}"
     est = labels.OVERHEAD_TOKENS + labels.estimate_tokens(payload) + COMPOSE_OUT
     if governor.mode() == "stopped" or est > governor.remaining():
+        LAST["mode"] = "limit"
         return plain, 0
     try:
         text, usage = provider.ask(payload, COMPOSE, model=config.ASK_MODEL, effort="low")
     except labels.ProviderError:
+        LAST["mode"] = "error"
         return plain, 0
     labels.log_exchange(getattr(provider, "last_exchange", None))
     tokens = governor.record(usage)
     text = (text or "").strip()
     if len(text) < 40:
+        LAST["mode"] = "short"
         return plain, tokens
+    LAST["mode"] = "claude"
     return f"# Context from my Mac ({now.strftime('%-d %b %H:%M')})\n\n{text[:BRIEF_CHARS]}", tokens

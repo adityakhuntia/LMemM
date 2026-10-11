@@ -1807,8 +1807,9 @@ class Tracker:
             provider = labels.ClaudeCli()
             if provider.available():
                 text, spent = brief.compose(items, book, front, self.found(), provider, labels.Governor())
-                say(f"brief written by Claude: {spent} tokens" if spent else "brief built locally (no tokens)")
+                say(f"brief written by Claude: {spent} tokens" if spent else f"brief built locally ({brief.LAST['mode']}; no tokens)")
                 return text
+            say("brief built locally (the claude command is not available)")
             return brief.build(items, book, front, self.found())
         return recap.build(book, days=1)
 

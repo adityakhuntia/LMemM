@@ -173,6 +173,15 @@ class BriefAndRecapTests(TmpPaths):
             "t": {"at": "2026-10-10T14:00:00", "tasks": [{"title": "Plan outreach", "goal": "g", "stage": "Planning", "open": None,
                                                            "items": ["sheet"], "seconds": 600}]}}
 
+    def test_without_a_task_the_local_brief_lists_the_recent_windows_not_just_the_front_one(self):
+        items = world()
+        text = brief.build(items, {}, "chat", ms.pieces(items), NOW)
+        self.assertIn("In front when I copied this:** ChatGPT: Follow up system", text)
+        self.assertIn("last 25 minutes", text)
+        self.assertIn("Mail: Draft", text)
+        self.assertIn("**On screen:**", text)
+        self.assertIn("sendDrafts", text)
+
     def test_the_brief_has_the_task_the_writing_the_windows_and_the_notes(self):
         items = world()
         text = brief.build(items, self.book(), "chat", ms.pieces(items) + [wrote("I want a reminder after seven days")], NOW)

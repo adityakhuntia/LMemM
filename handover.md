@@ -1,108 +1,51 @@
-# Claude handover — LMemM semantic project memory
+# LMemM — continuation handover
 
-Updated 2026-10-08. Read this first, then [the detailed handover](docs/handover-2026-10-08.md),
-[current context](docs/current-context.md) and [the live runbook](docs/live-semantic-pilot.md).
+Updated 2026-10-10. Start with [current context](docs/current-context.md) and the
+[hybrid project-memory MVP spec](docs/specs/2026-10-10-hybrid-project-memory-mvp.md).
 
-## Branch and integration
+## Worktree and current task
 
-Continue on `feat/semantic-project-memory`. All current Aditya main commits through
-`e5cd6ed` are included, merged in `b369359`. The feature was published through `1f26e25`
-before this entry-point document. Main has not been changed by this publication.
-Do not assume the feature is merged into main or start a parallel replacement branch.
+Use `.worktrees/semantic-project-memory` on `feat/semantic-project-memory`.
+Main is integrated through `42d7f0e` (merge `e94d03a`); crash guard `11f5f3e` follows.
+These local updates are not pushed. Root main and its modified context.md are preserved.
+The local .env canary stays untracked. Do not create a replacement branch or replay old stashes.
 
-Aditya's additions retained: lighter screenshot/OCR/storage behavior, capture-cost docs,
-rule-based AI context export, schema-3 consolidated memory and the interactive CLI menu.
-The native floating Left/Plan widget remains in the normal tracker. It is not launched
-by the semantic pilot, and semantic tasks are not wired into that widget.
+User chose **Overview · Memory** project tabs and the focused hybrid-memory scope.
+The written design has passed a fresh builder check but still awaits user approval.
+After approval, use Superpowers writing-plans. Do not begin implementation or follow
+remaining tasks in the superseded October 7 plans until the new plan exists.
 
-## What Divyaansh built
+## Scope in one paragraph
 
-An isolated local semantic evidence store and experimental VS Code source adapter:
+Approved VS Code visible excerpts and intentional project notes become retained,
+citable evidence. Keyword and local vector search find relevant passages; supported
+project/claim/reference links add context. The existing native project page gains a
+Memory tab with search, source detail and a grant-specific agent-context preview.
+One read-only MCP client can resume the same project using the same backend. Browser
+semantic intake, universal understanding, graph visualization and agent writes are deferred.
 
-Approved visible local file excerpts / intentional notes → private native-window-bound
-bridge → SQLite evidence → bounded episodes → local model selection and validation →
-source-backed claims/relationships → scoped project recall with citations.
+## Existing behavior and outstanding proof
 
-Canonical workspace/file paths anchor projects/artifacts across sessions. Evidence
-text deduplicates without losing occurrence/provenance. Core supports decisions,
-reasons, observations, suggestions, tasks, corrections, relationships, scoped retrieval,
-retention and dependent-source deletion. Some core capabilities are only fixture-tested,
-not fully exercised by the live adapter.
+The normal tracker/UI and experimental semantic pilot exist as separate flows. The
+new index, tabs, unified notes, supervised service and MCP are proposed, not implemented.
+One live explicit decision/task recall test passed; no general model acceptance exists.
+Latest 693 Python tests passed after self-AX guards; 6 Node tests passed during integration.
+Native abort: own-process background accessibility reads are guarded, but the original
+open-project/app-switch test still needs a live retest. Do not call the shutdown fixed
+solely from the unit suite. Resource and multi-project acceptance remain open.
 
-Live debugging repaired native focus fallback, grant revision publication, publisher
-leases/re-registration, note acknowledgement and stable retry identity, silent note-command
-failures, orphaned episode scheduling and focus-cancelled inference recovery. Focus-only
-jobs retry at most twice; pause/access cancellation does not automatically retry. Explicit
-`retry_notes` waits for verified focus and is cleared by pause. Unknown secure-field states
-still fail closed. Single-line intentional `TODO:` notes use deterministic exact-quote
-classification; TODOs seen in documents are not promoted.
+## Commands and records
 
-## Evidence and honest status
-
-After the main merge: **251 Python tests (92 semantic) and 6 Node tests passed**.
-Native full-suite execution needs macOS framework access. An upstream thumbnail test
-emitted an unclosed-image ResourceWarning but did not fail. The new entry-point document
-is documentation only.
-
-Live one-project checks passed registration, approved visible-source capture/storage,
-stable-view dedup, reconnect/resume, a saved .env canary exclusion, intentional-note
-acknowledgement, bounded recovery and cited recall. Recall returned:
-
-- Decision: `We chose SQLite because memory should stay local.`
-- Exact reason: `memory should stay local.`
-- Supported open task: `TODO: Test Restart Recovery`
-
-Both claims resolve to exact retained user_note sources. Duplicate-note jobs that exhausted
-retries remain visibly cancelled. Coverage reports truncation/unprocessed evidence.
-This is a small demonstrated pipeline, not general semantic acceptance.
-
-No local model has passed the overall precision gate. Reviewed v2.4 Qwen2.5 1.5B
-precision/recall was 83%/100%; adapter v2.5 requires fresh evaluation. MCP, browser
-semantic adapters, graph UI and real AI-agent project resume are not implemented.
-Normal screenshot/input capture is still separate from semantic intake.
-
-## Relevant code and storage
-
-- `semantic_memory/`: store, episodes, worker, local runtime, claims/relationships,
-  scope-aware recall, retention/deletion and native live bridge.
-- `extensions/lmemm-source/`: opt-in VS Code publisher and intentional-note commands.
-- `scripts/live_project_memory.py`: collector, status/control and read-only recall.
-- `context.py`: Aditya's separate rule-based export from normal tracker memory.
-- `widget.py`: normal-tracker floating Left/Plan UI.
-- Normal store: schema-3 `data/memory/memory.json`, sessions and requested context exports.
-- Pilot store: private configured data directory containing SQLite, bridge and controls.
-
-Model weights, runtime configuration, bridge grants/tokens, captured evidence and local
-.env test data are not committed. Do not add those to Git or request their contents in logs.
-Storage is local plaintext; no hosted inference fallback. The pilot never starts/downloads
-models. The normal tracker does not enable semantic inference automatically.
-
-## Test and run
-
-In a normal feature checkout with dependencies installed:
+From this worktree, use `../../.venv/bin/python` as Python:
 
 ```bash
-PYTHON=python ./scripts/test.sh
+PYTHON=../../.venv/bin/python ./scripts/test.sh
 node --test extensions/lmemm-source/bridge.test.js
-python lmemm.py           # interactive menu
-python lmemm.py start     # normal tracker and widget
+../../.venv/bin/python lmemm.py start
 ```
 
-In Divyaansh's existing worktree use `../../.venv/bin/python` instead of `python`.
-Follow the live runbook for cached local model config, cloud-disabled Ollama service,
-collector startup, VS Code development-host launch and grant connection. No secrets or
-model assets are in this repo. After lock/sleep, explicitly resume the collector; reconnect
-the extension if needed. Do not repeatedly resubmit notes to work around cancelled jobs.
-
-## Next work, in order
-
-1. Broader lifecycle/multiple-project acceptance and representative CPU/RAM/power baseline.
-2. Fresh semantic/privacy evaluation, better precision and corroborated relationships.
-3. Permissioned browser source adapters and website-level controls.
-4. Scoped read-only MCP exposing project context/citations; test an agent resuming a real
-   project. Agent access must not widen capture scope; keep tentative claims/coverage visible.
-5. Improve automatic relationships and optimize based on measured workloads. Hosted inference
-   and broad graph UI are later discussions.
-
-Before merging this feature to main, review the detailed handover's acceptance limits.
-Do not mark general model accuracy or the complete AI-agent MVP done based on the note test.
+Do not run duplicate trackers. The [pilot runbook](docs/live-semantic-pilot.md) is for
+the existing separate experiment, not the planned beta startup experience.
+[Prior detailed handover](docs/handover-2026-10-08.md) and
+[archived context](docs/history/2026-10-10-before-hybrid-scope.md) preserve history.
+All evidence/model caches, grants and runtime configuration remain local and ignored.

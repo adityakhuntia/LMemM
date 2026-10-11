@@ -1,8 +1,10 @@
 # Semantic project memory — current implementation status
 
+> Historical implementation/pilot record. Current continuation: [context](current-context.md). Future work follows the [hybrid MVP draft](specs/2026-10-10-hybrid-project-memory-mvp.md), pending written approval; this record does not establish hybrid-MVP completion.
+
 Updated 2026-10-08. Branch `feat/semantic-project-memory`; isolated worktree
 `.worktrees/semantic-project-memory`. The [handover](handover-2026-10-08.md)
-is the current continuation guide; [context](../context.md) includes live checkpoints.
+is the current continuation guide; [context](current-context.md) includes live checkpoints.
 
 ## Implemented path
 

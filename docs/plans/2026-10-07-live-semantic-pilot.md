@@ -1,5 +1,7 @@
 # Live Semantic Pilot Implementation Plan
 
+> **Historical scope — superseded for future MVP work.** See the [hybrid project-memory MVP](../specs/2026-10-10-hybrid-project-memory-mvp.md), currently awaiting full written-spec approval. Preserve this document as the record of the prior increment; do not execute its remaining tasks as the current plan. Existing implemented protections and verification history remain applicable.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:executing-plans; preserve the user's existing inline execution choice. Use test-first changes and one independent final review.
 
 **Goal:** A usable opt-in live VS Code project-memory loop across approved projects, with inspectable tentative recall and original citations.

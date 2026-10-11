@@ -1,5 +1,7 @@
 # Automatic Project Memory Implementation Plan
 
+> **Historical scope — superseded for future MVP work.** See the [hybrid project-memory MVP](../specs/2026-10-10-hybrid-project-memory-mvp.md), currently awaiting full written-spec approval. Preserve this document as the record of the prior increment; do not execute its remaining tasks as the current plan. Existing implemented protections and verification history remain applicable.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans (preserved native execution choice), or superpowers:subagent-driven-development if the user changes that choice. Implement task-by-task with test-first steps.
 
 **Goal:** Build and evaluate an on-device semantic-memory core that automatically connects coding-project evidence and returns source-backed project-resume context.

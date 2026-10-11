@@ -1,5 +1,7 @@
 # Live project-memory pilot
 
+> Historical implementation/pilot record. Current continuation: [context](current-context.md). Future work follows the [hybrid MVP draft](specs/2026-10-10-hybrid-project-memory-mvp.md), pending written approval; this record does not establish hybrid-MVP completion.
+
 This is an explicitly experimental loop across approved local VS Code projects:
 
 ```

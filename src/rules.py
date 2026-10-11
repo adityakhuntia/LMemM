@@ -71,8 +71,13 @@ def empty_kind(view):
     return "caught" if view.get("done_here") else "fresh"
 
 
-def pill_state(note_open, saved, hover, card_open, count, has_suggestion, mark=None, empty=None, cleared=False):
-    """Which look the pill has. The first rule that applies wins."""
+RECALL_KINDS = ("resume", "hanging", "next")      # in the order the pill picks its mark: pick up, left open, next step
+
+
+def pill_state(note_open, saved, hover, card_open, count, has_suggestion, mark=None, empty=None, cleared=False, recall=None):
+    """Which look the pill has. The first rule that applies wins. `recall`: the kind of the most important thing
+    LMemM brings back ("resume", "hanging", "next"; nextsteps.py), shown when no note count is up and before a
+    project suggestion."""
     if note_open:
         return "rest"
     if saved:
@@ -87,6 +92,8 @@ def pill_state(note_open, saved, hover, card_open, count, has_suggestion, mark=N
         return "peek"
     if count:
         return "count"
+    if recall in RECALL_KINDS:
+        return "r_" + recall
     return "suggest" if has_suggestion else "rest"
 
 

@@ -19,6 +19,12 @@
               It opens a picker: your projects, search, "+ New project", and a tick to file the
               other things open lately along with this one.
 
+    recall    LMemM brings things back (nextsteps.py): "Pick up" (a return arrow: you are back at a task you
+              left), "Left open" (an unfinished ring: a draft, a note, a question) and "Next step" (a
+              forward arrow). The pill wears the most important one's icon when no note count is up; the
+              card shows one box per thing (own colour, dashed when unfinished), tick a box or press ×
+              and it does not come back today. A project offer stays one quiet line under the boxes.
+
     marks     the pill wears an icon when something is wrong (screen access off, a private window,
               the mic off) or, on hover, when there is nothing to show (no notes yet, all done,
               no projects yet). The rules are in rules.py (R8).
@@ -77,11 +83,19 @@ ICONS = {"code_file": ("chevron.left.forwardslash.chevron.right", (0.48, 0.35, 0
 DEFAULT_ICON = ("square.on.square", (0.45, 0.45, 0.5))
 DONE_SECONDS = 1.5                  # "Pricing created." stays this long, then the card closes
 SUGGEST_WORDS = "Group these?"
+# the boxes on the card, one look per kind: label, SF Symbol, colour, whether the edge is dashed (unfinished)
+RECALL = {"resume": ("Pick up", "arrow.uturn.backward", (0.91, 0.45, 0.16), False),
+          "hanging": ("Left open", "circle.dotted", (0.72, 0.53, 0.04), True),
+          "next": ("Next step", "arrow.right", (0.18, 0.50, 0.52), False)}
+RECALL_GLYPH = {"resume": "↩", "hanging": "◌", "next": "→"}       # on the pill's hover line
 SAVED_SECONDS = 1.8                 # "Saved to Q3 plan" stays on the pill this long
 PROJECT_EXPLAINER = ("A project keeps related things and your notes together, so you can pick up "
                      "where you left off. You can change this any time.")
 # the marks: an SF Symbol, and whether it is neutral or red (a permission that is off)
-MARKS = {"paused": ("pause.fill", False, "Paused"),
+MARKS = {"r_resume": ("arrow.uturn.backward", False, "Pick up where you left off"),
+         "r_hanging": ("circle.dotted", False, "Something left open"),
+         "r_next": ("arrow.right", False, "A next step"),
+         "paused": ("pause.fill", False, "Paused"),
          "screen_off": ("eye.slash", True, "Screen access is off"),
          "private": ("lock", False, "Private window"),
          "unwatched": ("circle.slash", False, "Not watching this app"),
@@ -300,6 +314,28 @@ class _Dashed(_Flipped):
         path.stroke()
 
 
+class _Box(_Flipped):
+    """One recall box on the card: a soft tinted rounded rectangle, or a dashed outline for something left open."""
+
+    def initWithTone_dashed_(self, rgb, dashed):
+        self = objc.super(_Box, self).initWithFrame_(NSMakeRect(0, 0, 10, 10))
+        self.rgb, self.dashed = rgb, dashed
+        return self
+
+    def drawRect_(self, rect):
+        size = self.bounds().size
+        path = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+            NSMakeRect(0.75, 0.75, size.width - 1.5, size.height - 1.5), 12, 12)
+        if self.dashed:
+            NSColor.tertiaryLabelColor().setStroke()
+            path.setLineWidth_(1.5)
+            path.setLineDash_count_phase_([5.0, 4.0], 2, 0)
+            path.stroke()
+        else:
+            NSColor.colorWithRed_green_blue_alpha_(*self.rgb, 0.13).setFill()
+            path.fill()
+
+
 class _Ring(_Flipped):
     """The round tick box: an outline, filled orange with a tick once done."""
 
@@ -365,7 +401,9 @@ class _PillView(NSView):
             else:
                 self._link(PILL_MARGIN[0] + cw / 2, mid, on_ink)
         elif state == "peek":
-            if w.count or not w.sug:
+            if not w.count and w.recall:
+                self._text(RECALL_GLYPH.get(w.recall[0]["kind"], "•"), 13, True, on_ink, NSMakeRect(PILL_MARGIN[0] + 7, 0, 14, bh))
+            elif w.count or not w.sug:
                 self._dot(PILL_MARGIN[0] + 11, mid, lit=bool(w.count))
             else:
                 self._link(PILL_MARGIN[0] + 14, mid, on_ink)
@@ -453,7 +491,10 @@ class Widget:
 
     def __init__(self, provider, on_tick, on_add=None, heard=None, hotkey="⌃⌥N",
                  suggestion=None, on_project=None, on_decline=None, picker=None, on_unfile=None,
-                 busy=None, status=None, on_pause=None, on_resume=None):
+                 busy=None, status=None, on_pause=None, on_resume=None, recall=None, on_recall=None):
+        self.recall_fn = recall or (lambda: [])       # nextsteps: pick up / left open / next step, most important first
+        self.on_recall = on_recall or (lambda sid, state: None)
+        self.recall = []
         self.on_pause = on_pause or (lambda kind: None)
         self.on_resume = on_resume or (lambda: None)
         self.status_fn = status or (lambda: {})
@@ -506,7 +547,7 @@ class Widget:
             return "listening"
         return rules.pill_state(self.busy(), bool(self.saved), self.pill_view.hover, self.card_open,
                                 self.count, bool(self.sug), self._mark(), self._empty_kind(),
-                                time.time() < self.cleared_until)
+                                time.time() < self.cleared_until, self.recall[0]["kind"] if self.recall else None)
 
     def _mark(self):
         return rules.pill_mark(self.status, self.count, bool(self.sug))
@@ -514,7 +555,7 @@ class Widget:
     def _empty_kind(self):
         if self.card_open and self.mode == "pick":
             return "noproj" if self.pick_empty else None
-        if self.count or self.sug or self.data is None:
+        if self.count or self.sug or self.recall or self.data is None:
             return None
         return rules.empty_kind(notes.card_view(self.data, "here", self.show_done, self._holding()))
 
@@ -526,6 +567,9 @@ class Widget:
         return len(self.data["left"]) if self.data else 0
 
     def peek_text(self):
+        if not self.count and self.recall:
+            text = self.recall[0]["text"]
+            return text if len(text) <= 32 else text[:31] + "…"
         if not self.count:
             return self.sug["peek"] if self.sug else "No notes here"
         text = self.first.replace("\n", " ")
@@ -635,8 +679,12 @@ class Widget:
         count, first = notes.pill_summary(self.data)
         sug = self.suggestion()
         status = self.status_fn()
-        if (count, first, sug, status) != (self.count, self.first, self.sug, self.status):
-            self.count, self.first, self.sug, self.status = count, first, sug, status
+        try:
+            recall = self.recall_fn()
+        except Exception:
+            recall = []
+        if (count, first, sug, status, recall) != (self.count, self.first, self.sug, self.status, self.recall):
+            self.count, self.first, self.sug, self.status, self.recall = count, first, sug, status, recall
             self.layout()
         if self.mode == "done" and self.card_open and time.time() >= self.close_at:
             self.toggle_card()
@@ -653,8 +701,9 @@ class Widget:
         self.card_open = not self.card_open
         if self.card_open:
             self.saved = None               # R5: the card replaces the confirmation
+            quiet = not self.count and not self.status.get("paused")
             self.mode, self.show_done, self.scroll = (
-                "suggest" if self.sug and not self.count and not self.status.get("paused") else "here"), False, None
+                "recall" if self.recall and quiet else "suggest" if self.sug and quiet else "here"), False, None
             self.query, self.also = "", True
             self.celebrate_now = False      # opening it later shows the calm state, never the celebration
             self.data = self.provider()
@@ -717,13 +766,16 @@ class Widget:
     def _key(self):
         if self.mode in ("pick", "suggest"):          # fields in use: don't rebuild under the typing
             return repr((self.mode, self.sug))
-        return repr((self.data, self.mode, self.show_done, self.flow.signature(time.time()), self.sug, self.done_text, self.status))
+        return repr((self.data, self.mode, self.show_done, self.flow.signature(time.time()), self.sug, self.done_text, self.status,
+                     [(r["id"], r["text"]) for r in self.recall]))
 
     def render(self):
         self._flow_step()                   # a clear that is due shows in this very render
         self.shown = self._key()
         if self.mode == "suggest" and not self.sug:
             self.mode = "here"
+        if self.mode == "recall" and not self.recall:
+            self.mode = "suggest" if self.sug and not self.count else "here"
         view = notes.card_view(self.data, self.mode if self.mode == "project" else "here", self.show_done,
                               self._holding())
         kept = self.scroll.contentView().bounds().origin.y if self.scroll is not None else 0
@@ -733,6 +785,8 @@ class Widget:
             y = self._paused(body, y)
         elif self.mode == "pause":
             y = self._pause_menu(body, y)
+        elif self.mode == "recall":
+            y = self._recall(body, y)
         elif self.mode == "suggest":
             y = self._suggest(body, y)
         elif self.mode == "pick":
@@ -1037,8 +1091,76 @@ class Widget:
             y = self._link(body, y, left, "›", lambda: self._go("pick"))
         if view["done_here"]:
             y = self._done_row(body, y, view["done_here"])
+        if self.recall:
+            y = self._recall_boxes(body, y + 6)
         y = self._pause_row(body, y)
         return self._toast(body, y)
+
+    # -- what LMemM brings back: pick up, left open, next step (nextsteps.py)
+
+    def _recall(self, body, y):
+        """The card when the pill wears a recall mark: one box per thing, then the project offer if there is one."""
+        n = len(self.recall)
+        y = self._header(body, y, f"{n} thing{'s' * (n != 1)}", "Since you were last here")
+        y = self._recall_boxes(body, y - 6)
+        if self.sug:
+            y = self._link(body, y + 2, f"Part of a project? {self.sug['peek']}", "›", lambda: self._go("suggest"))
+        return self._pause_row(body, y)
+
+    def _recall_boxes(self, body, y):
+        for step in self.recall[:4]:
+            y = self._recall_box(body, y, step)
+        return y
+
+    def _recall_box(self, body, y, step):
+        label, symbol, rgb, dashed = RECALL[step["kind"]]
+        tone = NSColor.colorWithRed_green_blue_alpha_(*rgb, 1.0)
+        w, inner = CARD_W - 16, CARD_W - 16 - 2 * 12
+        box = _Box.alloc().initWithTone_dashed_(rgb, dashed)
+        icon = NSImageView.alloc().initWithFrame_(NSMakeRect(12, 9, 14, 14))
+        image = _symbol(symbol)
+        if image is not None:
+            icon.setImage_(image)
+            icon.setContentTintColor_(tone)
+            box.addSubview_(icon)
+        box.addSubview_(_label(label.upper(), 10.5, bold=True, color=tone, frame=(30, 8, 120, 14))[0])
+        gone = _Tap.alloc().initWithFrame_callback_(NSMakeRect(w - 30, 4, 24, 22),
+                                                    lambda sid=step["id"]: self._recall_answer(sid, "dismissed"))
+        gone.label = "Not now"
+        gone.addSubview_(_label("×", 15, color=NSColor.tertiaryLabelColor(), frame=(6, 1, 14, 18))[0])
+        box.addSubview_(gone)
+        text, h = _label(step["text"], 13, color=NSColor.labelColor(), frame=(36, 0, inner - 24, 17), wrap=True)
+        row_y = 28
+        tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(6, row_y - 4, w - 12, h + 10),
+                                                   lambda sid=step["id"]: self._recall_answer(sid, "done"))
+        tap.label = "Done: " + step["text"]
+        ring = _Ring.alloc().initWithChecked_(False)
+        ring.setFrame_(NSMakeRect(6, 4, 17, 17))
+        text.setFrame_(NSMakeRect(30, 3, inner - 24, h))
+        tap.addSubview_(ring)
+        tap.addSubview_(text)
+        box.addSubview_(tap)
+        yy = row_y + h + 8
+        detail = step.get("detail") or {}
+        for key, name in (("goal", "Making"), ("last_wrote", "Last wrote"), ("open", "Open")):
+            if detail.get(key):
+                line, lh = _label(f"{name}: {detail[key]}", 12, color=NSColor.secondaryLabelColor(),
+                                  frame=(12, yy, inner, 15), wrap=True)
+                box.addSubview_(line)
+                yy += min(lh, 32) + 3
+        things = " · ".join(dict.fromkeys(t["app"] for t in detail.get("things", []) if t.get("app")))
+        if things:
+            box.addSubview_(_label(things, 11, color=NSColor.tertiaryLabelColor(), frame=(12, yy, inner, 14))[0])
+            yy += 17
+        elif step.get("task"):
+            pass
+        box.setFrame_(NSMakeRect(8, y + 4, w, yy + 8))
+        body.addSubview_(box)
+        return y + 4 + yy + 8
+
+    def _recall_answer(self, sid, state):
+        self.on_recall(sid, state)
+        self.refresh()                      # the box goes at once; the pill's mark follows
 
     # -- projects: the suggestion, the picker, and the confirmation
 

@@ -158,11 +158,14 @@ def cmd_start(args):
     parser.add_argument("--no-writing", action="store_true",
                         help="don't read what you write in text boxes (on by default so tasks can say what you did; passwords and "
                              "secure fields are never read; stays on this Mac; deleted after 48 h)")
+    parser.add_argument("--recall-after", type=int, metavar="MINUTES", default=config.RECALL_GAP_MINUTES,
+                        help="how long away counts as 'left' for pick up / left open on the pill (default %d); try 3 to see them quickly" % config.RECALL_GAP_MINUTES)
     parser.add_argument("--labels", action="store_true", help=argparse.SUPPRESS)      # old flags: now the default
     parser.add_argument("--writing", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--no-setup", action="store_true", help="skip first-run setup (it asks for permissions itself)")
     opts = parser.parse_args(args)
     config.TRAIL_WRITING = not opts.no_writing
+    config.RECALL_GAP_MINUTES = max(opts.recall_after, 1)
     if opts.every <= 0 or not 0 < opts.input_retention_hours <= 24:
         parser.error("positive capture interval and input retention of at most 24 hours required")
     if opts.input_events != bool(opts.input_app) or not set(opts.input_app) <= SUPPORTED_INPUT_APPS:

@@ -37,9 +37,6 @@ KEEP_HOURS = 12
 MAX_OPEN = 6
 PER_KIND = {"resume": 1, "hanging": 3, "next": 3, "link": 2}
 PRIORITY = ("resume", "hanging", "next", "link")
-RESUME_GAP_HOURS = 3        # a task whose last run is older than this counts as "left" when you come back to it
-HANG_HOURS = 3              # a note, question or task untouched this long counts as left hanging
-DRAFT_HOURS = 1
 TASK_DAYS = 3
 FROM_MODEL = ("next", "link")
 TEXT_CHARS = 140
@@ -186,6 +183,12 @@ def _title(item):
     return tasks.clean(item.get("title") or item.get("doing") or "this", 60)
 
 
+def _gap(draft=False):
+    """How long away counts as left: RECALL_GAP_MINUTES (3 h), and a draft counts after a third of that (1 h)."""
+    minutes = config.RECALL_GAP_MINUTES
+    return timedelta(minutes=minutes / 3 if draft else minutes)
+
+
 def recent_tasks(book, now):
     """Every task from the stored runs of the last TASK_DAYS days, newest run first: [(run time, task)]."""
     out = []
@@ -205,14 +208,14 @@ def candidates(items, book, now, front_id=None):
         if not ids or t.get("title") in seen_tasks:
             continue
         seen_tasks.add(t.get("title"))
-        quiet = now - at >= timedelta(hours=RESUME_GAP_HOURS)
+        quiet = now - at >= _gap()
         if front_id and front_id in ids and quiet:
             detail = {k: t[k] for k in ("goal", "last_wrote", "open", "stage") if t.get(k)}
             detail["things"] = [{"app": items[i].get("app"), "title": _title(items[i])} for i in ids]
             out.append(("resume", f"Back to “{t['title']}”", ids, t["title"], detail))
         elif t.get("open") and front_id not in ids and quiet:
             newest = max((_when(items[i].get("last_seen")) or datetime.min for i in ids))
-            if now - newest >= timedelta(hours=HANG_HOURS):
+            if now - newest >= _gap():
                 out.append(("hanging", f"Still open in “{t['title']}”: {t['open']}", ids[:2], t["title"], {}))
     for iid, item in items.items():
         if iid == front_id:
@@ -223,10 +226,10 @@ def candidates(items, book, now, front_id=None):
         age = now - seen
         draft = item.get("state") or {}
         if item.get("kind") in ("writing_email", "composing_email") and (draft.get("draft") or draft.get("subject")) \
-                and timedelta(hours=DRAFT_HOURS) <= age <= timedelta(days=TASK_DAYS):
+                and _gap(draft=True) <= age <= timedelta(days=TASK_DAYS):
             what = draft.get("subject") or draft.get("draft")
             out.append(("hanging", f"Unsent draft: “{tasks.clean(what, 70)}”", [iid], None, {}))
-        elif age >= timedelta(hours=HANG_HOURS) and age <= timedelta(days=TASK_DAYS):
+        elif age >= _gap() and age <= timedelta(days=TASK_DAYS):
             for note in notes_open(item)[:1]:
                 out.append(("hanging", f"A note on “{_title(item)}”: {tasks.clean(note, 80)}", [iid], None, {}))
     return out

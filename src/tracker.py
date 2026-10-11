@@ -139,6 +139,7 @@ class Tracker:
         self.capture_times = capture_plan.Timings(200)   # ... and each capture on the main thread
         self.last_place_key = None           # the trail's place, to notice a move inside one window
         self.live_labels = live_labels
+        self.recall_doc = self.load_recall()
         self.recall_at = time.time() + config.RECALL_FIRST_AFTER - config.RECALL_EVERY    # first look soon after start
         self.labeller = None                 # labels.LiveLabeller, made in run() when asked for
         self.sections = {}                   # main-loop part -> capture_plan.Timings (see mark())
@@ -1618,7 +1619,8 @@ class Tracker:
                                         suggestion=self.widget_suggestion, on_project=self.widget_project,
                                         on_decline=self.widget_decline, picker=self.widget_picker,
                                         on_unfile=self.widget_unfile, busy=lambda: self.panel.open, status=self.widget_status,
-                                        on_pause=self.widget_pause, on_resume=self.widget_resume)
+                                        on_pause=self.widget_pause, on_resume=self.widget_resume,
+                                        recall=self.widget_recall, on_recall=self.widget_recall_answer)
             try:
                 self.menubar = menubar.MenuBar(self.menu_pick)
                 say(f"Menu-bar item: {self.menubar.where()}")
@@ -1677,6 +1679,34 @@ class Tracker:
             self.finish()
         self.hand_over()
 
+    @staticmethod
+    def load_recall():
+        try:
+            import nextsteps
+            return nextsteps.load()
+        except Exception:
+            return {"version": 1, "n": 0, "steps": []}
+
+    def widget_recall(self):
+        """The pill's recall list: pick up, left open and next step, in that order (nextsteps.view)."""
+        try:
+            import nextsteps
+            with self.lock:
+                steps = nextsteps.view(self.recall_doc, self.items)["steps"]
+            return [s for s in steps if s["kind"] in rules.RECALL_KINDS]
+        except Exception:
+            return []
+
+    def widget_recall_answer(self, sid, state):
+        """You ticked a box (done) or pressed × (dismissed): it does not come back today."""
+        try:
+            import nextsteps
+            with self.lock:
+                nextsteps.answer(self.recall_doc, sid, state)
+                nextsteps.save(self.recall_doc)
+        except ValueError as error:
+            say(str(error))
+
     def refresh_recall(self):
         """Every RECALL_EVERY seconds: what to pick up and what was left hanging (nextsteps.py). Local and cheap: no
         model, one pass over the things under the lock, one small file."""
@@ -1687,11 +1717,11 @@ class Tracker:
             book = tasks.load_tasks()
             with self.lock:
                 front = (self.last_frame or {}).get("item")
-                doc = nextsteps.load()
+                doc = self.recall_doc
                 added = nextsteps.refresh(doc, self.items, book, front_id=front)
                 nextsteps.save(doc)
             if added:
-                say(f"next: {len(added)} suggestion(s) ready  ·  see them with: python3 lmemm.py next")
+                say("pill: " + ", ".join(sorted({a["kind"] for a in added})) + f"  ({len(added)} new)  ·  open the pill to see them")
         except Exception as error:
             say(f"recall skipped: {type(error).__name__}: {error}")
 
@@ -1701,11 +1731,11 @@ class Tracker:
         try:
             import nextsteps
             with self.lock:
-                doc = nextsteps.load()
+                doc = self.recall_doc
                 added = nextsteps.ingest(doc, result, self.items)
                 nextsteps.save(doc)
             if added:
-                say(f"next: {len(added)} suggestion(s) ready  ·  see them with: python3 lmemm.py next")
+                say("pill: " + ", ".join(sorted({a["kind"] for a in added})) + f"  ({len(added)} new)  ·  open the pill to see them")
             for t in result.get("tasks") or []:
                 if t.get("project_guess") and len(t.get("items", [])) >= 2:
                     self.offer_project(t["project_guess"], t["items"], t.get("goal") or "")

@@ -47,6 +47,7 @@ TASK_EVERY = 1800                # then at most this often (an unchanged story c
 TASK_MINUTES = 90                # how far back an automatic run reads
 RECALL_EVERY = 120               # seconds between looks at what to pick up and what was left hanging (local, no tokens)
 RECALL_FIRST_AFTER = 30
+RECALL_GAP_MINUTES = 180         # away this long counts as "left": pick up, left open. `start --recall-after N` shortens it to try it out
 TASK_OFF_APPS = set()            # apps `tasks` never reads. Empty for now: mail and messages are read. Secrets are always dropped
 LABEL_MODEL = "haiku"           # the `claude --model` alias used for labels
 LABEL_SETTLE = 120              # seconds a thing must sit unchanged before it is sent

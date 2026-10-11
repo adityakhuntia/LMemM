@@ -338,7 +338,7 @@ def home(reg, items, counts, now, sugg=None):
         empty = {"title": "No projects yet", "line": "Your things are saved. Projects you make will appear here."}
     else:
         empty = None
-    return {"kind": "home", "title": "All projects", "meta": plural(len(top), "project"),
+    return {"kind": "home", "title": "Home", "meta": plural(len(top), "project"),
             "needs": {"count": len(needs), "rows": [_thing(reg, i, now, with_notes=True) for i in needs[:NEEDS_HOME]]},
             "cards": cards, "unplaced": len(projects.unassigned(items)), "empty": empty,
             "suggest": _suggest_home(sugg)}

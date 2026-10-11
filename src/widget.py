@@ -66,6 +66,7 @@ COLLECTION = 1 | 16 | 256 | 64
 FLOATING = 25                       # NSStatusWindowLevel: above normal windows
 
 CARD_W, CARD_MAX_H, PAD = 272, 360, 14
+NOTE_LINES, NOTE_LINES_H = 3, 51                      # a note shows this many lines on the card; the rest opens in full
 PILL_MARGIN = (10, 6)               # hit area around the drawn capsule
 PILL_BOTTOM = 6
 TRACK = 1 | 128 | 512               # mouseEnteredAndExited | activeAlways | inVisibleRect
@@ -504,6 +505,7 @@ class Widget:
         self.ask_fn = ask or (lambda question: None)             # ask your memory (ask.py)
         self.ask_state_fn = ask_state or (lambda: {"state": "idle"})
         self.ask_reset = ask_reset or (lambda: None)
+        self.note_open, self.note_back = None, "here"                # the note open in full on the card
         self.detail, self.detail_back = None, "here"           # the recall step open in full, and where Back goes
         self.ask_seen = None                                      # the question whose answer you have seen
         self.recall_fn = recall or (lambda: [])       # nextsteps: pick up / left open / next step, most important first
@@ -785,7 +787,7 @@ class Widget:
             return repr((self.mode, self.ask_state_fn().get("state"), self.ask_state_fn().get("question")))
         if self.mode in ("pick", "suggest"):          # fields in use: don't rebuild under the typing
             return repr((self.mode, self.sug))
-        return repr((self.detail if self.mode == "detail" else None, self.data, self.mode, self.show_done, self.flow.signature(time.time()), self.sug, self.done_text, self.status,
+        return repr((self.detail if self.mode == "detail" else None, self.note_open if self.mode == "note" else None, self.data, self.mode, self.show_done, self.flow.signature(time.time()), self.sug, self.done_text, self.status,
                      [(r["id"], r["text"]) for r in self.recall]))
 
     def render(self):
@@ -816,6 +818,8 @@ class Widget:
             y = self._ask(body, y)
         elif self.mode == "detail":
             y = self._detail(body, y)
+        elif self.mode == "note":
+            y = self._note_full(body, y)
         elif self.mode == "done":
             y = self._done(body, y)
         elif self.mode == "finished":
@@ -881,20 +885,57 @@ class Widget:
         text_w = CARD_W - 2 * PAD - 28
         color = NSColor.secondaryLabelColor() if row["done"] else NSColor.labelColor()
         field, h = _label(row["text"], 14, color=color, frame=(28 + 8, 0, text_w, 17), wrap=True, strike=row["done"])
+        long = h > NOTE_LINES_H                                  # a long note shows its first lines; its text opens it in full
+        if long:
+            field.setMaximumNumberOfLines_(NOTE_LINES)
+            field.setLineBreakMode_(4)
+            h = NOTE_LINES_H
         height = h + 14
         folding = self.flow.phase(row["id"], time.time()) == "fold"
-        tap = _Tap.alloc().initWithFrame_callback_(
-            NSMakeRect(6, y, CARD_W - 12, height),
+        fade = (lambda t: t.setAlphaValue_(FOLD_ALPHA)) if folding else (lambda t: None)
+        # only the circle ticks; the words open the whole note (a tap on words never ticks it by accident)
+        mark = _Tap.alloc().initWithFrame_callback_(
+            NSMakeRect(6, y, 40, height),
             (lambda: None) if folding else (lambda nid=row["id"], done=row["done"]: self.ticked(nid, not done)))
-        if folding:
-            tap.setAlphaValue_(FOLD_ALPHA)
+        mark.label = ("Reopen: " if row["done"] else "Done: ") + row["text"]
+        fade(mark)
         ring = _Ring.alloc().initWithChecked_(row["done"])
         ring.setFrame_(NSMakeRect(PAD - 6 + 2, 8, 17, 17))
-        field.setFrame_(NSMakeRect(PAD - 6 + 2 + 17 + 11, 7, text_w - 4, h))
-        tap.addSubview_(ring)
-        tap.addSubview_(field)
-        body.addSubview_(tap)
+        mark.addSubview_(ring)
+        body.addSubview_(mark)
+        words = _Tap.alloc().initWithFrame_callback_(
+            NSMakeRect(46, y, CARD_W - 12 - 40, height), (lambda: None) if folding else (lambda nid=row["id"]: self._open_note(nid)))
+        words.label = "Read: " + row["text"]
+        fade(words)
+        field.setFrame_(NSMakeRect(PAD - 6 + 2 + 17 + 11 - 40, 7, text_w - 4, h))
+        words.addSubview_(field)
+        if long:
+            words.addSubview_(_label("›", 14, color=NSColor.tertiaryLabelColor(), frame=(CARD_W - 12 - 40 - 16, 7, 12, 17))[0])
+        body.addSubview_(words)
         return y + height
+
+    def _open_note(self, nid):
+        self.note_open, self.note_back = nid, "here"
+        self._go("note")
+
+    def _note_full(self, body, y):
+        """One note in full: all of its words, and the one thing you can do with it."""
+        row = next((r for r in notes.card_view(self.data, "here", self.show_done, self._holding()).get("rows", [])
+                    if r["id"] == self.note_open), None)
+        if row is None:
+            return self._empty(body, y)
+        back = _Tap.alloc().initWithFrame_callback_(NSMakeRect(PAD - 4, y - 4, 120, 16), lambda: self._go("here"))
+        back.addSubview_(_label("‹ Back", 12, color=NSColor.secondaryLabelColor(), frame=(4, 0, 110, 16))[0])
+        body.addSubview_(back)
+        y += 26
+        text, h = _label(row["text"], 15, color=NSColor.secondaryLabelColor() if row["done"] else NSColor.labelColor(),
+                         frame=(PAD, y, CARD_W - 2 * PAD, 20), wrap=True, strike=row["done"])
+        body.addSubview_(text)
+        y += h + 16
+        nid, done = row["id"], row["done"]
+        self._button(body, (8, y, CARD_W - 16, 33), "Reopen" if done else "Mark done",
+                     lambda: (self.ticked(nid, not done), self._go("here")), primary=True)
+        return y + 41
 
     def _link(self, body, y, left, right, callback):
         tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(6, y, CARD_W - 12, 24), callback)

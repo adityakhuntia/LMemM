@@ -19,6 +19,7 @@ FOOT_H = 66
 PAD_P = 20
 MAX_BOXES = 4
 ASK_HINT = "Answered from what you have seen and written on this Mac. The sources are listed so you can check."
+EMPTY_FOR_YOU = "Nothing waiting. What you left open, can pick up, or wrote before shows up here as you work."
 WORKING = {"brief": "Writing it from your last 25 minutes…", "recap": "Reading today’s tasks…"}
 TITLES = {"brief": "Context for AI", "recap": "Today’s recap"}
 LEADS = {"brief": "Read it, then copy. Paste it into Claude or ChatGPT.", "recap": "Paste it into a standup or a status update."}
@@ -101,10 +102,11 @@ class RecallPanes:
     def for_you(self, doc, x, y, w):
         """"For you now": up to four boxes, two to a row when the column is wide."""
         steps = self.recall_now[:MAX_BOXES]
-        if not steps:
-            return y
         kit.put_text(doc, "For you now", x, y, w, 15, 700, wrap=False, height=22)
         y += 30
+        if not steps:
+            h = kit.put_text(doc, EMPTY_FOR_YOU, x, y, min(w, 520), 13, 400, kit.mute())
+            return y + h + 22
         cols = 2 if w >= 600 else 1
         cw = (w - 12) / 2 if cols == 2 else w
         for i in range(0, len(steps), cols):

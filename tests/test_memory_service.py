@@ -41,12 +41,17 @@ class ServiceTests(unittest.TestCase):
 
     def test_pause_updates_intake_and_keyword_only_status(self):
         self.enroll();self.service.tick()
+        original=self.service.bridge
+        session=original.session;token=original.token;initial_revision=original.revision
         self.owner('pause')
         self.service.tick()
         self.assertFalse(self.service.bridge.active)
+        self.assertIs(self.service.bridge,original)
+        self.assertGreater(original.revision,initial_revision)
         self.assertEqual(self.owner('status')['state'],'Paused')
         self.owner('resume');self.service.tick()
         self.assertTrue(self.service.bridge.active)
+        self.assertEqual((self.service.bridge.session,self.service.bridge.token),(session,token))
 
     def test_exclusive_writer_lock_and_private_files(self):
         with self.assertRaises((ValueError,BlockingIOError)):MemoryService(self.directory,focus_provider=lambda:None)

@@ -66,3 +66,13 @@ The extension handshake test now requires a snapshot on the first ack poll.
 Full suite: 814 Python tests and 6 Node tests passed. The local extension was
 reinstalled, test tracker restarted, and Alpha opened in a fresh VS Code window.
 A fresh manual connection is still needed to establish live capture acceptance.
+
+### Pause/resume source connection follow-up (2026-10-11)
+
+Manual capture reached Alpha (`CAPTURE_ALPHA_ONE` retained), but the saved TWO
+edit was absent after pause/resume. Pause/resume rebuilt the bridge session,
+leaving VS Code on an obsolete token. They now publish the current intake
+revision and active state on the existing connection, clearing snapshot dedup;
+workspace permission changes still rotate sessions. Regression reproduced
+before the fix. Full suite: 814 Python tests and 6 extension tests passed.
+Old ONE snapshots remain searchable by design; search TWO to check fresh capture.

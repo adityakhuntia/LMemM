@@ -259,7 +259,7 @@ class MemoryService:
             c.execute("INSERT OR REPLACE INTO meta VALUES('memory_paused',?)",(reason,))
             bump_revision(c)
         if self.backend:self.backend.cancel()
-        self.roots_dirty=True
+        self._sync_bridge_pause()
         return {'state':'Paused'}
 
     def resume(self):
@@ -270,8 +270,18 @@ class MemoryService:
             c.execute("DELETE FROM meta WHERE key='memory_paused'")
             c.execute("UPDATE index_jobs SET state='queued',error=NULL WHERE state IN ('running','failed')")
             bump_revision(c)
-        self.roots_dirty=True
+        self._sync_bridge_pause()
         return {'state':'Processing' if self.backend else 'Ready'}
+
+    def _sync_bridge_pause(self):
+        # Pause changes intake authority, not the approved source connection.
+        # Root changes still rotate the session through _sync_bridge.
+        with self.store.lock:
+            if self.bridge:
+                self.bridge.active=not paused(self.store)
+                self.bridge.revision=revision(self.store.connection)
+                self.bridge.last.clear()
+                self.bridge.publish_grant()
 
     def status(self):
         with self.store.lock:

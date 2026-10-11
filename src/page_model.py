@@ -140,6 +140,12 @@ def press(reg, state, action, arg=None, items=None):
         if state["view"] != "thing":
             s["back"] = {"view": state["view"], "pid": state["pid"], "q": state["q"]}
         s.update(view="thing", tid=arg, ex_open=[])
+    elif action == "resume":
+        if not projects.exists(reg, arg):
+            return press(reg, state, "home")
+        if state["view"] != "resume":
+            s["back"] = {"view": state["view"], "pid": state["pid"], "q": state["q"]}
+        s.update(view="resume", pid=arg, q="", ex_open=[])
     elif action == "back":
         before = state.get("back") or {"view": "home", "pid": None, "q": ""}
         if before["view"] == "project" and not projects.exists(reg, before["pid"]):
@@ -309,6 +315,8 @@ def main(reg, items, state, counts, now, fading=(), sugg=None, prefs=None):
         return thing_page(reg, items[state["tid"]], now, state.get("ex_open", ()), fading)
     if view == "search":
         return search(reg, items, state["q"], now)
+    if view == "resume" and projects.exists(reg, state["pid"]):
+        return resume_page(reg, items, state, now)
     if view == "archived":
         rows = [{"id": p, "name": reg["projects"][p]["name"], "hue": hue(p),
                  "line": _count_line(counts[p], _subs(reg, p)),
@@ -323,6 +331,17 @@ def main(reg, items, state, counts, now, fading=(), sugg=None, prefs=None):
     if view == "project" and projects.exists(reg, state["pid"]):
         return project_page(reg, items, state, counts, now, sugg)
     return home(reg, items, counts, now, sugg)
+
+
+def resume_page(reg, items, state, now):
+    """Resume this project (resume.py): the brief for one project, read only. The task book is read here, once per draw."""
+    import resume
+    import tasks
+    pid = state["pid"]
+    b = resume.brief(reg, items, pid, now, tasks.load_tasks())
+    return {"kind": "resume", "pid": pid, "title": b["title"], "meta": ("Where you left off. " + b["headline"]).strip(), "back": True, "brief": b,
+            "details_open": "details" in state.get("ex_open", ()), "text": resume.as_text(b) if b["state"] != "empty" else "",
+            "crumbs": crumbs(reg, pid)}
 
 
 def home(reg, items, counts, now, sugg=None):
@@ -358,6 +377,13 @@ def _suggest_for(sugg, pid):
     return None
 
 
+def _resume_entry(everything, now):
+    """Whether the Resume project button is the page's main action: you have been away a while (resume.AWAY_HOURS)."""
+    import resume
+    last = parse(everything[0].get("last_seen")) if everything else None
+    return {"away": bool(last and (now - last).total_seconds() >= resume.AWAY_HOURS * 3600)}
+
+
 def project_page(reg, items, state, counts, now, sugg=None):
     pid = state["pid"]
     c = counts[pid]
@@ -368,7 +394,7 @@ def project_page(reg, items, state, counts, now, sugg=None):
     pick = [i for i in everything if notes.open_notes(i)][:PICK_UP]
     page = {"kind": "project", "pid": pid, "hue": hue(pid), "archived": projects.hidden(reg, pid), "title": reg["projects"][pid]["name"], "crumbs": crumbs(reg, pid),
             "meta": " · ".join(([plural(len(kids), "sub-project")] if kids else []) + [_count_line(c)]),
-            "suggested": _suggest_for(sugg, pid)}
+            "suggested": _suggest_for(sugg, pid), "resume": _resume_entry(everything, now)}
     if not everything and not kids:
         page["empty"] = {"title": "Nothing here yet",
                          "line": "Things you work on in this project show up by themselves."}

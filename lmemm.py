@@ -57,7 +57,7 @@ USAGE = ("usage: lmemm.py [menu] | start [--demo] [--no-labels] [--no-writing] [
          " | context [SESSION] [--days N]"
          " | label [--dry-run] [--status] [--limit N] [--show] [--last [N]] [--ping]"
          " | next [--done ID | --dismiss ID]"
-         " | brief [--local] [--no-copy] | recap [--days N] [--no-copy] | ask QUESTION…"
+         " | catchup PROJECT [--demo] [--copy] | brief [--local] [--no-copy] | recap [--days N] [--no-copy] | ask QUESTION…"
          " | tasks [--minutes N] [--session ID] [--dry-run] [--show]"
          " | trail … | status | pause | resume | pin | note | delete-session ID (--dry-run | --confirm ID)"
          " | delete-all (--dry-run | --confirm) | setup [--again] [--no-start]")
@@ -163,6 +163,9 @@ def cmd_start(args):
                         help="how long away counts as 'left' for pick up / left open on the pill (default %d); try 3 to see them quickly" % config.RECALL_GAP_MINUTES)
     parser.add_argument("--demo", action="store_true",
                         help="put one sample of each pill box on the pill within seconds, to try the look and the taps")
+    parser.add_argument("--demo-resume", action="store_true",
+                        help="open the window on made-up project histories (rich, sparse, stale, conflicting) to try "
+                             "Resume project; uses a temporary data folder, never your real memory, and no Claude calls")
     parser.add_argument("--labels", action="store_true", help=argparse.SUPPRESS)      # old flags: now the default
     parser.add_argument("--writing", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--no-setup", action="store_true", help="skip first-run setup (it asks for permissions itself)")
@@ -171,6 +174,8 @@ def cmd_start(args):
     config.RECALL_GAP_MINUTES = max(opts.recall_after, 1)
     if opts.demo:
         config.DEMO, config.RECALL_FIRST_AFTER = True, 3
+    if opts.demo_resume:
+        return run_resume_demo(opts)
     if opts.recall_after < 60:                       # trying it out: the first tasks run comes sooner, and more often
         config.TASK_FIRST_AFTER, config.TASK_EVERY, config.LABEL_FIRST_AFTER = 120, 300, 60
     if opts.every <= 0 or not 0 < opts.input_retention_hours <= 24:
@@ -182,6 +187,49 @@ def cmd_start(args):
     tracker.Tracker(every=opts.every, input_apps=set(opts.input_app) or None,
                     input_retention_hours=opts.input_retention_hours, show_widget=not opts.no_widget,
                     trail=not opts.no_trail, live_labels=not opts.no_labels).run()
+
+
+def run_resume_demo(opts):
+    """start --demo-resume: made-up projects in a temporary data folder, the window already open on them."""
+    import tempfile
+    import resume_demo
+    folder = tempfile.mkdtemp(prefix="lmemm-resume-demo-")
+    resume_demo.seed(folder)
+    print(f"Resume project demo: made-up histories in {folder} (your real memory is not touched, no Claude calls).\n"
+          "Open Remote work essay, Garage shelves, Tax 2024 or Pricing page and press Resume project.")
+    config.OPEN_WINDOW_AT_START = True
+    with config.use_paths(folder):
+        tracker.Tracker(every=opts.every, input_apps=None, input_retention_hours=opts.input_retention_hours,
+                        show_widget=not opts.no_widget, trail=False, live_labels=False).run()
+
+
+def cmd_catchup(args):
+    """catchup [PROJECT] [--demo] [--copy]: the Resume project brief, printed. Same text the window shows."""
+    import projects
+    import resume
+    import resume_demo
+    import tasks
+    demo = "--demo" in args
+    words = [a for a in args if not a.startswith("--")]
+    now = datetime.now()
+    if demo:
+        reg, items, book = resume_demo.build(now)
+    else:
+        try:
+            items, reg, book = store.load_items(), projects.load(), tasks.load_tasks()
+        except ValueError as error:
+            sys.exit(str(error))
+    names = {p["name"].casefold(): pid for pid, p in reg["projects"].items() if not p["archived"]}
+    if not words:
+        sys.exit("Which project? " + (", ".join(p["name"] for p in reg["projects"].values() if not p["archived"]) or "none yet"))
+    pid = names.get(" ".join(words).casefold())
+    if not pid:
+        sys.exit("No project called that. Try one of: " + ", ".join(p["name"] for p in reg["projects"].values()))
+    b = resume.brief(reg, items, pid, now, book)
+    text = resume.as_text(b) if b["state"] != "empty" else b["note"]
+    print(text)
+    if "--copy" in args:
+        tracker.Tracker.copy_text(text, "Copied")
 
 
 def first_run_setup(again=False):
@@ -812,6 +860,8 @@ def main():
         cmd_recap(rest)
     elif cmd == "ask":
         cmd_ask(rest)
+    elif cmd == "catchup":
+        cmd_catchup(rest)
     else:
         sys.exit(USAGE)
 

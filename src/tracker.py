@@ -1678,6 +1678,8 @@ class Tracker:
         if self.last_sig:
             self.identify_now(self.last_sig)     # so the app you start in is followed too
         self.last_capture = time.time()      # the "start" trigger takes the first frame
+        if config.OPEN_WINDOW_AT_START:
+            self.open_window()
         self.trigger("start")
         try:
             while True:

@@ -7,6 +7,7 @@ project tree) and the page. The search field is built once and never rebuilt, so
 interrupted by a redraw; the two scrolling areas keep their place when the data underneath changes.
 """
 
+import subprocess
 import sys
 import time
 import traceback
@@ -22,6 +23,7 @@ import notes
 import keynav
 import page_model
 import project_actions
+import resume
 import rules
 import setup_kit as kit
 import thing_actions
@@ -136,6 +138,7 @@ class MainWindow(RecallPanes):
                  recall=None, on_recall=None, ask=None, ask_state=None, ask_reset=None, text=None, text_state=None,
                  text_reset=None, copy=None):
         self.on_press = on_press
+        self.copied_brief = None                                       # the last Resume brief copied (its button says Copied)
         self.data = data
         self.on_tick = on_tick or (lambda ids, done: None)               # tick or reopen notes (the pill's own function)
         self.on_add_note = on_add_note or (lambda item_id, text: None)
@@ -385,7 +388,9 @@ class MainWindow(RecallPanes):
         self.render()
 
     def back(self, kind):
-        if kind in ("thing", "settings"):
+        if kind == "resume":
+            self.press("go", self.nav["pid"])                      # Resume belongs to its project page
+        elif kind in ("thing", "settings"):
             self.press("back")
         elif kind == "search":
             self.press("clear")
@@ -977,7 +982,7 @@ class MainWindow(RecallPanes):
             return self._things(doc, page, x, 6, w)
         y = 30
         kind = page["kind"]
-        if kind in ("search", "needs", "thing", "archived", "settings"):
+        if kind in ("search", "needs", "thing", "archived", "settings", "resume"):
             self._link(doc, "‹ Back", x - 6, y - 8, lambda: self.back(kind))
             y += 24
         if kind == "project":
@@ -989,8 +994,8 @@ class MainWindow(RecallPanes):
         elif kind == "thing":
             self._app_icon(doc, page["app"], x, y - 2, 40)
             tx = x + 54
-        elif kind in ("home", "needs", "archived", "settings"):
-            kit.tile(doc, {"home": ("square.stack.3d.up.fill", "folder.fill"), "needs": ("bell.badge.fill", "bell.fill"),
+        elif kind in ("home", "needs", "archived", "settings", "resume"):
+            kit.tile(doc, {"resume": ("arrow.uturn.backward.circle.fill", "folder.fill"), "home": ("square.stack.3d.up.fill", "folder.fill"), "needs": ("bell.badge.fill", "bell.fill"),
                            "archived": ("archivebox.fill", "tray.fill"), "settings": ("gearshape.fill", "gear")}[kind], kit.ink(), x, y - 2, 40)
             tx = x + 54
         kit.put_text(doc, page["title"], tx, y, w - (tx - x) - (170 if kind in ("project", "thing") else 0), 26, 700, wrap=False, height=34)
@@ -1007,7 +1012,8 @@ class MainWindow(RecallPanes):
         if kind == "home":
             y = self.actions_row(doc, x, y, w)
         build = {"home": self._home, "project": self._project, "needs": self._needs, "search": self._search,
-                 "thing": self._thing_page, "archived": self._archived, "settings": self._settings}[kind]
+                 "thing": self._thing_page, "archived": self._archived, "settings": self._settings,
+                 "resume": self._resume}[kind]
         return build(doc, page, x, y + 6, w)
 
     def _crumbs(self, doc, chain, x, y):
@@ -1343,7 +1349,9 @@ class MainWindow(RecallPanes):
                        kind="outline", size=13, weight=600)
         else:
             self._project_actions(host, x + w, y - 4, page["pid"])
-        kit.put_text(host, page["title"], x + 54, y, w - 54 - 170, 26, 700, wrap=False, height=32)
+            kit.button(host, "Resume project", x + w - 40 - 8 - 120 - 8 - 140, y - 4, 140, 32, lambda: self.press("resume", page["pid"]),
+                       kind="primary" if page["resume"]["away"] else "quiet", size=13, weight=600)
+        kit.put_text(host, page["title"], x + 54, y, w - 54 - 320, 26, 700, wrap=False, height=32)
         self._label(host, page["meta"], x + 54, y + 33, w - 54, size=13, weight=400)
         y += 62
         self._label(host, "PICK UP WHERE YOU LEFT OFF", x, y, w)
@@ -1566,6 +1574,94 @@ class MainWindow(RecallPanes):
                 top += 24
             return top - 7
         return self._card_box(doc, x, y, w, body)
+
+    # ------------------------------------------------------------ resume this project
+
+    def open_source(self, tid):
+        """Open the original of a thing (its web address, else its app). Only opens; changes nothing (resume.py)."""
+        reg, items = self.data()
+        target = resume.original_of(items[tid]) if tid in items else None
+        if not target:
+            return
+        args = ["open", target["value"]] if target["kind"] == "url" else ["open", "-a", target["value"]]
+        try:
+            subprocess.run(args, check=False, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            print("window: could not open", target["value"], file=sys.stderr)
+
+    def copy_brief(self, text):
+        if text and self.copy_fn(text):
+            self.copied_brief = text
+            self.shown = None
+            self.render()
+
+    def _claim(self, doc, c, x, y, w, emphasis=False):
+        """One sourced line: the text, then what kind of evidence it is, where from, how old, and the ways to open it."""
+        src = c["source"]
+
+        def body(box, inner):
+            h = kit.put_text(box, c["text"], 14, 12, inner, 14 if emphasis else 13, 600 if emphasis else 400)
+            tone = {"authored": kit.ink(), "observed": kit.mute(), "inferred": kit.accent()}[c["kind"]]
+            mark = {"authored": "✎ ", "observed": "◉ ", "inferred": "✦ "}[c["kind"]]
+            top = 12 + h + 6
+            width = kit.text_width(mark + c["label"], 12, 600) + 4
+            kit.put_text(box, mark + c["label"], 14, top, width, 12, 600, tone, wrap=False, height=18)
+            kit.put_text(box, f"·  {src['title'][:46]}  ·  {src['ago']}", 14 + width + 6, top, inner - width - 6 - 150, 12, 400,
+                         kit.mute(), wrap=False, height=18)
+            if src["can_open"]:
+                lw = kit.text_width(src["open_label"], 12, 500) + 12
+                self._link(box, src["open_label"], 14 + inner - lw + 6, top - 6, lambda i=src["item"]: self.open_source(i), size=12,
+                           color=kit.accent())
+            return top + 18 - 12
+        return self._card_box(doc, x, y, w, body, tap=lambda i=src["item"]: self.press("thing", i)) + 8
+
+    def _resume(self, doc, page, x, y, w):
+        b = page["brief"]
+        if b["state"] == "empty":
+            return self._empty(doc, {"title": "Nothing to resume from yet", "line": b["note"]}, x, y, w)
+        latest = b["latest"]
+        bx = x
+        if latest["can_open"]:
+            kit.button(doc, latest["open_label"], bx, y, 150, 34, lambda i=latest["item"]: self.open_source(i), kind="primary", size=13)
+            bx += 158
+        kit.button(doc, "Open in LMemM", bx, y, 140, 34, lambda i=latest["item"]: self.press("thing", i), kind="quiet", size=13)
+        bx += 148
+        kit.button(doc, "Copied" if self.copied_brief == page["text"] else "Copy for an AI chat", bx, y, 170, 34, lambda t=page["text"]: self.copy_brief(t), kind="quiet", size=13)
+        y += 34 + 6
+        self._label(doc, f"Latest: {latest['title'][:60]}  ·  {latest['ago']}", x, y, w, size=12, weight=400)
+        y += 28
+        if b["note"]:
+            y += kit.note(doc, "grey", b["note"], x, y, w) + 14
+        for s in b["sections"]:
+            if s.get("detail"):
+                continue
+            y = self._section(doc, s["title"], x, y, w)
+            for c in s["claims"]:
+                y = self._claim(doc, c, x, y, w)
+            y += 6
+        if b["next"]:
+            y = self._section(doc, "Suggested next step", x, y, w)
+            y = self._claim(doc, b["next"], x, y, w, emphasis=True) + 6
+        details = [s for s in b["sections"] if s.get("detail")]
+        if details:
+            count = sum(len(s["claims"]) for s in details)
+            label = "Hide details" if page["details_open"] else f"Show details · {count}"
+            self._link(doc, label, x - 6, y - 4, lambda: self.press("expand", "details"), size=13, color=kit.accent())
+            y += 26
+            if page["details_open"]:
+                for s in details:
+                    y = self._section(doc, s["title"], x, y, w)
+                    if s.get("note"):
+                        y += kit.put_text(doc, s["note"], x, y - 8, w, 12, 400, kit.mute()) + 4
+                    for c in s["claims"]:
+                        y = self._claim(doc, c, x, y, w)
+                    y += 6
+        used = b["used"]
+        y += 10
+        y += kit.put_text(doc, f"Used: {used['notes']} of your notes, {used['screen']} lines seen on screen, "
+                          f"{used['tasks']} AI reading, from {page_model.plural(used['things'], 'thing')}. " + b["privacy"],
+                          x, y, w, 12, 400, kit.mute()) + 20
+        return y
 
     def _search(self, doc, page, x, y, w):
         if page["none"]:

@@ -1,6 +1,6 @@
 # Hybrid project memory MVP — project tabs and agent resume
 
-Date: 2026-10-10. Status: draft for user review; implementation not authorized by this document yet.
+Date: 2026-10-10. Status: approved by the user in conversation; implementation plan prepared for review.
 
 ## 1. Outcome and agreed scope
 
@@ -314,7 +314,7 @@ present remain usable without becoming new semantic sources.
 
 ## 12. Review and decisions still delegated
 
-User approved the scope direction and project tabs, not yet this full written design.
+User approved the full written design in conversation after spec commit `a0dfe69`.
 Builder choices: embedding model/runtime and vector storage representation after measured
 comparison; internal module boundaries, bounded chunking parameters, schema migrations,
 IPC framing and native drawer implementation. These cannot alter scope/privacy/acceptance

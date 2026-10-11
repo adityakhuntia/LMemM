@@ -10,11 +10,11 @@ supported graph relationships; read-only MCP for one agent; and **Overview · Me
 tabs within the existing project window, with source inspection and agent-context preview.
 Browser semantic intake and a visual graph explorer are out of this increment.
 
-The [new written spec](specs/2026-10-10-hybrid-project-memory-mvp.md) is drafted and
-has passed a fresh independent builder check (no blocking questions). Full written
-user approval is still pending. Next: user reviews the spec, then Superpowers
-writing-plans creates the implementation plan. Do not implement from the superseded
-October 7 plans. Detailed technical defaults in the new spec are proposals for review.
+The [new written spec](specs/2026-10-10-hybrid-project-memory-mvp.md) has been approved by the user and passed a fresh independent builder check. The
+[implementation plan](plans/2026-10-10-hybrid-project-memory-mvp.md) is written and
+self-reviewed, awaiting plan review before native execution under Superpowers
+executing-plans, with an independent whole-branch review at the end. Do not execute
+the superseded October 7 plans. No hybrid-MVP implementation has started.
 
 ## Branch and preservation
 
@@ -62,7 +62,7 @@ umask 077
 
 ## Documents
 
-- [Active draft spec](specs/2026-10-10-hybrid-project-memory-mvp.md)
+- [Approved spec](specs/2026-10-10-hybrid-project-memory-mvp.md)
 - [Short handover](../handover.md)
 - [Prior complete context](history/2026-10-10-before-hybrid-scope.md)
 - [Existing pilot status](semantic-project-memory-status.md) and [pilot runbook](live-semantic-pilot.md)

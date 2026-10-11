@@ -1,6 +1,6 @@
 # Automatic project memory for AI agents
 
-> **Historical scope — superseded for future MVP work.** See the [hybrid project-memory MVP](../specs/2026-10-10-hybrid-project-memory-mvp.md), currently awaiting full written-spec approval. Preserve this document as the record of the prior increment; do not execute its remaining tasks as the current plan. Existing implemented protections and verification history remain applicable.
+> **Historical scope — superseded for future MVP work.** See the [hybrid project-memory MVP](../specs/2026-10-10-hybrid-project-memory-mvp.md), approved by the user on 2026-10-10. Preserve this document as the record of the prior increment; do not execute its remaining tasks as the current plan. Existing implemented protections and verification history remain applicable.
 
 Date: 2026-10-07. Status: written spec approved by user; no graph implementation started.
 

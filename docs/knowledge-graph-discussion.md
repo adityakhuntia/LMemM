@@ -1,8 +1,8 @@
 # Project-memory direction
 
 Updated 2026-10-10. Active design:
-[Hybrid project-memory MVP](specs/2026-10-10-hybrid-project-memory-mvp.md), awaiting
-full written-spec approval. The October 7 automatic-memory specification records
+[Hybrid project-memory MVP](specs/2026-10-10-hybrid-project-memory-mvp.md), approved by the user; the
+[implementation plan](plans/2026-10-10-hybrid-project-memory-mvp.md) is ready for review. The October 7 automatic-memory specification records
 the earlier extraction-first scope and is superseded for future implementation.
 
 The product outcome is project continuity: a developer and their connected agent

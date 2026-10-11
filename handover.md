@@ -11,9 +11,10 @@ These local updates are not pushed. Root main and its modified context.md are pr
 The local .env canary stays untracked. Do not create a replacement branch or replay old stashes.
 
 User chose **Overview · Memory** project tabs and the focused hybrid-memory scope.
-The written design has passed a fresh builder check but still awaits user approval.
-After approval, use Superpowers writing-plans. Do not begin implementation or follow
-remaining tasks in the superseded October 7 plans until the new plan exists.
+The user approved the full written design. The [implementation plan](docs/plans/2026-10-10-hybrid-project-memory-mvp.md)
+is written and self-reviewed. Next: plan review, then native execution under
+Superpowers executing-plans and one independent whole-branch review. Do not follow
+remaining tasks in the superseded October 7 plans.
 
 ## Scope in one paragraph
 

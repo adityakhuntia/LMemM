@@ -1,6 +1,6 @@
 # Opt-in live semantic project-memory pilot
 
-> **Historical scope — superseded for future MVP work.** See the [hybrid project-memory MVP](../specs/2026-10-10-hybrid-project-memory-mvp.md), currently awaiting full written-spec approval. Preserve this document as the record of the prior increment; do not execute its remaining tasks as the current plan. Existing implemented protections and verification history remain applicable.
+> **Historical scope — superseded for future MVP work.** See the [hybrid project-memory MVP](../specs/2026-10-10-hybrid-project-memory-mvp.md), approved by the user on 2026-10-10. Preserve this document as the record of the prior increment; do not execute its remaining tasks as the current plan. Existing implemented protections and verification history remain applicable.
 
 2026-10-07. Status: revised direction approved after spec discussion; user requested
 real work across approved projects and inspectable tentative recall. Extends the approved automatic project-memory design.

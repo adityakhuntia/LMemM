@@ -115,6 +115,17 @@ def begin(pr=None, now=None, cwd=None):
     return folder
 
 
+def resume(name=None):
+    """Carry on in an earlier run's folder (the latest, or the one `name` finds) instead of starting an empty one.
+    ValueError when there is none to continue."""
+    base = config.paths().base_dir or config.paths().data_dir
+    folder = find(name, base) if name and name != "latest" else latest(base)
+    if not folder:
+        raise ValueError("No earlier run to continue. Start one without --continue first.")
+    use(folder, base)
+    return folder
+
+
 def select(args):
     """For the commands that read memory: switch to the run named with `--run NAME` (removed from `args`), else the
     latest run, else stay on the data folder as it is. ValueError when the name matches no single run."""

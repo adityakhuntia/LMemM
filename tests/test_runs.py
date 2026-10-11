@@ -39,6 +39,18 @@ class RunTests(TmpPaths):
         self.assertEqual(config.paths().onboarding_file, os.path.join(base, "onboarding.json"))
         self.assertTrue(config.paths().items_file.startswith(second))
 
+    def test_continue_goes_back_into_an_earlier_run_instead_of_starting_an_empty_one(self):
+        one = runs.begin("25", DAY1)
+        two = runs.begin("25", DAY1)
+        self.assertEqual(runs.resume(), two)
+        self.assertEqual(runs.resume("Session 1"), one)
+        self.assertEqual(config.paths().data_dir, one)
+        self.assertEqual(len(os.listdir(os.path.join(os.path.dirname(one)))), 2)
+
+    def test_continue_with_nothing_to_continue_says_so(self):
+        with self.assertRaises(ValueError):
+            runs.resume()
+
     def test_reading_commands_follow_the_latest_run_or_the_one_named(self):
         base = config.paths().data_dir
         a, b = runs.begin("25", DAY1), runs.begin("25", DAY2)

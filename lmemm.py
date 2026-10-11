@@ -50,7 +50,7 @@ import notes  # noqa: E402
 import store  # noqa: E402
 import tracker  # noqa: E402
 
-USAGE = ("usage: lmemm.py [menu] | start [--demo] [--no-labels] [--no-writing] [--every N] [--input-events --input-app APP]"
+USAGE = ("usage: lmemm.py [menu] | start [--demo] [--continue [RUN]] [--no-labels] [--no-writing] [--every N] [--input-events --input-app APP]"
          " | memory [N] [--content] [--events]"
          " | notes [--all] [PROJECT] | notes done|reopen ID…"
          " | projects [--all] | projects new|rename|move|archive|restore|merge|delete …"
@@ -163,6 +163,8 @@ def cmd_start(args):
     parser.add_argument("--recall-after", type=int, metavar="MINUTES", default=config.RECALL_GAP_MINUTES,
                         help="how long away counts as 'left' for pick up / left open on the pill (default %d); try 3 to see them quickly" % config.RECALL_GAP_MINUTES)
     parser.add_argument("--pr", metavar="NUMBER", help="the PR this run is for, used in the run's folder name (default: found with `gh`)")
+    parser.add_argument("--continue", dest="cont", nargs="?", const="latest", metavar="RUN",
+                        help="carry on in the latest run's folder (or the one named, e.g. 'Session 2') so its notes and memory are still there")
     parser.add_argument("--no-run-folder", action="store_true", help="write into data/ itself, not a new folder under data/runs/")
     parser.add_argument("--demo", action="store_true",
                         help="put one sample of each pill box on the pill within seconds, to try the look and the taps")
@@ -184,7 +186,10 @@ def cmd_start(args):
         sys.exit("Setup isn't finished. Run LMemM again to pick up where you left off.")
     if not opts.no_run_folder:
         import runs
-        folder = runs.begin(opts.pr, cwd=os.path.dirname(os.path.abspath(__file__)))
+        try:
+            folder = runs.resume(opts.cont) if opts.cont else runs.begin(opts.pr, cwd=os.path.dirname(os.path.abspath(__file__)))
+        except ValueError as error:
+            sys.exit(str(error))
         print(f"This run's data: {folder}", flush=True)
     try:
         import subprocess

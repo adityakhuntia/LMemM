@@ -348,7 +348,7 @@ def picker_view(items, item_id, query="", now_iso=None):
             for p in project_names(items) if not q or q in p["name"].lower()]
     exact = any(r["name"].lower() == q for r in rows)
     return {"title": f"Add {item.get('title') or item['doing']} to a project",
-            "total": len(project_names(items)), "kind": item.get("kind", ""),
+            "total": len(project_names(items)), "kind": item.get("kind", ""), "app": item.get("app"),
             "current": item.get("project"), "rows": rows, "new": "" if (not query or exact) else query,
             "also": open_now(items, item_id, now_iso or datetime.now().isoformat(timespec="seconds"))}
 

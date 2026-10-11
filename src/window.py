@@ -27,7 +27,7 @@ import setup_kit as kit
 import thing_actions
 import window_model
 from setup_kit import LEFT, RIGHT
-from widget import ROW_H, _Fields, _Flipped, _Group, _Ring, _Tap
+from widget import ROW_H, _Fields, _Flipped, _Group, _Ring, _Tap, _Tile
 from window_recall import RecallPanes
 
 W, H = 1080, 720                                       # the size it first opens at; after that the window remembers its own
@@ -863,7 +863,9 @@ class MainWindow(RecallPanes):
         """The app's own icon; a plain square when this Mac cannot find it."""
         image = self._app_image(app)
         if image is None:
-            kit.tile(parent, ("doc.fill", "app.fill"), kit.mute(), x, y, size)
+            tile = _Tile.alloc().initWithKind_app_size_("", app, size)     # Gmail and friends: their own colour and symbol
+            tile.setFrame_(NSMakeRect(x, y, size, size))
+            parent.addSubview_(tile)
             return
         holder = NSImageView.alloc().initWithFrame_(NSMakeRect(x, y, size, size))
         holder.setImage_(image)

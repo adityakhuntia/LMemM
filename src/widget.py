@@ -50,6 +50,7 @@ import subprocess
 import time
 from datetime import datetime
 
+import app_look
 import objc
 from Foundation import NSObject, NSPointInRect
 from AppKit import (NSApplication, NSBackingStoreBuffered, NSBezierPath, NSColor, NSEvent, NSImage,
@@ -266,8 +267,12 @@ class _Tile(_Flipped):
     """An app icon square: a symbol for the kind of thing, white on a colour."""
 
     def initWithKind_size_(self, kind, size):
+        return self.initWithKind_app_size_(kind, None, size)
+
+    def initWithKind_app_size_(self, kind, app, size):
+        """A known web app (Gmail, Google Docs ...) wears its own colour and symbol; anything else, its kind's."""
         self = objc.super(_Tile, self).initWithFrame_(NSMakeRect(0, 0, size, size))
-        self.symbol, self.rgb = ICONS.get(kind, DEFAULT_ICON)
+        self.symbol, self.rgb = app_look.look(app) or ICONS.get(kind, DEFAULT_ICON)
         self.size = size
         image = NSImage.imageWithSystemSymbolName_accessibilityDescription_(self.symbol, None)
         if image is not None:
@@ -1510,7 +1515,7 @@ class Widget:
         shown = sug["things"][:4]
         for i, thing in enumerate(shown):
             x = PAD + i * 63
-            tile = _Tile.alloc().initWithKind_size_(thing["kind"], 34)
+            tile = _Tile.alloc().initWithKind_app_size_(thing["kind"], thing.get("app"), 34)
             tile.setFrame_(NSMakeRect(x + 11, y, 34, 34))
             body.addSubview_(tile)
             name = _label(thing["title"], 11, color=NSColor.secondaryLabelColor(), frame=(x, y + 38, 56, 14))[0]
@@ -1551,7 +1556,7 @@ class Widget:
         body.addSubview_(small)
         y += h + 12
         box = _Dashed.alloc().initWithFrame_(NSMakeRect(PAD, y, CARD_W - 2 * PAD, 62))
-        tile = _Tile.alloc().initWithKind_size_(view.get("kind", ""), 34)
+        tile = _Tile.alloc().initWithKind_app_size_(view.get("kind", ""), view.get("app"), 34)
         tile.setFrame_(NSMakeRect(14, 14, 34, 34))
         box.addSubview_(tile)
         box.addSubview_(_label(thing, 14, bold=True, frame=(58, 12, CARD_W - 2 * PAD - 70, 18))[0])

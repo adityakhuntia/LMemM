@@ -316,7 +316,7 @@ def main(reg, items, state, counts, now, fading=(), sugg=None, prefs=None):
     if view == "search":
         return search(reg, items, state["q"], now)
     if view == "resume" and projects.exists(reg, state["pid"]):
-        return resume_page(reg, items, state, now)
+        return resume_page(reg, items, state, now, state.get("events"))
     if view == "archived":
         rows = [{"id": p, "name": reg["projects"][p]["name"], "hue": hue(p),
                  "line": _count_line(counts[p], _subs(reg, p)),
@@ -333,12 +333,12 @@ def main(reg, items, state, counts, now, fading=(), sugg=None, prefs=None):
     return home(reg, items, counts, now, sugg)
 
 
-def resume_page(reg, items, state, now):
+def resume_page(reg, items, state, now, events=None):
     """Resume this project (resume.py): the brief for one project, read only. The task book is read here, once per draw."""
     import resume
     import tasks
     pid = state["pid"]
-    b = resume.brief(reg, items, pid, now, tasks.load_tasks())
+    b = resume.brief(reg, items, pid, now, tasks.load_tasks(), events=events)
     return {"kind": "resume", "pid": pid, "title": b["title"], "meta": ("Where you left off. " + b["headline"]).strip(), "back": True, "brief": b,
             "details_open": "details" in state.get("ex_open", ()), "text": resume.as_text(b) if b["state"] != "empty" else "",
             "crumbs": crumbs(reg, pid)}
@@ -523,12 +523,15 @@ def search(reg, items, q, now):
 
 # ---------------------------------------------------------------- the whole page
 
-def view(reg, items, state, now=None, fading=(), sugg=None, prefs=None):
+def view(reg, items, state, now=None, fading=(), sugg=None, prefs=None, resume_events=None):
     """fading: ids of notes ticked a moment ago, still on screen crossed out (P10). sugg: suggestions.view()."""
     now = now or datetime.now()
     with projects.indexed(reg, items):                                     # 10,000 projects must not mean 10,000 scans
         counts = projects.counts(reg, items)
-        return {"side": side(reg, items, state, counts, now), "main": main(reg, items, state, counts, now, fading, sugg, prefs)}
+        page_state = state
+        if state.get("view") == "resume" and resume_events is not None:
+            page_state = dict(state, events=resume_events)
+        return {"side": side(reg, items, state, counts, now), "main": main(reg, items, page_state, counts, now, fading, sugg, prefs)}
 
 
 def signature(v):

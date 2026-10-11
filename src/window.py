@@ -136,10 +136,11 @@ class MainWindow(RecallPanes):
 
     def __init__(self, on_press, data, on_tick=None, on_add_note=None, on_project=None, on_project_undo=None, suggest=None, prefs=None,
                  recall=None, on_recall=None, ask=None, ask_state=None, ask_reset=None, text=None, text_state=None,
-                 text_reset=None, copy=None):
+                 text_reset=None, copy=None, resume_events=None):
         self.on_press = on_press
         self.copied_brief = None                                       # the last Resume brief copied (its button says Copied)
         self.data = data
+        self.resume_events = resume_events or (lambda: None)
         self.on_tick = on_tick or (lambda ids, done: None)               # tick or reopen notes (the pill's own function)
         self.on_add_note = on_add_note or (lambda item_id, text: None)
         self.on_project = on_project                                   # (action, args) -> {"message", "go", "undo"}; raises ValueError
@@ -462,7 +463,8 @@ class MainWindow(RecallPanes):
         reg, items = self.data()
         now = time.time()
         page = page_model.view(reg, items, self.nav, fading=self.flow.holding(now), sugg=self.suggest(),
-                               prefs=self.prefs(self.nav["sec"]) if self.nav["view"] == "settings" else None)
+                               prefs=self.prefs(self.nav["sec"]) if self.nav["view"] == "settings" else None,
+                               resume_events=self.resume_events() if self.nav["view"] == "resume" else None)
         self.flow_sig = self.flow_signature()
         sig = repr((window_model.signature(self.banner), page, self.flow_sig, self.sel, self.cur))
         if sig == self.shown:

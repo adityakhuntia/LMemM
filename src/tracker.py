@@ -164,6 +164,7 @@ class Tracker:
         self.widget = None                   # the on-screen pill (widget.py), made in run()
         self.menubar = None                  # the menu-bar item (menubar.py), made in run()
         self.main_window = None              # the window (window.py), made the first time it is opened
+        self.resume_events_cache = (0.0, None)
         self.page_data_said = False
         self.menu_refreshed = 0.0
         self.menu_reported = False
@@ -850,6 +851,21 @@ class Tracker:
             reg = projects.empty()
         return reg, dict(self.items)               # a copy, so the resolver thread can go on writing
 
+    def window_resume_events(self):
+        """Read the authored-message evidence for Resume, caching it briefly between window refreshes."""
+        if not self.trail:
+            return []
+        now = time.monotonic()
+        stamp, events = self.resume_events_cache
+        if events is None or now - stamp >= 1.0:
+            try:
+                events = self.trail.store.read(kinds={"write", "focus"})
+            except Exception as error:
+                say(f"Resume: event trail unavailable ({type(error).__name__})")
+                events = []
+            self.resume_events_cache = (now, events)
+        return events
+
     def adopt_projects(self):
         """Give every project name older versions filed things under a place in the project tree
         (projects.adopt; safe to repeat). Writes only when something changed."""
@@ -874,7 +890,7 @@ class Tracker:
                                                       ask=self.widget_ask, ask_state=self.widget_ask_state,
                                                       ask_reset=self.widget_ask_reset, text=self.window_text,
                                                       text_state=self.window_text_state, text_reset=self.window_text_reset,
-                                                      copy=self.window_copy)   # its button sends a menu row id
+                                                      copy=self.window_copy, resume_events=self.window_resume_events)   # its button sends a menu row id
         self.adopt_projects()                       # things filed by name since the last time
         self.main_window.show(self.window_view(self.widget_status()))
 

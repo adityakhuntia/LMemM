@@ -327,13 +327,22 @@ def _build(title, mine, now, book, extra=None, thread_items=None, authored=None)
 
 # ---------------------------------------------------------------- a project you filed
 
-def brief(reg, items, pid, now=None, book=None):
+def brief(reg, items, pid, now=None, book=None, events=None):
     """Resume a project the user filed things in. Their filing is trusted: its things are one body of work, though
     notes on the thread of the latest activity rank before the rest (R29)."""
     now = now or datetime.now()
     name = reg["projects"][pid]["name"]
     mine, left = _usable(projects.members(reg, items, pid, deep=True))
-    out = _build(name, mine, now, book)
+    authored = ev.authored_messages(events or [], {i["id"]: i for i in mine}, now) if events else []
+    if mine and authored:
+        latest = max(mine, key=lambda i: i.get("last_seen", ""))
+        groups = ev.threads(mine)
+        thread = next((g["items"] for g in groups if latest["id"] in {m["id"] for m in g["items"]}), [latest])
+        thread_ids = {i["id"] for i in thread}
+        authored = [m for m in authored if m.get("item") in thread_ids]
+    else:
+        thread = None
+    out = _build(name, mine, now, book, extra={"scope": name}, thread_items=thread, authored=authored)
     out.update(pid=pid, scope=None, project_link="filed", left_out=left, others=[], candidates=[])
     if not mine:
         out["note"] = "Nothing has been remembered in this project yet, so there is nothing to resume from."

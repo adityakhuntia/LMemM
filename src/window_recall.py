@@ -110,7 +110,7 @@ class RecallPanes:
         if not steps:
             h = kit.put_text(doc, EMPTY_FOR_YOU, x, y, min(w, 520), 13, 400, kit.mute())
             return y + h + 22
-        group, h = recall_rows(steps, min(w, 560), self.open_step, lambda sid: self.recall_answer(sid, "done"))
+        group, h = recall_rows(steps, w, self.open_step, lambda sid: self.recall_answer(sid, "done"))
         group.setFrameOrigin_((x, y))
         doc.addSubview_(group)
         return y + h + 22

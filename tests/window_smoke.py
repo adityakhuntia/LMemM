@@ -36,7 +36,7 @@ sys.modules["objc"].super = lambda *a: mock.MagicMock()
 sys.modules["objc"].python_method = lambda f: f
 
 fake_widget = types.ModuleType("widget")
-for n in ("_Fields", "_Flipped", "_Ring", "_Tap"):
+for n in ("_Fields", "_Flipped", "_Group", "_Ring", "_Tap"):
     setattr(fake_widget, n, type(n, (Base,), {"initWithChange_submit_cancel_": lambda self,*a: self, "initWithFrame_callback_": lambda self,*a: self, "initWithFrame_": lambda self,*a: self, "initWithChecked_": lambda self,*a: self}))
 fake_widget.RECALL = {"earlier": ("From earlier", "doc.on.doc", (0.45, 0.36, 0.78), False), "resume": ("Pick up", "a", (0.9, 0.4, 0.1), False),
                       "hanging": ("Left open", "b", (0.7, 0.5, 0.0), True), "next": ("Next step", "c", (0.2, 0.5, 0.5), False)}
@@ -45,6 +45,7 @@ fake_widget._label = lambda *a, **k: (mock.MagicMock(), 20)
 fake_widget._short = lambda text, n: text
 fake_widget._symbol = lambda name: mock.MagicMock()
 fake_widget.recall_rows = lambda steps, w, *a: (Base(), 50 * len(steps))
+fake_widget.ROW_H = 50
 ACTIONS = []
 fake_widget.round_actions = lambda items, w: (ACTIONS.extend(t for _s, t, _c in items) or Base(), 60)
 SIZE = types.SimpleNamespace(width=1080, height=720)

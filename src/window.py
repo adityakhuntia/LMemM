@@ -27,7 +27,7 @@ import setup_kit as kit
 import thing_actions
 import window_model
 from setup_kit import LEFT, RIGHT
-from widget import _Fields, _Flipped, _Ring, _Tap
+from widget import ROW_H, _Fields, _Flipped, _Group, _Ring, _Tap
 from window_recall import RecallPanes
 
 W, H = 1080, 720                                       # the size it first opens at; after that the window remembers its own
@@ -993,15 +993,19 @@ class MainWindow(RecallPanes):
         elif kind == "thing":
             self._app_icon(doc, page["app"], x, y - 2, 40)
             tx = x + 54
-        elif kind in ("home", "needs", "archived", "settings"):
-            kit.tile(doc, {"home": ("square.stack.3d.up.fill", "folder.fill"), "needs": ("bell.badge.fill", "bell.fill"),
+        elif kind in ("needs", "archived", "settings"):
+            kit.tile(doc, {"needs": ("bell.badge.fill", "bell.fill"),
                            "archived": ("archivebox.fill", "tray.fill"), "settings": ("gearshape.fill", "gear")}[kind], kit.ink(), x, y - 2, 40)
             tx = x + 54
-        kit.put_text(doc, page["title"], tx, y, w - (tx - x) - (170 if kind in ("project", "thing") else 0), 26, 700, wrap=False, height=34)
-        y += 36
-        if page.get("meta"):
-            self._label(doc, page["meta"], tx, y, w - (tx - x), size=13, weight=400)
-            y += 34
+        title, meta = page["title"], page.get("meta")
+        if kind == "home":                         # Home greets you, and says how many things are waiting
+            title, meta = self.greeting(), self.home_line(page)
+        kit.put_text(doc, title, tx, y, w - (tx - x) - (170 if kind in ("project", "thing") else 0), 30 if kind == "home" else 26, 700,
+                     wrap=False, height=38 if kind == "home" else 34)
+        y += 40 if kind == "home" else 36
+        if meta:
+            self._label(doc, meta, tx, y, w - (tx - x), size=14 if kind == "home" else 13, weight=400)
+            y += 38 if kind == "home" else 34
         if kind == "home":
             kit.button(doc, "+ New project", x + w - 150, 30, 150, 34, lambda: self.open_name("new"), kind="quiet", size=13, weight=600)
         if kind == "project":
@@ -1016,7 +1020,7 @@ class MainWindow(RecallPanes):
 
     def _crumbs(self, doc, chain, x, y):
         cx = x - 6
-        cx += self._link(doc, "All projects", cx, y - 12, lambda: self.press("home"), size=12)
+        cx += self._link(doc, "Home", cx, y - 12, lambda: self.press("home"), size=12)
         for i, c in enumerate(chain):
             self._label(doc, "›", cx, y - 8, 12, size=12, weight=400)
             cx += 12
@@ -1089,12 +1093,41 @@ class MainWindow(RecallPanes):
             y += 64
         return y
 
+    def greeting(self):
+        hour = time.localtime().tm_hour
+        return "Good morning" if hour < 12 else "Good afternoon" if hour < 18 else "Good evening"
+
+    def home_line(self, page):
+        n = len(self.recall_now)
+        if n:
+            return f"{n} thing{'s' * (n != 1)} for you right now"
+        return "Nothing needs you right now."
+
+    def _project_list(self, doc, rows, x, y, w):
+        """Projects as one inset list: a folder icon, the name, what is in it."""
+        group = _Group.alloc().initWithRows_(len(rows))
+        group.setFrame_(NSMakeRect(x, y, w, ROW_H * len(rows)))
+        doc.addSubview_(group)
+        for i, r in enumerate(rows):
+            call = lambda p=r["id"]: self.press("go", p)
+            tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(0, i * ROW_H, w, ROW_H), call)
+            if self._krow("main", "p" + r["id"], call, tap):
+                tap.tint = NSColor.labelColor().colorWithAlphaComponent_(0.14)
+            group.addSubview_(tap)
+            self._project_icon(tap, r["hue"], 10, 9, 32)
+            kit.put_text(tap, r["name"], 56, 8, w - 90, 14, 600, wrap=False, height=20)
+            kit.put_text(tap, r["line"], 56, 27, w - 90, 12, 400, kit.mute(), wrap=False, height=16)
+            kit.put_text(tap, "›", w - 28, 14, 14, 16, 400, kit.mute(), wrap=False, height=22)
+        return y + ROW_H * len(rows) + 22
+
     def _home(self, doc, page, x, y, w):
         y = self.for_you(doc, x, y, w)
         if page.get("suggest"):
             y = self._suggest_home(doc, page["suggest"], x, y, w)
         if page["empty"]:
-            return self._empty(doc, page["empty"], x, y, w)
+            y = self._section(doc, "Projects", x, y, w)
+            h = kit.put_text(doc, page["empty"]["line"], x, y - 6, min(w, 520), 13, 400, kit.mute())
+            return y + h + 10
         needs = page["needs"]
         if needs["count"]:
             y = self._section(doc, "Needs you", x, y, w)
@@ -1104,7 +1137,7 @@ class MainWindow(RecallPanes):
                 self._link(doc, f"See all {needs['count']}", x - 6, y - 4, lambda: self.press("needs"))
                 y += 30
         y = self._section(doc, "Projects", x + 0, y + 6, w)
-        y = self._rows_of_projects(doc, page["cards"], x, y, w)
+        y = self._project_list(doc, page["cards"], x, y, w)
         if page["unplaced"]:
             y += 6
             self._label(doc, f"{page['unplaced']:,} thing{'s' * (page['unplaced'] != 1)} not in a project yet.",

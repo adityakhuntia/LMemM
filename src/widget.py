@@ -433,38 +433,58 @@ class _Round(_Flipped):
         NSBezierPath.bezierPathWithOvalInRect_(self.bounds()).fill()
 
 
-def recall_rows(steps, w, on_open, on_answer):
-    """The steps as one inset list: a coloured icon square, a one-line title, the kind in small type underneath.
-    The row opens the full card; only the circle (a copy mark for "from earlier") answers it. -> (view, height)."""
-    group = _Group.alloc().initWithRows_(len(steps))
-    group.setFrame_(NSMakeRect(0, 0, w, ROW_H * len(steps)))
+class _Card(_Tap):
+    """One step's own box: a soft rounded tile with a thin edge in its kind's colour."""
+
+    def drawRect_(self, rect):
+        path = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+            NSMakeRect(0.5, 0.5, self.bounds().size.width - 1, self.bounds().size.height - 1), 14, 14)
+        NSColor.labelColor().colorWithAlphaComponent_(0.06).setFill()
+        path.fill()
+        NSColor.colorWithRed_green_blue_alpha_(*self.rgb, 0.28).setStroke()
+        path.setLineWidth_(1)
+        path.stroke()
+
+
+BOX_H = 56
+
+
+def recall_boxes(steps, w, on_open, on_answer, cols=1, gap=8):
+    """The steps as separate boxes (`cols` to a row): a coloured icon square, the kind in small coloured type, one line
+    of text. The box opens the full card; only the circle (a copy mark for "from earlier") answers it. -> (view, height)."""
+    rows = (len(steps) + cols - 1) // cols
+    height = rows * BOX_H + (rows - 1) * gap
+    holder = _Flipped.alloc().initWithFrame_(NSMakeRect(0, 0, w, height))
+    cw = (w - gap * (cols - 1)) / cols
     for i, step in enumerate(steps):
         label, symbol, rgb, _dashed = RECALL[step["kind"]]
-        top = i * ROW_H
-        row = _Tap.alloc().initWithFrame_callback_(NSMakeRect(0, top, w, ROW_H), lambda sid=step["id"]: on_open(sid))
-        row.label = "Open: " + step["text"]
+        x, y = (i % cols) * (cw + gap), (i // cols) * (BOX_H + gap)
+        tone = NSColor.colorWithRed_green_blue_alpha_(*rgb, 1.0)
+        card = _Card.alloc().initWithFrame_callback_(NSMakeRect(x, y, cw, BOX_H), lambda sid=step["id"]: on_open(sid))
+        card.rgb = rgb
+        card.label = "Open: " + step["text"]
         chip = _Chip.alloc().initWithRgb_symbol_(rgb, symbol)
-        chip.setFrame_(NSMakeRect(12, 11, 28, 28))
-        row.addSubview_(chip)
-        title = _label(_short(step["text"], 70), 14, color=NSColor.labelColor(), frame=(50, 8, w - 50 - 48, 17))[0]
+        chip.setFrame_(NSMakeRect(12, 14, 28, 28))
+        card.addSubview_(chip)
+        card.addSubview_(_label(label.upper(), 10, bold=True, color=tone, frame=(50, 10, cw - 50 - 44, 13))[0])
+        title = _label(_short(step["text"], 70), 13.5, color=NSColor.labelColor(), frame=(50, 26, cw - 50 - 44, 17))[0]
         title.setLineBreakMode_(4)
-        row.addSubview_(title)
-        row.addSubview_(_label(label, 11.5, color=NSColor.secondaryLabelColor(), frame=(50, 26, w - 50 - 48, 15))[0])
-        group.addSubview_(row)
-        mark = _Tap.alloc().initWithFrame_callback_(NSMakeRect(w - 44, top, 44, ROW_H), lambda sid=step["id"]: on_answer(sid))
+        card.addSubview_(title)
+        holder.addSubview_(card)
+        mark = _Tap.alloc().initWithFrame_callback_(NSMakeRect(x + cw - 42, y, 42, BOX_H), lambda sid=step["id"]: on_answer(sid))
         mark.label = ("Copy: " if step["kind"] == "earlier" else "Done: ") + step["text"]
         if step["kind"] == "earlier":                    # the mark copies the line: a copy mark, not a tick
-            glyph = NSImageView.alloc().initWithFrame_(NSMakeRect(11, 17, 17, 17))
+            glyph = NSImageView.alloc().initWithFrame_(NSMakeRect(10, 19, 17, 17))
             copy_image = _symbol("doc.on.doc")
             if copy_image is not None:
                 glyph.setImage_(copy_image)
                 glyph.setContentTintColor_(NSColor.secondaryLabelColor())
         else:
             glyph = _Ring.alloc().initWithChecked_(False)
-            glyph.setFrame_(NSMakeRect(11, 17, 17, 17))
+            glyph.setFrame_(NSMakeRect(10, 19, 17, 17))
         mark.addSubview_(glyph)
-        group.addSubview_(mark)
-    return group, ROW_H * len(steps)
+        holder.addSubview_(mark)
+    return holder, height
 
 
 def round_actions(items, w):
@@ -1366,8 +1386,8 @@ class Widget:
         return self._pause_row(body, y)
 
     def _recall_boxes(self, body, y):
-        group, h = recall_rows(self.recall[:4], CARD_W - 16, self._open_detail,
-                               lambda sid: self._recall_answer(sid, "done"))
+        group, h = recall_boxes(self.recall[:4], CARD_W - 16, self._open_detail,
+                                lambda sid: self._recall_answer(sid, "done"))
         group.setFrameOrigin_((8, y + 4))
         body.addSubview_(group)
         return y + 4 + h + 4

@@ -11,7 +11,7 @@ import objc
 from AppKit import NSBezierPath, NSColor, NSImageView, NSMakeRect, NSTextField
 
 import setup_kit as kit
-from widget import RECALL, _Box, _Fields, _Flipped, _Ring, _Tap, _label, _short, _symbol, recall_rows, round_actions
+from widget import RECALL, _Box, _Fields, _Flipped, _Ring, _Tap, _label, _short, _symbol, recall_boxes, round_actions
 
 PANEL_W = 400
 HEAD_H = 44
@@ -103,14 +103,15 @@ class RecallPanes:
         return y + h + 16
 
     def for_you(self, doc, x, y, w):
-        """"For you now": up to four rows in one inset list, as in Settings."""
+        """"For you now": up to four separate boxes, two to a row on a laptop-wide window."""
         steps = self.recall_now[:MAX_BOXES]
         kit.put_text(doc, "For you now", x, y, w, 15, 700, wrap=False, height=22)
         y += 30
         if not steps:
             h = kit.put_text(doc, EMPTY_FOR_YOU, x, y, min(w, 520), 13, 400, kit.mute())
             return y + h + 22
-        group, h = recall_rows(steps, w, self.open_step, lambda sid: self.recall_answer(sid, "done"))
+        group, h = recall_boxes(steps, w, self.open_step, lambda sid: self.recall_answer(sid, "done"),
+                                cols=2 if w >= 560 else 1, gap=10)
         group.setFrameOrigin_((x, y))
         doc.addSubview_(group)
         return y + h + 22

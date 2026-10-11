@@ -919,6 +919,10 @@ class MainWindow(RecallPanes):
 
     def _side(self, doc, side):
         y = 6
+        home = self._tap(doc, 8, y, SIDE_W - 16, 34, lambda: self.press("home"), fill=side["home"]["selected"])      # always one press from Home
+        kit.tile(home, ("house.fill", "square.stack.3d.up.fill"), kit.ink(), 8, 5, 24)
+        kit.put_text(home, "Home", 40, 0, SIDE_W - 16 - 48, 13, 600, wrap=False, height=34, middle=True)
+        y += 44
         needs = side["needs"]
         self._label(doc, "NEEDS YOU", 16, y, 130)
         if needs["count"]:

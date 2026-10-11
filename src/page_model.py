@@ -247,7 +247,8 @@ def _count_line(c, subs=0):
 
 def side(reg, items, state, counts, now):
     needs = needs_you(items)
-    return {"needs": {"count": len(needs), "rows": [_thing(reg, i, now) for i in needs[:NEEDS_SIDE]]},
+    return {"home": {"selected": state["view"] == "home"},
+            "needs": {"count": len(needs), "rows": [_thing(reg, i, now) for i in needs[:NEEDS_SIDE]]},
             "tree": tree_rows(reg, state, counts),
             "unplaced": len(projects.unassigned(items)), "archived": len(archived_roots(reg))}
 

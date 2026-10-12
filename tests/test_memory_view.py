@@ -15,3 +15,25 @@ class ViewTests(unittest.TestCase):
         self.assertEqual(rows[1]['provenance'],'Your note')
         detail=source_presentation(dict(text='excerpt',locator='/a',at='now',origin_type='observed_screen_text',truncated=True))
         self.assertTrue(detail['truncated']);self.assertEqual(detail['provenance'],'Observed content')
+
+
+class FriendlyTextTests(unittest.TestCase):
+    def test_dates_read_as_today_yesterday_or_day_month(self):
+        from datetime import datetime, timezone
+        from memory_view import friendly
+        now = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
+        tz = now.astimezone().tzinfo
+        def local(day, hour):
+            return datetime(2026, 10, day, hour, 5, tzinfo=tz).astimezone(timezone.utc).isoformat()
+        self.assertEqual(friendly(local(12, 9), now).split(",")[0], "Today")
+        self.assertEqual(friendly(local(11, 9), now).split(",")[0], "Yesterday")
+        self.assertTrue(friendly(local(3, 9), now).startswith("3 Oct, "))
+        self.assertEqual(friendly("not a date", now), "not a date")
+
+    def test_long_file_names_are_cut_in_the_middle(self):
+        from memory_view import short_name
+        name = short_name("/Users/a/.lmemm-project-notes/native-3131876c15f4e10d0127af062170c0a1.md")
+        self.assertLessEqual(len(name), 26)
+        self.assertIn("…", name)
+        self.assertTrue(name.endswith("c0a1.md"))
+        self.assertEqual(short_name("/x/short.md"), "short.md")

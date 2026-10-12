@@ -977,6 +977,13 @@ class MainWindow:
     def _memory_action(self,action,payload=None):
         payload=payload or {}
         try:
+            if action in {'open_settings','close_settings'}:
+                if self.memory_pane is None:
+                    from memory_view import MemoryPane
+                    self.memory_pane=MemoryPane(self._memory_action)
+                self.memory_pane.settings=action=='open_settings'
+                if action=='open_settings':self.on_memory('tab',{'tab':'Memory'})
+                self.shown=None;self.render();return
             if action=='choose_root':
                 from AppKit import NSOpenPanel
                 panel=NSOpenPanel.openPanel();panel.setCanChooseDirectories_(True);panel.setCanChooseFiles_(False);panel.setAllowsMultipleSelection_(False)
@@ -1391,8 +1398,13 @@ class MainWindow:
         self._label(host, page["meta"], x + 54, y + 33, w - 54, size=13, weight=400)
         y += 62
         if self.memory_snapshot:
-            for i,tab in enumerate(self.memory_snapshot['tabs']):
-                kit.button(host,tab,x+i*124,y,116,32,lambda t=tab:self._memory_action('tab',{'tab':t}),kind='outline' if self.memory_snapshot['tab']==tab else 'quiet',size=14,weight=600)
+            tx=x
+            for tab in self.memory_snapshot['tabs']:
+                symbol={'Overview':'square.grid.2x2','Memory':'brain'}.get(tab)
+                tx+=kit.chip(host,tab,symbol,tx,y,self.memory_snapshot['tab']==tab,lambda t=tab:self._memory_action('tab',{'tab':t}))+8
+            if self.memory_snapshot.get('binding'):                    # always in view, so setup is never hunted for
+                sx=x+w-kit.chip_width('Settings','gearshape')
+                kit.chip(host,'Settings','gearshape',sx,y,False,lambda:self._memory_action('open_settings'))
             y+=48
             if self.memory_snapshot['tab']=='Memory' or page.get('empty'):return y
         self._label(host, "PICK UP WHERE YOU LEFT OFF", x, y, w)

@@ -42,10 +42,12 @@ SIZE = types.SimpleNamespace(width=1080, height=720)
 fake_widget._Flipped.frame = lambda self: types.SimpleNamespace(size=SIZE)
 sys.modules["widget"] = fake_widget
 kit = types.ModuleType("setup_kit")
-for n in ("put_text","tile","button","text_width","text_height","ink","mute","accent","card_background","faint","line","icon","first_symbol","note"):
+for n in ("put_text","tile","button","text_width","text_height","ink","mute","accent","card_background","faint","line","icon","first_symbol","note","chip","chip_width"):
     setattr(kit, n, mock.MagicMock(return_value=20))
 kit.LEFT, kit.RIGHT, kit.CENTER = 0, 2, 1
 kit.text_width = lambda *a, **k: 50
+kit.text_height = lambda *a, **k: 20
+kit._KitButton = type("_KitButton", (Base,), {"initWithFrame_callback_": lambda self, *a: self})
 sys.modules["setup_kit"] = kit
 import window
 print("window imported with fakes")
@@ -176,6 +178,25 @@ for memory_status in ('Disabled','Ready','Processing','Paused','Needs attention'
     w.memory_view=lambda pid,v=snapshot:v
     w.nav=page_model.press(reg,w.nav,'go',ids['q3'])
     step('Memory '+memory_status,render)
+# Settings page, install notices, source view, preview.
+rich={'decisions':[{'statement':'We decided X because Y.','at':'2026-10-11T08:00:00+00:00','citations':['c2']}],'open_tasks':[{'statement':'TODO: z','at':'2026-10-01T08:00:00+00:00','citations':['c3']}],
+      'primary':[{'text':'hit','at':'2026-10-12T08:38:03+00:00','citation_id':'c1','locator':'/synthetic/repo/.lmemm-project-notes/native-3131876c15f4e10d0127af062170c0a1.md','origin_type':'user_note'}]}
+binding={'workspace_root':'/synthetic/repo','active':True,'project_id':'p1'}
+for label,notice,source in (('rich page',None,None),('page with notice',('VS Code could not install the extension: x',True,'install_extension'),None),
+                            ('source view',None,{'text':'snap','locator':'/a/b.md','at':'2026-10-12T08:38:03+00:00','citation_id':'c1','can_open_file':True,'origin_type':'user_note','truncated':False})):
+    state['source']=source;state['preview']=None
+    snapshot=memory_view(state,binding,{'state':'Ready','model_state':'missing'},rich);snapshot['notice']=notice
+    w.memory_view=lambda pid,v=snapshot:v
+    step('Memory '+label,render)
+state['source']=None
+for label,notice,preview in (('settings',None,None),('settings with notice',('Installed. Quit VS Code.',False,'install_extension'),None),('settings with preview',None,{'proposed':True,'x':1})):
+    state['preview']=preview
+    snapshot=memory_view(state,binding,{'state':'Paused','model_state':'available'},rich);snapshot['notice']=notice
+    w.memory_view=lambda pid,v=snapshot:v
+    w._memory_action('open_settings')
+    step('Memory '+label,render)
+w._memory_action('close_settings')
+step('Memory back from settings',render)
 w._memory_action('source',{'citation_id':'c1'})
 if ('source',{'citation_id':'c1'}) not in memory_calls:FAILED.append('Memory citation callback not forwarded')
 print("FAILED:", FAILED) if FAILED else print("all pages drew")

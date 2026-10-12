@@ -28,7 +28,7 @@ class MemoryController:
     def action(self,action,payload=None):
         payload=payload or {}
         if action=='enroll':self.send('enroll',{'ui_project_id':self.ui_project,'root':payload['root']},'enroll');return
-        if action in {'install_model','install_extension'}:self.notice=('Installing…',False)
+        if action in {'install_model','install_extension'}:self.notice=('Installing…',False,action)
         if action in {'pause','resume','install_model','install_extension','recover_native_notes'}:self.send(action,{},action);return
         if action=='refresh':
             retry=getattr(self.client(),'retry',None)
@@ -79,9 +79,9 @@ class MemoryController:
             kind,token=entry;changed=True
             if kind=='read':self.state=memory_reduce(self.state,'response',dict(request=token,result=event.get('result'),error=event.get('error')))
             elif event.get('error'):
-                if kind in self.NOTICES:self.notice=(str(event['error']),True)
+                if kind in self.NOTICES:self.notice=(str(event['error']),True,kind)
                 else:self.state['error']=event['error']
-            elif kind in self.NOTICES:self.notice=(self.NOTICES[kind],False)
+            elif kind in self.NOTICES:self.notice=(self.NOTICES[kind],False,kind)
             elif kind=='bindings':
                 self.bindings=event['result']
                 if not self.binding:self.state=memory_reduce(self.state,'revoke',{})

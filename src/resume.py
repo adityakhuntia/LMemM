@@ -176,7 +176,7 @@ def _next_from_messages(out, by_chat, item_of, scope, now, mine, thread_ids, sec
         return None
     _rank, chat, req, msgs, item, sentence, status = best
     line = [m for m in msgs if len(m["text"]) >= 12]
-    timeline = [claim("“" + m["text"] + "”", AUTHORED, item, now, at=m["at"], label="You wrote this") for m in line]
+    timeline = [claim("“" + m["text"] + "”", AUTHORED, item, now, at=m["at"], label="You wrote this", chat=m["chat"]) for m in line]
     if status["signal"]:
         timeline.append(claim(f"{label_of(item)} was showing “running a command”.", OBSERVED, item, now, at=status["signal"], label="Seen on screen"))
     timeline.sort(key=lambda c: c["source"]["at"] or "")
@@ -191,14 +191,40 @@ def _next_from_messages(out, by_chat, item_of, scope, now, mine, thread_ids, sec
                 "Open that conversation to check where it got to.")
         label = "AI inference · Check the result"
     clock = ev.parse(req["at"]).strftime("%H:%M")
+    quoted = re.sub(r"^(yup|yes|yeah|ok|okay|sure)[,.!\s]+", "", sentence, flags=re.I) or sentence
+    base = f"You asked Claude: “{quoted}”."
+    out["_lead"] = base + {
+        "open": " You then wrote that it hadn't worked. Open the conversation to see where it stands.",
+        "likely_addressed": " The screen showed Claude working afterwards, but I can't tell whether it finished. Open the conversation to check.",
+    }.get(status["status"], " I can't tell from this capture whether it finished. Open the conversation to check.")
     out["request"] = {"text": sentence, "status": status["status"], "label": status["label"], "why": status["why"],
-                      "source": source(item, req["at"], now)}
+                      "source": source(item, req["at"], now), "chat": chat}
     out["why"] = (f"Your latest request in that chat was at {clock} (“{sentence}”). Its status is {status['label'].lower()}: {status['why']}")
     out["confidence"] = ("Resume can point you to the conversation. It cannot tell what you should do there, because the reply and the result were not captured."
                          if status["status"] != "open" else "Your own follow-up says it hadn't worked; whether it is fixed now is not shown.")
     out["cant_tell"] = ["what Claude replied", "whether the work was finished or tested", "what you planned to do next"] if status["status"] != "open" \
         else ["whether it is fixed now"]
+    chats = len({m["chat"] for m in authored if m["item"] == item["id"]})
+    if status.get("ambiguous") or (chats > 1 and ev.last_signal(item)):
+        out["cant_tell"].append(f"which chat the “running a command” screen belongs to ({label_of(item)} held {chats} chats; "
+                                "your typed messages are matched to their chats from the event trail, the screen observation is not)")
     return claim(step, INFERRED, item, now, at=req["at"], label=label, key=rf.key(item["id"], sentence))
+
+
+def _top(out, nxt, latest, here, replaced):
+    """R35: the top of the brief is one honest sentence and one action. Everything else sits under 'Why this suggestion?'."""
+    lead = out.pop("_lead", None)
+    if not lead and nxt:
+        text = nxt["text"] if len(nxt["text"]) <= 160 else nxt["text"][:157] + "…"
+        lead = (f"Your open note says: “{text}”. Open where you wrote it to pick up from there." if nxt["kind"] == AUTHORED
+                else f"LMemM's reading of this work suggests: {text} (an AI inference). Open it to check.")
+    if not nxt:
+        lead = f"I can identify the work ({here}), but I can't reliably tell what you planned to do next. Open {here} to pick up from there."
+    src = nxt["source"] if nxt else out["latest"]
+    chat = src.get("app") in ("Claude", "ChatGPT") or "conversation" in (src.get("title") or "").lower()
+    label = "Open conversation" if chat else src["open_label"]
+    return {"headline": lead, "action": {"label": label, "item": src["item"], "title": src["title"], "can_open": src["can_open"]},
+            "confirmed": bool(out.get("confirmed"))}
 
 
 def _build(title, mine, now, book, extra=None, thread_items=None, authored=None, feedback=None):
@@ -235,7 +261,9 @@ def _build(title, mine, now, book, extra=None, thread_items=None, authored=None,
         signal = ev.last_signal(i) if i.get("kind") == "ai_conversation" else None
         if signal and ev.parse(i.get("last_seen")) and ev.parse(signal) and \
                 (ev.parse(i["last_seen"]) - ev.parse(signal)).total_seconds() <= WORKING_WITHIN:
-            stand_claims.append(claim(f"{label_of(i)} was showing “running a command” at {ev.parse(signal).strftime('%H:%M')}.",
+            n_chats = len({m["chat"] for m in (authored or []) if m["item"] == i["id"]})
+            more = f" It held {n_chats} chats, so this can't be tied to one." if n_chats > 1 else ""
+            stand_claims.append(claim(f"{label_of(i)} was showing “running a command” at {ev.parse(signal).strftime('%H:%M')}.{more}",
                                       OBSERVED, i, now, at=signal, label="Seen on screen"))
             break
     sections.append({"id": "stand", "title": "Where things stand", "claims": stand_claims})
@@ -277,7 +305,7 @@ def _build(title, mine, now, book, extra=None, thread_items=None, authored=None,
         item_of = {i["id"]: i for i in mine}
         sections.insert(1, {"id": "asked", "title": "What you told Claude" if {i.get("app") for i in mine if i["id"] in {m["item"] for m in msgs}} == {"Claude"} else "What you wrote",
                             "claims": [claim("“" + m["text"] + "”", AUTHORED, item_of[m["item"]], now, at=m["at"],
-                                             label="You wrote this") for m in recent]})
+                                             label="You wrote this", chat=m["chat"]) for m in recent]})
         out["used"]["typed"] = len(msgs)
         out["chats"] = len(by_chat)
         out["project_name"] = next((m["project"] for m in msgs if m["project"]), None)
@@ -290,9 +318,12 @@ def _build(title, mine, now, book, extra=None, thread_items=None, authored=None,
                     key=rf.key(t_item["id"], tasks.clean(task["open"], 200)))
         out["why"] = "The task reading LMemM made of this work lists it as open."
         out["confidence"] = "likely continuation; not confirmed by you"
+    replaced = False
     if nxt:                                                  # your corrections (R34)
         f = fb["steps"].get(nxt["key"], {})
         if f.get("action") == "replace":
+            replaced = True
+            out["_lead"] = f"Your next step, in your words: “{f['text']}”. Open where you were working to pick up from there."
             nxt = claim(f["text"], AUTHORED, item_of_next(mine, nxt), now, label="You wrote this", key=nxt["key"])
             out["why"] = "You replaced Resume's suggestion with your own words."
             out["confidence"] = "your words"
@@ -304,6 +335,7 @@ def _build(title, mine, now, book, extra=None, thread_items=None, authored=None,
     out["cant_tell"] = out.get("cant_tell") if nxt else None
     if not nxt:
         out["no_next"] = NO_NEXT
+    out["top"] = _top(out, nxt, latest, here, replaced)
 
     rest = [e for e in (steps[1:] if steps else []) if e not in asks[:1]] + [e for e in asks[1:]]
     other_notes = rest + off_thread
@@ -492,9 +524,47 @@ def brief_scope(items, scope=None, now=None, book=None, pick=None, events=None, 
     return out
 
 
+def why_groups(b):
+    """R35: the evidence behind the top line, in four kinds that are never mixed:
+    what you wrote, what the app observed, what Resume inferred, what Resume cannot determine."""
+    by = {s["id"]: s for s in b["sections"]}
+    wrote, seen = [], []
+    lead = (b.get("request") or {}).get("chat")
+    for sid in ("timeline", "asked"):
+        for c in (by.get(sid) or {}).get("claims", []):
+            if c["text"] not in {w["text"] for w in wrote}:
+                wrote.append(dict(c, text=c["text"] + " (in your other chat)") if lead and c.get("chat") not in (None, lead) else c)
+    wrote = sorted(wrote, key=lambda c: c["source"]["at"] or "")[-6:]
+    for sid in ("stand", "seen"):
+        seen += (by.get(sid) or {}).get("claims", [])
+    for c in (by.get("timeline") or {}).get("claims", []):
+        if c["kind"] == OBSERVED and c["text"] not in {x["text"] for x in seen}:
+            seen.append(c)
+    nxt = b.get("next")
+    if nxt and nxt["kind"] == AUTHORED and nxt["text"] not in {w["text"] for w in wrote}:
+        wrote.insert(0, nxt)
+    inferred = ([nxt] if nxt and nxt["kind"] != AUTHORED else []) + (by.get("goal") or {}).get("claims", [])
+    lines = []
+    if b.get("request"):
+        lines.append(f"Status of your request: {b['request']['label']}. {b['request']['why']}")
+    for key in ("why", "confidence"):
+        if key == "why" and b.get("request"):
+            continue
+        if b.get(key):
+            lines.append(("Why: " if key == "why" else "Confidence: ") + b[key])
+    cannot = list(b.get("cant_tell") or [])
+    shown = {"timeline", "asked", "stand", "seen", "goal"}
+    more = [s for s in b["sections"] if s["id"] not in shown]
+    return [("What you wrote", wrote), ("What the app observed", seen), ("What Resume inferred", inferred)], lines, cannot, more
+
+
 def as_text(b):
-    """A short context brief to paste elsewhere. Every line says where it came from; inference is marked."""
+    """A short context brief to paste elsewhere: one line and one action first, then why. Every line says where it came
+    from; inference is marked."""
     lines = [f"# Where I left off: {b['title']}", ""]
+    top = b.get("top")
+    if top:
+        lines += [f"**{top['headline']}**", f"Action: {top['action']['label']} ({top['action']['title']})", ""]
     if b.get("project_link") == "unconfirmed":
         lines += ["_These things aren't filed in a project, so Resume kept together only what clearly belongs together._"]
         if b.get("relation"):
@@ -506,27 +576,25 @@ def as_text(b):
         lines += [""]
     if b.get("note"):
         lines += [f"_{b['note']}_", ""]
-    for s in b["sections"]:
-        lines.append(f"**{s['title']}**")
-        if s.get("conflict"):
-            lines.append(f"_{s['note']}_")
-        for c in s["claims"]:
-            lines.append(f"- {c['text']} ({c['label']}; {c['source']['title']}, {said(c['source']['ago'])})")
+    if b.get("sections"):
+        groups, why, cannot, more = why_groups(b)
+        lines.append("## Why this suggestion?")
+        for title, claims in groups:
+            if claims:
+                lines.append(f"**{title}**")
+                lines += [f"- {c['text']} ({c['label']}; {c['source']['title']}, {said(c['source']['ago'])})" for c in claims]
+        lines += [f"- {w}" for w in why]
+        if cannot:
+            lines.append("**What Resume cannot determine**")
+            lines += [f"- {c}" for c in cannot]
         lines.append("")
-    if b.get("next"):
-        c = b["next"]
-        lines += ["**Possible next step**", f"- {c['text']} ({c['label']}; {c['source']['title']}, {said(c['source']['ago'])})"]
-        if b.get("request"):
-            lines.append(f"- Status of your request: {b['request']['label']}")
-        if b.get("why"):
-            lines.append(f"- Why: {b['why']}")
-        if b.get("confidence"):
-            lines.append(f"- Confidence: {b['confidence']}")
-        if b.get("cant_tell"):
-            lines.append("- Resume cannot tell: " + "; ".join(b["cant_tell"]) + ".")
-        lines.append("")
-    elif b.get("no_next"):
-        lines += [b["no_next"] + (f" Open the most recent source ({b['latest']['title']}) to pick up from there." if b.get("latest") else ""), ""]
+        for s in more:
+            lines.append(f"**{s['title']}**")
+            if s.get("conflict"):
+                lines.append(f"_{s['note']}_")
+            for c in s["claims"]:
+                lines.append(f"- {c['text']} ({c['label']}; {c['source']['title']}, {said(c['source']['ago'])})")
+            lines.append("")
     for o in b.get("others") or []:
         lines.append(f"Other open work: {o['title']} ({page_model.plural(o['notes'], 'open note')}, last {said(o['ago'])})")
     for m in b.get("maybe") or []:

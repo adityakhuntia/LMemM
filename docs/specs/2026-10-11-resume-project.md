@@ -76,3 +76,10 @@ choosing are command-line only so far.
 - The next step is an open note on the thread, else a chased request, else "check where it got to" (open that conversation), else "I can identify the work, but I can't reliably tell what you planned to do next. Open the most recent source."
 - R34 (resume_feedback.py): Right, Outdated, Edit, Don't use this source. Own file `resume_feedback.json`; memory and trail are never edited. CLI: `--feedback FILE --mark right|outdated --replace TEXT --exclude ITEM`.
 - Window: buttons under the next step (Right / Outdated / Edit… / Don't use this source). Written without a Mac to run them on: not yet exercised.
+
+## v1.4: short top, evidence underneath
+
+- R35: the brief opens with one sentence and one action (`brief["top"]`: headline, action label/item). Statuses and quotes are unchanged but sit under "Why this suggestion?" in four groups that are never mixed: what you wrote, what the app observed, what Resume inferred, what Resume cannot determine.
+- The headline quotes your words ("You asked Claude: “…”") instead of paraphrasing them; it adds no action the evidence does not support.
+- Chat attribution: typed messages are matched to chats by the event trail; only the "running a command" screen observation is called untied when its window held several chats.
+- The Mac window was not run for this change (no AppKit in the build container). To try: `python3 lmemm.py --demo-resume`, open a project, Resume.

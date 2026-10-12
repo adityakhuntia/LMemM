@@ -1641,66 +1641,61 @@ class MainWindow(RecallPanes):
         return self._card_box(doc, x, y, w, body, tap=lambda i=src["item"]: self.press("thing", i)) + 8
 
     def _resume(self, doc, page, x, y, w):
+        """R35: one honest sentence and one action first; the evidence sits under 'Why this suggestion?'."""
         b = page["brief"]
         if b["state"] == "empty":
             return self._empty(doc, {"title": "Nothing to resume from yet", "line": b["note"]}, x, y, w)
-        latest = b["latest"]
-        bx = x
-        if latest["can_open"]:
-            kit.button(doc, latest["open_label"], bx, y, 150, 34, lambda i=latest["item"]: self.open_source(i), kind="primary", size=13)
-            bx += 158
-        kit.button(doc, "Open in LMemM", bx, y, 140, 34, lambda i=latest["item"]: self.press("thing", i), kind="quiet", size=13)
+        top, latest = b["top"], b["latest"]
+        y += kit.put_text(doc, top["headline"], x, y, w, 16, 600) + 14
+        act, bx = top["action"], x
+        if act["can_open"]:
+            lw = max(150, int(kit.text_width(act["label"], 13, 600)) + 36)
+            kit.button(doc, act["label"], bx, y, lw, 34, lambda i=act["item"]: self.open_source(i), kind="primary", size=13)
+            bx += lw + 8
+        kit.button(doc, "Open in LMemM", bx, y, 140, 34, lambda i=act["item"]: self.press("thing", i), kind="quiet", size=13)
         bx += 148
         kit.button(doc, "Copied" if self.copied_brief == page["text"] else "Copy for an AI chat", bx, y, 170, 34, lambda t=page["text"]: self.copy_brief(t), kind="quiet", size=13)
-        y += 34 + 6
-        self._label(doc, f"Latest: {latest['title'][:60]}  ·  {latest['ago']}", x, y, w, size=12, weight=400)
-        y += 28
-        if b["note"]:
-            y += kit.note(doc, "grey", b["note"], x, y, w) + 14
-        for s in b["sections"]:
-            if s.get("detail"):
-                continue
-            y = self._section(doc, s["title"], x, y, w)
-            for c in s["claims"]:
-                y = self._claim(doc, c, x, y, w)
-            y += 6
-        if b["next"]:
-            y = self._section(doc, "Possible next step", x, y, w)
-            y = self._claim(doc, b["next"], x, y, w, emphasis=True)
-            req = b.get("request")
-            for line in ((req and "Status of your request: " + req["label"]), b.get("why") and "Why: " + b["why"],
-                         b.get("confidence") and "Confidence: " + b["confidence"],
-                         b.get("cant_tell") and "Resume cannot tell: " + "; ".join(b["cant_tell"]) + "."):
-                if line:
-                    y += kit.put_text(doc, line, x, y, w, 12, 400, kit.mute()) + 4
-            key, src = b["next"].get("key"), b["next"]["source"]["item"]
-            if key:                                                # your word on it; the captured evidence is never changed
-                lx = x - 6
-                for label, call in (("Right" if not b.get("confirmed") else "Confirmed", lambda: self.resume_fb("right", key)),
-                                    ("Outdated", lambda: self.resume_fb("outdated", key)),
-                                    ("Edit…", lambda: self.open_name("step", pid=key)),
-                                    ("Don't use this source", lambda: self.resume_fb("exclude", item=src))):
-                    lx += self._link(doc, label, lx, y, call, size=12, color=kit.accent()) + 6
-                y += 26
-            y += 8
-        elif b.get("no_next"):
-            y = self._section(doc, "Possible next step", x, y, w)
-            y += kit.put_text(doc, b["no_next"] + " The latest source is the best place to start.", x, y, w, 13, 400) + 14
-        details = [s for s in b["sections"] if s.get("detail")]
-        if details:
-            count = sum(len(s["claims"]) for s in details)
-            label = "Hide details" if page["details_open"] else f"Show details · {count}"
-            self._link(doc, label, x - 6, y - 4, lambda: self.press("expand", "details"), size=13, color=kit.accent())
+        y += 34 + 8
+        key = (b.get("next") or {}).get("key")
+        if key:                                                    # your word on it; the captured evidence is never changed
+            src = b["next"]["source"]["item"]
+            lx = x - 6
+            for label, call in (("Right" if not b.get("confirmed") else "Confirmed", lambda: self.resume_fb("right", key)),
+                                ("Outdated", lambda: self.resume_fb("outdated", key)),
+                                ("Edit…", lambda: self.open_name("step", pid=key)),
+                                ("Don't use this source", lambda: self.resume_fb("exclude", item=src))):
+                lx += self._link(doc, label, lx, y, call, size=12, color=kit.accent()) + 6
             y += 26
-            if page["details_open"]:
-                for s in details:
-                    y = self._section(doc, s["title"], x, y, w)
-                    if s.get("note"):
-                        y += kit.put_text(doc, s["note"], x, y - 8, w, 12, 400, kit.mute()) + 4
-                    for c in s["claims"]:
+        if b["note"]:
+            y += kit.note(doc, "grey", b["note"], x, y, w) + 10
+        groups, why, cannot, more = resume.why_groups(b) if b["sections"] else ([], [], [], [])
+        count = sum(len(c) for _t, c in groups) + len(more)
+        label = "Hide why this suggestion" if page["details_open"] else "Why this suggestion?"
+        self._link(doc, label, x - 6, y, lambda: self.press("expand", "details"), size=13, color=kit.accent())
+        y += 30
+        if page["details_open"]:
+            for title, claims in groups:
+                if claims:
+                    y = self._section(doc, title, x, y, w)
+                    for c in claims:
                         y = self._claim(doc, c, x, y, w)
-                    y += 6
-        used = b["used"]
+                    y += 4
+            for line in why:
+                y += kit.put_text(doc, line, x, y, w, 12, 400, kit.mute()) + 6
+            if cannot:
+                y = self._section(doc, "What Resume cannot determine", x, y + 4, w)
+                for line in cannot:
+                    y += kit.put_text(doc, "•  " + line, x, y, w, 13, 400) + 6
+            for s in more:
+                y = self._section(doc, s["title"], x, y + 4, w)
+                if s.get("note"):
+                    y += kit.put_text(doc, s["note"], x, y - 8, w, 12, 400, kit.mute()) + 4
+                for c in s["claims"]:
+                    y = self._claim(doc, c, x, y, w)
+        for o in b.get("others") or []:
+            y += kit.put_text(doc, f"Other open work, kept apart: {o['title']} ({page_model.plural(o['notes'], 'open note')}).", x, y + 4, w, 12, 400, kit.mute()) + 4
+        for m in b.get("maybe") or []:
+            y += kit.put_text(doc, "Possibly related (uncertain): " + m["note"], x, y + 4, w, 12, 400, kit.mute()) + 4
         left = b.get("left_out") or []
         if left:
             y += kit.put_text(doc, f"Left out: {page_model.plural(len(left), 'thing')} that is LMemM's own file or screen.",
@@ -1708,6 +1703,7 @@ class MainWindow(RecallPanes):
         if b.get("excluded"):
             y += kit.put_text(doc, f"Left out because you said not to use {page_model.plural(len(b['excluded']), 'source')}.",
                               x, y + 6, w, 12, 400, kit.mute()) + 6
+        used = b["used"]
         y += 10
         y += kit.put_text(doc, f"Used: {used['notes']} of your notes, {used['screen']} lines seen on screen, "
                           f"{used['tasks']} AI reading, from {page_model.plural(used['things'], 'thing')}. " + b["privacy"],

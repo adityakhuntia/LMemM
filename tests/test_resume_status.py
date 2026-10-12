@@ -86,8 +86,37 @@ class Pr25(unittest.TestCase):
         self.assertEqual(b["request"]["status"], "unknown")
         for bit in ("mac", "test it", "push", "merged", "finished it", "see what it finished"):
             self.assertNotIn(bit, b["next"]["text"].lower())
-        self.assertIn("Resume cannot tell", text)
+        self.assertIn("What Resume cannot determine", text)
         self.assertTrue(b["next"]["source"]["can_open"])
+
+    def test_the_top_is_one_sentence_and_one_action(self):
+        for b in (self.scoped(), self.filed()):
+            top = b["top"]
+            self.assertTrue(top["headline"].startswith("You asked Claude: “lets go with the apple style. lets code this up”."))
+            self.assertIn("I can't tell from this capture whether it finished. Open the conversation to check.", top["headline"])
+            self.assertEqual((top["action"]["label"], top["action"]["item"], top["action"]["can_open"]), ("Open conversation", pr25.CLAUDE, True))
+            for bit in ("mac", "push", "test it", "merged", "is still open", "unfinished"):
+                self.assertNotIn(bit, top["headline"].lower())
+            text = resume.as_text(b)
+            self.assertLess(text.index(top["headline"]), text.index("## Why this suggestion?"))
+            self.assertLess(text.index("Action: Open conversation"), text.index("## Why this suggestion?"))
+
+    def test_why_keeps_what_you_wrote_apart_from_what_the_app_saw_and_what_was_inferred(self):
+        text = resume.as_text(self.scoped())
+        order = [text.index(h) for h in ("**What you wrote**", "**What the app observed**", "**What Resume inferred**", "**What Resume cannot determine**")]
+        self.assertEqual(order, sorted(order))
+        wrote = text[order[0]:order[1]]
+        self.assertNotIn("running a command", wrote)
+        self.assertTrue(all("You wrote this" in l for l in wrote.splitlines()[1:] if l.startswith("- ")))
+        self.assertIn("(in your other chat)", wrote)                           # typed messages are matched to their chat
+
+    def test_only_the_screen_observation_is_called_unassignable(self):
+        b = self.scoped()
+        gaps = " ".join(b["cant_tell"])
+        self.assertIn("which chat the “running a command” screen belongs to", gaps)
+        self.assertIn("your typed messages are matched to their chats from the event trail", gaps)
+        self.assertNotIn("chat", b["top"]["headline"].replace("conversation", ""))
+        self.assertTrue(any(c["chat"] for c in next(s for s in b["sections"] if s["id"] == "asked")["claims"]))
 
     def test_cli_and_window_paths_agree(self):
         a, w = self.scoped(), self.filed()
@@ -154,7 +183,7 @@ class Sparse(unittest.TestCase):
             self.assertEqual(b["state"], "limited")
             self.assertIsNone(b["next"])
             self.assertIn("can't reliably tell what you planned to do next", b["no_next"])
-            self.assertIn("Open the most recent source", resume.as_text(b))
+            self.assertIn("Open Garage shelving ideas to pick up from there", resume.as_text(b))
 
 
 if __name__ == "__main__":

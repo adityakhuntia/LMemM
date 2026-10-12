@@ -364,10 +364,12 @@ def request_status(msg, chat_msgs, item, single_chat=True):
         if CHASE.search(m["text"]):
             return {"status": "open", "label": STATUS_LABEL["open"], "signal": None,
                     "why": f"You wrote “{m['text'][:80]}” afterwards, which reads as it not having worked."}
-    signal = last_signal(item) if single_chat else None
+    raw = last_signal(item)
+    signal = raw if single_chat else None
     if signal and parse(signal) and parse(msg["at"]) and parse(signal) > parse(msg["at"]):
-        return {"status": "likely_addressed", "label": STATUS_LABEL["likely_addressed"], "signal": signal,
+        return {"status": "likely_addressed", "label": STATUS_LABEL["likely_addressed"], "signal": signal, "ambiguous": False,
                 "why": f"The screen showed Claude working at {parse(signal).strftime('%H:%M')}, after your request. That does not show it was finished."}
-    return {"status": "unknown", "label": STATUS_LABEL["unknown"], "signal": None,
-            "why": "Claude's reply and the result are not readable in what was remembered."
-                   + ("" if single_chat else " This window held more than one chat, so what it showed can't be tied to this one.")}
+    seen = (f" The screen showed Claude working at {parse(raw).strftime('%H:%M')}, but that window held more than one chat, so it can't be tied to this one."
+            if raw and not single_chat and parse(raw) and parse(msg["at"]) and parse(raw) > parse(msg["at"]) else "")
+    return {"status": "unknown", "label": STATUS_LABEL["unknown"], "signal": None, "ambiguous": bool(seen),
+            "why": "Claude's reply and the result are not readable in what was remembered." + seen}

@@ -136,11 +136,20 @@ class Page(unittest.TestCase):
         st = page_model.press(reg, st, "resume", by["Remote work essay"], items)
         view = page_model.view(reg, items, st, NOW)
         self.assertEqual(view["main"]["kind"], "resume")
+        top = view["main"]["brief"]["top"]                              # what the window draws first (window._resume)
+        self.assertTrue(top["headline"] and top["action"]["label"] and top["action"]["item"] in items)
         st = page_model.press(reg, st, "thing", "e1", items)
         st = page_model.press(reg, st, "back", None, items)
         self.assertEqual(st["view"], "resume")
         st = page_model.press(reg, st, "go", st["pid"], items)         # the Back link on the Resume page
         self.assertEqual((st["view"], st["pid"]), ("project", by["Remote work essay"]))
+
+    def test_every_state_has_a_top_for_the_window(self):
+        reg, items, book, by = ids()
+        for name in ("Remote work essay", "Garage shelves", "Tax 2024", "Pricing page"):
+            top = resume.brief(reg, items, by[name], NOW, book)["top"]
+            self.assertTrue(top["headline"].strip())
+            self.assertIn(top["action"]["item"], items)
 
     def test_project_page_marks_resume_primary_when_away(self):
         reg, items, book, by = ids()

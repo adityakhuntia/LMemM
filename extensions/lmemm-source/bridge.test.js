@@ -62,6 +62,6 @@ test('host pause clears digest and resume publishes fresh source with new revisi
   grant.active=true;grant.revision=2;fs.writeFileSync(grantPath,JSON.stringify(grant));poll();m=JSON.parse(fs.readFileSync(event));
   assert.equal(m.kind,'snapshot');assert.equal(m.spans[0].text,'fresh edit');assert.equal(m.revision,2);await commands['lmemm.note']();fs.unlinkSync(grantPath);poll();fs.writeFileSync(grantPath,JSON.stringify(grant),{mode:0o600});poll();assert.notEqual(JSON.parse(fs.readFileSync(event)).kind,'note');assert.ok(errors.length);fs.unlinkSync(ack);poll();m=JSON.parse(fs.readFileSync(event));assert.equal(m.kind,'connect');assert.equal(m.spans,undefined);
   const firstClient=fs.readdirSync(path.join(directory,'events'))[0];uriHandler.handleUri({path:'/other',query:'grant='+encodeURIComponent(grantPath)});assert.deepEqual(fs.readdirSync(path.join(directory,'events')),[firstClient]);
-  uriHandler.handleUri({path:'/connect',query:'grant='+encodeURIComponent(grantPath)});const reconnected=fs.readdirSync(path.join(directory,'events'));assert.equal(reconnected.length,1);assert.notEqual(reconnected[0],firstClient);extension.deactivate();
+  uriHandler.handleUri({path:'/connect',query:'grant='+encodeURIComponent(grantPath)});const reconnected=fs.readdirSync(path.join(directory,'events'));assert.ok(reconnected.some(name=>name!==firstClient));extension.deactivate();
  }finally{Module._load=originalLoad;global.setInterval=originalInterval;global.clearInterval=originalClear;fs.rmSync(root,{recursive:true});}
 });

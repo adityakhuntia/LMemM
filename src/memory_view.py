@@ -133,26 +133,12 @@ class MemoryPane:
             if view.get('error'):y+=24;error_card(view['error'],y)
         elif self.settings:self._settings(view,x,w,kit,rgb,panel)
         else:
-            color=rgb(STATE_COLORS.get(mode,GREEN));label=STATE_LABELS.get(mode,mode);shown=label+('  ⌃' if self.status_open else '  ›')
-            pw=kit.text_width(shown,12,600)+34;chip=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(x,y,pw,26),lambda:self.action('toggle_status'));chip.fill=rgb(STATE_COLORS.get(mode,GREEN),.14);chip.radius=13;host.addSubview_(chip)
+            color=rgb(STATE_COLORS.get(mode,GREEN));label=STATE_LABELS.get(mode,mode);shown=label+'  ›'
+            pw=kit.text_width(shown,12,600)+34;chip=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(x,y,pw,26),lambda:self.action('open_status'));chip.fill=rgb(STATE_COLORS.get(mode,GREEN),.14);chip.radius=13;host.addSubview_(chip)
             dot=kit.icon('circle.fill',7,color,(12,9,8,8))
             if dot is not None:chip.addSubview_(dot)
             kit.put_text(chip,shown,24,0,pw-26,12,600,color,wrap=False,height=26,middle=True)   # inside the pill, so a click on the words is a click on the pill
             rw=kit.chip_width('Refresh','arrow.clockwise');kit.chip(host,'Refresh','arrow.clockwise',x+w-rw,y-3,False,lambda:self.action('refresh'));y+=40
-            if self.status_open:
-                st=view.get('status',{});detail=view.get('message') or ''
-                facts=['Waiting: %s'%st.get('pending',0)]
-                if st.get('failed'):facts.append('Failed: %s'%st['failed'])
-                if st.get('indexed_at'):facts.append('Last indexed '+friendly(st['indexed_at']))
-                facts=' · '.join(facts);dh=kit.text_height(detail,13,400,w-32);top=y;btns=mode=='Needs attention'
-                panel(x,top,w,dh+(100 if btns else 62),STATE_COLORS.get(mode,GREEN))
-                kit.put_text(host,label if mode!='Needs attention' else 'What needs attention',x+16,top+12,w-32,14,700,wrap=False,height=20)
-                kit.put_text(host,detail,x+16,top+36,w-32,13,400,rgb(RED) if btns else kit.mute(),height=dh)
-                kit.put_text(host,facts,x+16,top+dh+42,w-32,11,400,kit.mute(),wrap=False,height=16)
-                if btns:
-                    kit.button(host,'Try again',x+16,top+dh+66,110,30,lambda:self.action('resume'),kind='primary',size=13,weight=600)
-                    kit.chip(host,'Recover notes','lifepreserver',x+134,top+dh+66,False,lambda:self.action('recover_native_notes'))
-                y=top+dh+(100 if btns else 62)+14
             if view.get('error'):error_card(view['error'],y)
             if view.get('notice'):para(view['notice'][0],13,500,rgb(RED) if view['notice'][1] else kit.mute())
             field_box(self.query,y,left=42)
@@ -206,6 +192,20 @@ class MemoryPane:
             kit.put_text(host,detail,x+16,top+38,w-32,13,400,kit.mute(),height=dh)
             kit.button(host,go,x+16,top+dh+50,110,30,lambda:self.action('confirm_yes'),kind='danger' if self.confirm=='confirm_disconnect' else 'primary',size=13,weight=600)
             kit.button(host,'Cancel',x+134,top+dh+50,90,30,lambda:self.action('confirm_no'),kind='quiet',size=13,weight=600);y=top+dh+88+14
+        mode=view['state']
+        if mode=='Needs attention':
+            st=view.get('status',{});detail=view.get('message') or ''
+            facts=['Waiting: %s'%st.get('pending',0)]
+            if st.get('failed'):facts.append('Failed: %s'%st['failed'])
+            if st.get('indexed_at'):facts.append('Last indexed '+friendly(st['indexed_at']))
+            facts=' · '.join(facts);dh=kit.text_height(detail,13,400,w-32);top=y
+            panel(x,top,w,dh+100,RED)
+            kit.put_text(host,'What needs attention',x+16,top+12,w-32,14,700,wrap=False,height=20)
+            kit.put_text(host,detail,x+16,top+36,w-32,13,400,rgb(RED),height=dh)
+            kit.put_text(host,facts,x+16,top+dh+42,w-32,11,400,kit.mute(),wrap=False,height=16)
+            kit.button(host,'Try again',x+16,top+dh+66,110,30,lambda:self.action('resume'),kind='primary',size=13,weight=600)
+            kit.chip(host,'Recover notes','lifepreserver',x+134,top+dh+66,False,lambda:self.action('recover_native_notes'))
+            y=top+dh+100+14
         def row(symbols,color,title,sub,buttons,status=None,status_color=GREEN,sub_color=None,progress=False,fraction=None,seconds=0):
             nonlocal y
             widths=[kit.text_width(b[0],13,600)+30 for b in buttons];btn_w=sum(widths)+8*len(widths)
@@ -229,9 +229,9 @@ class MemoryPane:
         def note_for(kind,default):
             if notice and len(notice)>2 and notice[2]==kind:return notice[0],(rgb(RED) if notice[1] else None)
             return default,None
-        mode=view['state'];root=(view.get('binding') or {}).get('workspace_root','')
+        root=(view.get('binding') or {}).get('workspace_root','')
         cap('Capture')
-        row(['folder.fill','folder'],RED,'Folder',(view.get('message') or root) if mode=='Needs attention' else root,([('Details','open_status','outline')] if mode=='Needs attention' else [])+[('Resume' if mode=='Paused' else 'Pause','resume' if mode=='Paused' else 'pause','outline')],status=STATE_LABELS.get(mode,mode).split(' ·')[0],status_color=STATE_COLORS.get(mode,GREEN),sub_color=rgb(RED) if mode=='Needs attention' else None)
+        row(['folder.fill','folder'],RED,'Folder',root,[('Resume' if mode=='Paused' else 'Pause','resume' if mode=='Paused' else 'pause','outline')],status=STATE_LABELS.get(mode,mode).split(' ·')[0],status_color=STATE_COLORS.get(mode,GREEN))
         installed=view.get('extension_installed');kind=notice[2] if notice and len(notice)>2 else None
         busy=bool(notice and kind in ('install_extension','connect_extension') and notice[0].endswith('…'))
         text,color=note_for('install_extension','Shares the text you view in the editor.')

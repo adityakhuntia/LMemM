@@ -985,7 +985,7 @@ class MainWindow:
         try:
             if action=='tab' and self.memory_pane is not None:self.memory_pane.settings=False        # choosing a tab always leaves Settings
             if action in {'toggle_status','open_status'}:
-                pane=self._pane();pane.status_open=True if action=='open_status' else not pane.status_open;pane.settings=False
+                self._pane().settings=True            # the details live in Settings, never on the Memory page
                 self.shown=None;self.render();return
             if action in {'open_settings','close_settings'}:
                 self._pane().settings=action=='open_settings'

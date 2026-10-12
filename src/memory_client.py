@@ -42,11 +42,19 @@ class MemoryClient:
             script=Path(__file__).resolve().parents[1]/'scripts/project_memory_service.py'
             args=[sys.executable,str(script),'--data-dir',str(self.directory),'--control-fd',str(read_fd)]
             if self.headless:args.append('--headless')
-            try:self.process=subprocess.Popen(args,pass_fds=(read_fd,),stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            try:
+                # Keep the service's last words in a private log: the IPC layer hides errors by design, so this is how a failed start is diagnosed.
+                try:
+                    self.directory.mkdir(parents=True,mode=0o700,exist_ok=True)
+                    log=os.open(self.directory/'service.log',os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)
+                except OSError:log=subprocess.DEVNULL
+                try:self.process=subprocess.Popen(args,pass_fds=(read_fd,),stdin=subprocess.DEVNULL,stdout=log,stderr=log)
+                finally:
+                    if log!=subprocess.DEVNULL:os.close(log)
             finally:os.close(read_fd)
             if self.stopping:
                 self._close_control();self._reap(self.process);return
-            deadline=time.monotonic()+10
+            deadline=time.monotonic()+45   # the local model may need a few seconds to wake
             info=self.directory/'service.json'
             while time.monotonic()<deadline and not self.stopping:
                 if self.process.poll() is not None:raise RuntimeError('Service unavailable')

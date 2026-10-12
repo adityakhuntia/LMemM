@@ -211,6 +211,11 @@ state['preview']=None
 snapshot=memory_view(state,binding,{'state':'Ready','model_state':'missing'},rich);snapshot['extension_installed']=True;snapshot['notice']=('Opened VS Code. Choose Allow there to finish.',False,'connect_extension')
 w.memory_view=lambda pid,v=snapshot:v
 w._memory_action('open_settings');step('Memory settings: extension installed',render)
+snapshot=memory_view(state,binding,{'state':'Ready','model_state':'available','source_connected':True},rich);snapshot['extension_installed']=True;snapshot['notice']=None
+w.memory_view=lambda pid,v=snapshot:v
+step('Memory settings: VS Code connected',render)
+snapshot=memory_view(state,binding,{'state':'Ready','model_state':'missing'},rich);snapshot['extension_installed']=True;snapshot['notice']=('Opened VS Code. Choose Allow there to finish.',False,'connect_extension')
+w.memory_view=lambda pid,v=snapshot:v
 for chosen in ('confirm_model','confirm_agent','confirm_disconnect'):
     w._memory_action(chosen);step('Memory settings: '+chosen,render)
 w._memory_action('confirm_no');step('Memory settings: confirm cancelled',render)

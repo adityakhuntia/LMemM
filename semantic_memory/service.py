@@ -303,7 +303,11 @@ class MemoryService:
             value=dataclasses.asdict(MemoryStatus(state,reason,generation['created_at'] if generation else None,enrolled,pending,failed,'available' if self.backend else 'missing',first,memory_usage(self.store)['total_bytes']))
             from .grants import revision
             elapsed=int(time.monotonic()-self.install_started) if self.install_state=='installing' and self.install_started else None
-            value.update(model_install=self.install_state,model_install_message=self.install_message,model_install_percent=getattr(self.runtime,'progress',None),model_install_seconds=elapsed)
+            try:live=self.bridge is not None and any(not c.get('disconnected') and self.bridge.clock()-c['at']<=3 for c in list(self.bridge.clients.values()))
+            except (RuntimeError,KeyError,TypeError):live=False
+            if not is_paused:self.was_connected=bool(live)         # while paused the extension goes quiet but stays connected
+            live=bool(live) or (is_paused and getattr(self,'was_connected',False))
+            value.update(source_connected=bool(live),model_install=self.install_state,model_install_message=self.install_message,model_install_percent=getattr(self.runtime,'progress',None),model_install_seconds=elapsed)
             value.update(service_epoch=self.service_epoch,policy_revision=revision(c),index_generation=generation['id'] if generation else None)
             return value
 

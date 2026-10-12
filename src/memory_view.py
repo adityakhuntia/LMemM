@@ -204,7 +204,10 @@ class MemoryPane:
         text,color=note_for('install_extension','Shares the text you view in the editor.')
         if kind=='connect_extension':text,color=notice[0],(rgb(RED) if notice[1] else None)
         if busy and kind=='install_extension':text='Installing in VS Code…'
-        if installed and not busy:
+        connected=view.get('status',{}).get('source_connected')
+        if connected:
+            row(['chevron.left.forwardslash.chevron.right','curlybraces'],BLUE,'VS Code','Sharing the text you view in the editor.',[],status='Connected')
+        elif installed and not busy:
             row(['chevron.left.forwardslash.chevron.right','curlybraces'],BLUE,'VS Code',text,[('Connect','reconnect_extension','primary')],status='Installed',sub_color=color)
         else:
             row(['chevron.left.forwardslash.chevron.right','curlybraces'],BLUE,'VS Code',text,[('Working…' if busy else 'Install extension','install_extension','quiet' if busy else 'primary',not busy)],sub_color=color)

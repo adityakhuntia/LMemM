@@ -127,6 +127,7 @@ class MemoryController:
             elif kind=='status':
                 previous=(self.status.get('service_epoch'),self.status.get('policy_revision'),self.status.get('index_generation'))
                 self.status=event['result']
+                if self.notice and self.notice[2]=='connect_extension' and self.status.get('source_connected'):self.set_notice(None)
                 if self.notice and self.notice[2]=='install_model' and (self.status.get('model_install') or self.status.get('model_state')=='available'):self.set_notice(None)
                 current=(self.status.get('service_epoch'),self.status.get('policy_revision'),self.status.get('index_generation'))
                 if current!=previous:

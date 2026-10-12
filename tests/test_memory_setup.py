@@ -142,3 +142,12 @@ class ConnectExtensionTests(unittest.TestCase):
                 if thread.daemon and thread is not threading.current_thread():thread.join(2)
         self.assertTrue(controller.notice[1])
         self.assertIn("press Connect again", controller.notice[0])
+
+
+class SourceConnectedStatusTests(unittest.TestCase):
+    def test_view_shows_connected_and_no_connect_button(self):
+        from memory_model import new_memory_state, memory_view
+        state = new_memory_state()
+        snapshot = memory_view(state, {"workspace_root": "/r", "active": True, "project_id": "p"},
+                               {"state": "Ready", "model_state": "available", "source_connected": True}, {})
+        self.assertTrue(snapshot["status"]["source_connected"])

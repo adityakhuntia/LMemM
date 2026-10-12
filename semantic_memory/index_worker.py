@@ -1,5 +1,6 @@
 """ID-only durable indexing backlog; one model worker, bounded source payloads."""
 import json
+import sys
 import numpy as np
 from .api_contracts import ModelManifest
 from .chunks import index_source
@@ -77,6 +78,8 @@ class IndexWorker:
                     vector=np.asarray(vectors[row['text']],dtype=np.float32).tobytes()
                     c.execute('INSERT OR REPLACE INTO chunk_vectors VALUES(?,?,?)',(row['id'],job['generation_id'],vector))
                 c.execute("UPDATE index_jobs SET state='queued',error=NULL WHERE source_id=?",(job['source_id'],))
-        except Exception:
+        except Exception as error:
+            # Reason goes to the service's private log only; messages here are fixed strings, never source text.
+            print('index job failed: %s: %s'%(type(error).__name__,str(error)[:200]),file=sys.stderr,flush=True)
             with store.transaction() as c:c.execute("UPDATE index_jobs SET state='failed',error='Local embedding failed' WHERE source_id=?",(job['source_id'],))
         return True

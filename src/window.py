@@ -1656,6 +1656,8 @@ class MainWindow(RecallPanes):
         bx += 148
         kit.button(doc, "Copied" if self.copied_brief == page["text"] else "Copy for an AI chat", bx, y, 170, 34, lambda t=page["text"]: self.copy_brief(t), kind="quiet", size=13)
         y += 34 + 8
+        if act.get("note"):
+            y += kit.put_text(doc, act["note"], x, y, w, 12, 400, kit.mute()) + 8
         key = (b.get("next") or {}).get("key")
         if key:                                                    # your word on it; the captured evidence is never changed
             src = b["next"]["source"]["item"]

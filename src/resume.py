@@ -193,10 +193,12 @@ def _next_from_messages(out, by_chat, item_of, scope, now, mine, thread_ids, sec
     clock = ev.parse(req["at"]).strftime("%H:%M")
     quoted = re.sub(r"^(yup|yes|yeah|ok|okay|sure)[,.!\s]+", "", sentence, flags=re.I) or sentence
     base = f"You asked Claude: “{quoted}”."
+    target = original_of(item)
+    go = "Open the conversation" if target and target["kind"] == "url" else f"Open {item.get('app') or 'it'} and find that chat"
     out["_lead"] = base + {
-        "open": " You then wrote that it hadn't worked. Open the conversation to see where it stands.",
-        "likely_addressed": " The screen showed Claude working afterwards, but I can't tell whether it finished. Open the conversation to check.",
-    }.get(status["status"], " I can't tell from this capture whether it finished. Open the conversation to check.")
+        "open": f" You then wrote that it hadn't worked. {go} to see where it stands.",
+        "likely_addressed": f" The screen showed Claude working afterwards, but I can't tell whether it finished. {go} to check.",
+    }.get(status["status"], f" I can't tell from this capture whether it finished. {go} to check.")
     out["request"] = {"text": sentence, "status": status["status"], "label": status["label"], "why": status["why"],
                       "source": source(item, req["at"], now), "chat": chat}
     out["why"] = (f"Your latest request in that chat was at {clock} (“{sentence}”). Its status is {status['label'].lower()}: {status['why']}")
@@ -211,7 +213,7 @@ def _next_from_messages(out, by_chat, item_of, scope, now, mine, thread_ids, sec
     return claim(step, INFERRED, item, now, at=req["at"], label=label, key=rf.key(item["id"], sentence))
 
 
-def _top(out, nxt, latest, here, replaced):
+def _top(out, nxt, latest, here, replaced, items=None):
     """R35: the top of the brief is one honest sentence and one action. Everything else sits under 'Why this suggestion?'."""
     lead = out.pop("_lead", None)
     if not lead and nxt:
@@ -221,9 +223,16 @@ def _top(out, nxt, latest, here, replaced):
     if not nxt:
         lead = f"I can identify the work ({here}), but I can't reliably tell what you planned to do next. Open {here} to pick up from there."
     src = nxt["source"] if nxt else out["latest"]
-    chat = src.get("app") in ("Claude", "ChatGPT") or "conversation" in (src.get("title") or "").lower()
-    label = "Open conversation" if chat else src["open_label"]
-    return {"headline": lead, "action": {"label": label, "item": src["item"], "title": src["title"], "can_open": src["can_open"]},
+    item = next((i for i in (items or []) if i["id"] == src["item"]), latest)
+    target = original_of(item)
+    chat = item.get("kind") == "ai_conversation"
+    if target and target["kind"] == "url":
+        label, note = ("Open conversation" if chat else "Open original"), None
+    else:                                            # an app, not an address: it opens the app, not one chat or document
+        label = f"Open {src.get('app') or 'source'}"
+        note = (f"Opens the {src.get('app')} app. LMemM didn't capture an address for this chat, so it can't open the exact one."
+                if chat else None)
+    return {"headline": lead, "action": {"label": label, "item": src["item"], "title": src["title"], "can_open": src["can_open"], "note": note},
             "confirmed": bool(out.get("confirmed"))}
 
 
@@ -335,7 +344,7 @@ def _build(title, mine, now, book, extra=None, thread_items=None, authored=None,
     out["cant_tell"] = out.get("cant_tell") if nxt else None
     if not nxt:
         out["no_next"] = NO_NEXT
-    out["top"] = _top(out, nxt, latest, here, replaced)
+    out["top"] = _top(out, nxt, latest, here, replaced, mine)
 
     rest = [e for e in (steps[1:] if steps else []) if e not in asks[:1]] + [e for e in asks[1:]]
     other_notes = rest + off_thread
@@ -564,7 +573,8 @@ def as_text(b):
     lines = [f"# Where I left off: {b['title']}", ""]
     top = b.get("top")
     if top:
-        lines += [f"**{top['headline']}**", f"Action: {top['action']['label']} ({top['action']['title']})", ""]
+        lines += [f"**{top['headline']}**", f"Action: {top['action']['label']} ({top['action']['title']})"
+                  + (f". {top['action']['note']}" if top["action"].get("note") else ""), ""]
     if b.get("project_link") == "unconfirmed":
         lines += ["_These things aren't filed in a project, so Resume kept together only what clearly belongs together._"]
         if b.get("relation"):

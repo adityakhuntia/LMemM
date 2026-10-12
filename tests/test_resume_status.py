@@ -93,13 +93,24 @@ class Pr25(unittest.TestCase):
         for b in (self.scoped(), self.filed()):
             top = b["top"]
             self.assertTrue(top["headline"].startswith("You asked Claude: “lets go with the apple style. lets code this up”."))
-            self.assertIn("I can't tell from this capture whether it finished. Open the conversation to check.", top["headline"])
-            self.assertEqual((top["action"]["label"], top["action"]["item"], top["action"]["can_open"]), ("Open conversation", pr25.CLAUDE, True))
+            # the Claude chat has no captured address, so the action opens the app and must not promise the exact chat
+            self.assertIn("I can't tell from this capture whether it finished. Open Claude and find that chat to check.", top["headline"])
+            self.assertEqual((top["action"]["label"], top["action"]["item"], top["action"]["can_open"]), ("Open Claude", pr25.CLAUDE, True))
+            self.assertIn("can't open the exact one", top["action"]["note"])
             for bit in ("mac", "push", "test it", "merged", "is still open", "unfinished"):
                 self.assertNotIn(bit, top["headline"].lower())
             text = resume.as_text(b)
             self.assertLess(text.index(top["headline"]), text.index("## Why this suggestion?"))
-            self.assertLess(text.index("Action: Open conversation"), text.index("## Why this suggestion?"))
+            self.assertLess(text.index("Action: Open Claude"), text.index("## Why this suggestion?"))
+
+    def test_a_chat_with_an_address_opens_the_conversation(self):
+        items = copy.deepcopy(self.items)
+        for e in items[pr25.CLAUDE]["content"]["excerpts"]:
+            e["source"]["url"] = "https://claude.ai/chat/abc"
+        b = resume.brief_scope(items, "PR 25", NOW, {}, None, self.trail)
+        self.assertEqual(b["top"]["action"]["label"], "Open conversation")
+        self.assertIsNone(b["top"]["action"]["note"])
+        self.assertIn("Open the conversation to check.", b["top"]["headline"])
 
     def test_why_keeps_what_you_wrote_apart_from_what_the_app_saw_and_what_was_inferred(self):
         text = resume.as_text(self.scoped())
@@ -115,7 +126,8 @@ class Pr25(unittest.TestCase):
         gaps = " ".join(b["cant_tell"])
         self.assertIn("which chat the “running a command” screen belongs to", gaps)
         self.assertIn("your typed messages are matched to their chats from the event trail", gaps)
-        self.assertNotIn("chat", b["top"]["headline"].replace("conversation", ""))
+        self.assertNotIn("running a command", b["top"]["headline"])
+        self.assertNotIn("screen", b["top"]["headline"])
         self.assertTrue(any(c["chat"] for c in next(s for s in b["sections"] if s["id"] == "asked")["claims"]))
 
     def test_cli_and_window_paths_agree(self):

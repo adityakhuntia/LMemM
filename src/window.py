@@ -981,14 +981,8 @@ class MainWindow:
                 from AppKit import NSOpenPanel
                 panel=NSOpenPanel.openPanel();panel.setCanChooseDirectories_(True);panel.setCanChooseFiles_(False);panel.setAllowsMultipleSelection_(False)
                 panel.setMessage_('Enable Memory for one workspace. Retain only new approved visible excerpts and project notes.')
-                NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
-                def chosen(result):                                # a sheet on the window: the window never blocks behind a panel that failed to show
-                    try:
-                        if result==1 and panel.URL() is not None:self._memory_action('enroll',{'root':str(panel.URL().path())})
-                    except Exception as error:
-                        if self.memory_snapshot:self.memory_snapshot['error']='Could not open the folder chooser: %s'%error
-                        self.shown=None;self.render()
-                panel.beginSheetModalForWindow_completionHandler_(self.window,chosen);return
+                if panel.runModal()!=1:return
+                action='enroll';payload={'root':str(panel.URL().path())}
             elif action in {'confirm_model','confirm_agent','confirm_disconnect'}:
                 from AppKit import NSAlert
                 titles={'confirm_model':'Install local semantic search?', 'confirm_agent':'Allow Codex to read this project’s memory?', 'confirm_disconnect':'Disconnect project Memory?'}

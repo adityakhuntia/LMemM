@@ -29,6 +29,11 @@ def _sha256(path):
     return h.hexdigest()
 
 
+def MANIFEST_LAYOUTS(model,tag):
+    # Ollama before 0.40 keeps manifests under registry.ollama.ai; newer versions under manifests-v2/ollama.com.
+    return {('manifests','registry.ollama.ai','library',model,tag),('manifests-v2','ollama.com','library',model,tag)}
+
+
 def validate_manifest(manifest):
     if (manifest.runtime!='ollama-local' or manifest.model_id not in CANDIDATES
         or manifest.dimension!=CANDIDATES[manifest.model_id] or manifest.max_input_tokens!=512
@@ -38,7 +43,7 @@ def validate_manifest(manifest):
     if not path.is_absolute() or not path.is_file() or path.stat().st_size>32768:
         raise ValueError('Local model assets required')
     model,tag=manifest.model_id.split(':')
-    if tuple(path.parts[-5:])!=('manifests','registry.ollama.ai','library',model,tag) or _sha256(path)!=manifest.digest:
+    if tuple(path.parts[-5:]) not in MANIFEST_LAYOUTS(model,tag) or _sha256(path)!=manifest.digest:
         raise ValueError('Embedding manifest digest/path mismatch')
     doc=json.loads(path.read_text());layers=doc.get('layers',[])
     if not layers or not any(l.get('mediaType')=='application/vnd.ollama.image.model' for l in layers):

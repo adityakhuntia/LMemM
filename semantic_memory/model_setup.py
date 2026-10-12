@@ -20,7 +20,10 @@ class OwnedEmbeddingRuntime:
     def __init__(self,weights):
         self.weights=Path(weights).resolve();self.process=None;self.control=None;self.lock=threading.RLock();self.stopped=False;self.progress=None
     def manifest(self):
-        return ModelManifest(MODEL,SELECTED_DIGEST,384,512,1,'ollama-local',str(self.weights/'manifests/registry.ollama.ai/library/all-minilm/22m'))
+        # The digest pin is the same for both layouts: newer Ollama writes the identical manifest under manifests-v2.
+        newer=self.weights/'manifests-v2/ollama.com/library/all-minilm/22m'
+        older=self.weights/'manifests/registry.ollama.ai/library/all-minilm/22m'
+        return ModelManifest(MODEL,SELECTED_DIGEST,384,512,1,'ollama-local',str(newer if newer.is_file() else older))
     def ensure(self):
         with self.lock:
             if self.stopped:raise ValueError('Runtime stopped')

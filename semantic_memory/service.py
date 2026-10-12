@@ -294,7 +294,7 @@ class MemoryService:
             enrolled=c.execute('SELECT min(enrolled_at) FROM project_bindings WHERE active=1').fetchone()[0]
             is_paused=paused(self.store)
             pending+=c.execute('SELECT count(*) FROM note_fences').fetchone()[0]
-            reason='Paused by user' if is_paused else self.model_error
+            reason='Paused by user' if is_paused else self.model_error or ('%d saved item%s could not be indexed for meaning search (the local model failed). Keyword search still works.'%(failed,'' if failed==1 else 's') if failed else None)
             state='Paused' if is_paused else 'Needs attention' if failed or self.model_error else 'Processing' if pending else 'Ready' if enrolled else 'Disabled'
             journal=self.directory/'native-notes.pending.json'
             if not is_paused and journal.exists() and read_private_json(journal).get('phase')=='preparing':

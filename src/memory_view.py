@@ -128,6 +128,7 @@ class MemoryPane:
             bx=x+w
             if mode=='Needs attention':bx-=140;kit.button(host,'Recover notes',bx,y,132,26,lambda:self.action('recover_native_notes'),kind='link',size=12,weight=600)
             bx-=80;kit.button(host,'Refresh',bx,y,72,26,lambda:self.action('refresh'),kind='ghost',size=12,weight=600);y+=40
+            if mode=='Needs attention':para(view.get('message') or 'Memory needs attention.',13,500,rgb(RED))
             if view.get('error'):para(view['error'],13,500,rgb(RED))
             if view.get('notice'):para(view['notice'][0],13,500,rgb(RED) if view['notice'][1] else kit.mute())
             field_box(self.query,y,left=42)
@@ -206,7 +207,7 @@ class MemoryPane:
             return default,None
         mode=view['state'];root=(view.get('binding') or {}).get('workspace_root','')
         cap('Capture')
-        row(['folder.fill','folder'],RED,'Folder',root,[('Resume' if mode=='Paused' else 'Pause','resume' if mode=='Paused' else 'pause','outline')],status=STATE_LABELS.get(mode,mode).split(' ·')[0],status_color=STATE_COLORS.get(mode,GREEN))
+        row(['folder.fill','folder'],RED,'Folder',(view.get('message') or root) if mode=='Needs attention' else root,[('Resume' if mode=='Paused' else 'Pause','resume' if mode=='Paused' else 'pause','outline')],status=STATE_LABELS.get(mode,mode).split(' ·')[0],status_color=STATE_COLORS.get(mode,GREEN),sub_color=rgb(RED) if mode=='Needs attention' else None)
         installed=view.get('extension_installed');kind=notice[2] if notice and len(notice)>2 else None
         busy=bool(notice and kind in ('install_extension','connect_extension') and notice[0].endswith('…'))
         text,color=note_for('install_extension','Shares the text you view in the editor.')

@@ -33,6 +33,7 @@ import evidence as ev
 import notes
 import page_model
 import projects
+import resume_feedback as rf
 import store
 import tasks
 
@@ -116,6 +117,12 @@ def _span(seconds):
     return store.duration(seconds)
 
 
+def _excluding(items, fb):
+    """Things you told Resume not to use (R34): left out of the brief, still remembered."""
+    keep = [i for i in items if i["id"] not in fb["exclude"]]
+    return keep, [{"item": i["id"], "title": label_of(i)} for i in items if i["id"] in fb["exclude"]]
+
+
 def _usable(items):
     """(things fit to use, [{"title", "why"}] left out). R25, R26."""
     keep, out = [], []
@@ -138,49 +145,66 @@ def _rank_notes(open_notes, latest, thread_ids):
 
 
 
-def _next_from_messages(out, by_chat, item_of, scope, now, mine, thread_ids, sections):
-    """R23/R32: the open request in your own words that best fits the scope. Strength of the ask and a mention of the
-    scope decide; recency only breaks a tie. Returns a claim or None, and sets out["why"] / out["confidence"]."""
+def item_of_next(mine, c):
+    return next((i for i in mine if i["id"] == c["source"]["item"]), mine[0])
+
+
+def _next_from_messages(out, by_chat, item_of, scope, now, mine, thread_ids, sections, fb, authored):
+    """R23/R32/R33: the request of yours that best fits the scope, and what became of it. Open before unknown; then the
+    scope, the strength of the ask, and only then recency. A request that you said was done is not offered. What it
+    offers is never "do X": it is "check where X got to", unless you chased it. Returns a claim or None."""
     best = None
     for chat, msgs in by_chat.items():
-        last = msgs[-1]                                    # nothing typed after it in that chat
-        strength = ev.request_strength(last["text"])
-        if not strength:
+        mark = next((k for k in range(len(msgs) - 1, -1, -1) if ev.request_strength(msgs[k]["text"])), None)
+        if mark is None:
             continue
-        hit = 1 if scope and ev.scope_hits({"title": "", "notes": [{"text": last["text"]}]}, scope) else 0
-        key = (hit, strength, last["at"])
-        if best is None or key > best[0]:
-            best = (key, chat, last, msgs)
+        req = msgs[mark]
+        item = item_of[req["item"]]
+        sentence = ev.request_sentence(req["text"])
+        if fb["steps"].get(rf.key(item["id"], sentence), {}).get("action") == "outdated":
+            continue
+        single = len({m["chat"] for m in authored if m["item"] == item["id"]}) <= 1
+        status = ev.request_status(req, msgs, item, single)
+        if status["status"] == "completed":
+            continue
+        strength = ev.request_strength(req["text"])
+        hit = 1 if scope and ev.scope_hits({"title": "", "notes": [{"text": req["text"]}]}, scope) else 0
+        rank = (status["status"] == "open", hit, strength, req["at"])
+        if best is None or rank > best[0]:
+            best = (rank, chat, req, msgs, item, sentence, status)
     if not best:
         return None
-    _key, chat, last, msgs = best
-    item = item_of[last["item"]]
-    earlier = sorted([m for m in msgs[:-1] if len(m["text"]) >= 25], key=lambda m: len(m["text"]), reverse=True)[:2]
-    earlier.sort(key=lambda m: m["at"])
-    if earlier:
-        sections.append({"id": "earlier", "title": "Earlier in that chat you wrote", "detail": True,
-                         "claims": [claim("“" + m["text"] + "”", AUTHORED, item, now, at=m["at"], label="You wrote this")
-                                    for m in earlier]})
-    sentence = ev.request_sentence(last["text"])
-    strength = ev.request_strength(last["text"])
-    if strength == 3:
-        step = f"Look at what Claude came back with after you wrote “{sentence}”, and check it against what you wrote earlier in that chat."
-    elif strength == 2:
-        step = f"Look at what Claude came back with after you asked “{sentence}”."
+    _rank, chat, req, msgs, item, sentence, status = best
+    line = [m for m in msgs if len(m["text"]) >= 12]
+    timeline = [claim("“" + m["text"] + "”", AUTHORED, item, now, at=m["at"], label="You wrote this") for m in line]
+    if status["signal"]:
+        timeline.append(claim(f"{label_of(item)} was showing “running a command”.", OBSERVED, item, now, at=status["signal"], label="Seen on screen"))
+    timeline.sort(key=lambda c: c["source"]["at"] or "")
+    if len(timeline) > 1:
+        sections.append({"id": "timeline", "title": "That chat, in order", "detail": True,
+                         "note": "Only what you typed, and what the screen showed. Claude's own replies are not readable here.", "claims": timeline})
+    if status["status"] == "open":
+        step = f"You asked “{sentence}” and then wrote that it hadn't worked. Open that conversation and see where it stands."
+        label = "AI inference · Unanswered request"
     else:
-        step = f"Look at Claude's answer to “{sentence}”."
-    working = ev.last_signal(item)
-    clock = ev.parse(working).strftime("%H:%M") if working else None
-    out["why"] = (f"It is your latest request in that chat ({ev.parse(last['at']).strftime('%H:%M')}) and nothing you typed came after it."
-                  + (f" The screen showed Claude running a command at {clock}." if clock else "")
-                  + " The snapshot does not show Claude's reply or whether the work was finished.")
-    out["confidence"] = "likely continuation; the snapshot does not establish that this is your committed next action"
-    return claim(step, INFERRED, item, now, at=last["at"], label="AI inference · Likely continuation")
+        step = (f"You asked Claude “{sentence}”. Claude's reply and the result aren't clear in what was remembered. "
+                "Open that conversation to check where it got to.")
+        label = "AI inference · Check the result"
+    clock = ev.parse(req["at"]).strftime("%H:%M")
+    out["request"] = {"text": sentence, "status": status["status"], "label": status["label"], "why": status["why"],
+                      "source": source(item, req["at"], now)}
+    out["why"] = (f"Your latest request in that chat was at {clock} (“{sentence}”). Its status is {status['label'].lower()}: {status['why']}")
+    out["confidence"] = ("Resume can point you to the conversation. It cannot tell what you should do there, because the reply and the result were not captured."
+                         if status["status"] != "open" else "Your own follow-up says it hadn't worked; whether it is fixed now is not shown.")
+    out["cant_tell"] = ["what Claude replied", "whether the work was finished or tested", "what you planned to do next"] if status["status"] != "open" \
+        else ["whether it is fixed now"]
+    return claim(step, INFERRED, item, now, at=req["at"], label=label, key=rf.key(item["id"], sentence))
 
 
-def _build(title, mine, now, book, extra=None, thread_items=None, authored=None):
+def _build(title, mine, now, book, extra=None, thread_items=None, authored=None, feedback=None):
     """The brief for one body of work (`mine`: its things, most recent first). `authored`: your typed messages."""
     scope_text = (extra or {}).get("scope")
+    fb = feedback or rf.empty()
     out = {"title": title, "state": "empty", "headline": "", "note": None, "ago": "", "away": False, "sections": [],
            "next": None, "no_next": None, "why": None, "latest": None, "sources": [], "confidence": None,
            "used": {"things": len(mine), "notes": 0, "screen": 0, "tasks": 0}, "privacy": PRIVACY, **(extra or {})}
@@ -230,7 +254,8 @@ def _build(title, mine, now, book, extra=None, thread_items=None, authored=None)
     on_thread = [e for e in ranked if e[2]["id"] in thread_ids]
     off_thread = [e for e in ranked if e[2]["id"] not in thread_ids]
     asks = [e for e in on_thread if QUESTION.search(e[1]["text"])]
-    steps = [e for e in on_thread if not QUESTION.search(e[1]["text"])]
+    steps = [e for e in on_thread if not QUESTION.search(e[1]["text"])
+             and fb["steps"].get(rf.key(e[2]["id"], e[1]["text"]), {}).get("action") != "outdated"]
 
     if asks:
         a, n, i = asks[0]
@@ -239,7 +264,7 @@ def _build(title, mine, now, book, extra=None, thread_items=None, authored=None)
     nxt = None
     if steps:
         a, n, i = steps[0]
-        nxt = claim(n["text"], AUTHORED, i, now, at=a)
+        nxt = claim(n["text"], AUTHORED, i, now, at=a, key=rf.key(i["id"], n["text"]))
         out["why"] = ("Your open note on the work you were last in." if i["id"] == latest["id"]
                       else "Your open note on the same work thread as your latest activity.")
         out["confidence"] = "your words; whether it is still the plan is not shown"
@@ -257,13 +282,26 @@ def _build(title, mine, now, book, extra=None, thread_items=None, authored=None)
         out["chats"] = len(by_chat)
         out["project_name"] = next((m["project"] for m in msgs if m["project"]), None)
         if not nxt:
-            nxt = _next_from_messages(out, by_chat, item_of, scope_text, now, mine, thread_ids, sections)
-    if not nxt and task and task.get("open"):
+            nxt = _next_from_messages(out, by_chat, item_of, scope_text, now, mine, thread_ids, sections, fb, msgs)
+    if not nxt and task and task.get("open") and \
+            fb["steps"].get(rf.key(next((i["id"] for i in mine if i["id"] in task.get("items", [])), latest["id"]), tasks.clean(task["open"], 200)), {}).get("action") != "outdated":
         t_item = next((i for i in mine if i["id"] in task.get("items", [])), latest)
-        nxt = claim(tasks.clean(task["open"], 200), INFERRED, t_item, now, label="AI inference · Likely continuation")
+        nxt = claim(tasks.clean(task["open"], 200), INFERRED, t_item, now, label="AI inference · Likely continuation",
+                    key=rf.key(t_item["id"], tasks.clean(task["open"], 200)))
         out["why"] = "The task reading LMemM made of this work lists it as open."
         out["confidence"] = "likely continuation; not confirmed by you"
+    if nxt:                                                  # your corrections (R34)
+        f = fb["steps"].get(nxt["key"], {})
+        if f.get("action") == "replace":
+            nxt = claim(f["text"], AUTHORED, item_of_next(mine, nxt), now, label="You wrote this", key=nxt["key"])
+            out["why"] = "You replaced Resume's suggestion with your own words."
+            out["confidence"] = "your words"
+            out["request"] = out["cant_tell"] = None
+        elif f.get("action") == "right":
+            out["confirmed"] = True
+            out["confidence"] = "you confirmed this suggestion"
     out["next"] = nxt
+    out["cant_tell"] = out.get("cant_tell") if nxt else None
     if not nxt:
         out["no_next"] = NO_NEXT
 
@@ -327,12 +365,14 @@ def _build(title, mine, now, book, extra=None, thread_items=None, authored=None)
 
 # ---------------------------------------------------------------- a project you filed
 
-def brief(reg, items, pid, now=None, book=None, events=None):
+def brief(reg, items, pid, now=None, book=None, events=None, feedback=None):
     """Resume a project the user filed things in. Their filing is trusted: its things are one body of work, though
     notes on the thread of the latest activity rank before the rest (R29)."""
     now = now or datetime.now()
     name = reg["projects"][pid]["name"]
     mine, left = _usable(projects.members(reg, items, pid, deep=True))
+    fb = feedback or rf.empty()
+    mine, dropped = _excluding(mine, fb)
     authored = ev.authored_messages(events or [], {i["id"]: i for i in mine}, now) if events else []
     if mine and authored:
         latest = max(mine, key=lambda i: i.get("last_seen", ""))
@@ -342,8 +382,8 @@ def brief(reg, items, pid, now=None, book=None, events=None):
         authored = [m for m in authored if m.get("item") in thread_ids]
     else:
         thread = None
-    out = _build(name, mine, now, book, extra=None, thread_items=thread, authored=authored)
-    out.update(pid=pid, scope=None, project_link="filed", left_out=left, others=[], candidates=[])
+    out = _build(name, mine, now, book, extra=None, thread_items=thread, authored=authored, feedback=fb)
+    out.update(pid=pid, scope=None, project_link="filed", left_out=left, others=[], candidates=[], excluded=dropped)
     if not mine:
         out["note"] = "Nothing has been remembered in this project yet, so there is nothing to resume from."
     return out
@@ -388,11 +428,13 @@ def _score(group, scope, end):
     return 10 * min(hits, 1) + 2 * sources + 3 * authored + 1.5 * active + recency, hits
 
 
-def brief_scope(items, scope=None, now=None, book=None, pick=None, events=None):
+def brief_scope(items, scope=None, now=None, book=None, pick=None, events=None, feedback=None):
     """Resume work that is not filed in a project. `scope`: what the user asked for ('PR 25'), or None. `pick`: the id
     of a thread the user chose from the candidates. R30."""
     now = now or datetime.now()
     mine, left = _usable(list(items.values()) if isinstance(items, dict) else list(items))
+    fb = feedback or rf.empty()
+    mine, dropped = _excluding(mine, fb)
     mine.sort(key=lambda i: i.get("last_seen", ""), reverse=True)
     groups = ev.threads(mine)
     stamps = [ev.parse(i.get("last_seen")) for i in mine if ev.parse(i.get("last_seen"))]
@@ -405,7 +447,7 @@ def brief_scope(items, scope=None, now=None, book=None, pick=None, events=None):
             rated.append((score, hits, g))
     rated.sort(key=lambda r: r[0], reverse=True)
     quiet = len(groups) - len(rated)
-    base = {"scope": scope, "project_link": "unconfirmed", "left_out": left, "quiet": quiet, "pid": None}
+    base = {"scope": scope, "project_link": "unconfirmed", "left_out": left, "quiet": quiet, "pid": None, "excluded": dropped}
     if not rated:
         out = _build(scope or "Unfiled work", [], now, book, base)
         out.update(others=[], candidates=[])
@@ -435,7 +477,7 @@ def brief_scope(items, scope=None, now=None, book=None, pick=None, events=None):
     typed = ev.authored_messages(events, items if isinstance(items, dict) else {i["id"]: i for i in items}, now) if events else None
     extra = dict(base, matched=[
         {"item": i["id"], "title": label_of(i), "hits": ev.scope_hits(i, scope)} for i in group["items"] if scope and ev.scope_hits(i, scope)])
-    out = _build(summ["title"], group["items"], now, book, extra, thread_items=group["items"], authored=typed)
+    out = _build(summ["title"], group["items"], now, book, extra, thread_items=group["items"], authored=typed, feedback=fb)
     out["maybe"] = [{"item": i["id"], "title": label_of(i), "note": f"{label_of(i)} covers similar ground, but I can't tell whether it is part of this work."}
                     for i in group["maybe"]]
     if out.get("chats"):
@@ -474,13 +516,17 @@ def as_text(b):
     if b.get("next"):
         c = b["next"]
         lines += ["**Possible next step**", f"- {c['text']} ({c['label']}; {c['source']['title']}, {said(c['source']['ago'])})"]
+        if b.get("request"):
+            lines.append(f"- Status of your request: {b['request']['label']}")
         if b.get("why"):
             lines.append(f"- Why: {b['why']}")
         if b.get("confidence"):
             lines.append(f"- Confidence: {b['confidence']}")
+        if b.get("cant_tell"):
+            lines.append("- Resume cannot tell: " + "; ".join(b["cant_tell"]) + ".")
         lines.append("")
     elif b.get("no_next"):
-        lines += [b["no_next"], ""]
+        lines += [b["no_next"] + (f" Open the most recent source ({b['latest']['title']}) to pick up from there." if b.get("latest") else ""), ""]
     for o in b.get("others") or []:
         lines.append(f"Other open work: {o['title']} ({page_model.plural(o['notes'], 'open note')}, last {said(o['ago'])})")
     for m in b.get("maybe") or []:
@@ -488,6 +534,8 @@ def as_text(b):
     left = b.get("left_out") or []
     if left:
         lines.append(f"Left out: {page_model.plural(len(left), 'thing')} that is LMemM's own file or screen ({', '.join(l['title'] for l in left[:3])}).")
+    if b.get("excluded"):
+        lines.append(f"Left out because you said not to use {page_model.plural(len(b['excluded']), 'source')}: {', '.join(e['title'] for e in b['excluded'][:3])}.")
     if b.get("quiet"):
         lines.append(f"Not enough to describe: {page_model.plural(b['quiet'], 'other thing')} with nothing open.")
     return "\n".join(lines).strip()

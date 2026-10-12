@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 import traceback
+from datetime import datetime
 
 import objc
 from Foundation import NSObject
@@ -598,10 +599,12 @@ class MainWindow(RecallPanes):
     def open_name(self, action, pid=None, parent=None):
         reg = self._reg()
         title = {"new": "New project" if parent is None else f"New sub-project in “{reg['projects'][parent]['name']}”",
-                 "rename": "Rename project", "me": "Your first name"}[action]
+                 "rename": "Rename project", "me": "Your first name", "step": "Your next step, in your words"}[action]
         value = (reg["projects"][pid]["name"] if action == "rename"
                  else (self.prefs("you") or {}).get("you", {}).get("name", "") if action == "me" else "")
         self.dialog = {"kind": "name", "action": action, "pid": pid, "parent": parent, "title": title, "error": "", "value": value}
+        if action == "step":
+            self.dialog["value"] = ""
         self._dialog(focus=True)
 
     def setting(self, action, value=None):
@@ -691,6 +694,11 @@ class MainWindow(RecallPanes):
         if not d or d["kind"] != "name":
             return
         name = self.dlg_field.stringValue()
+        if d["action"] == "step":
+            if name.strip():
+                self.close_dialog()
+                self.resume_fb("replace", d["pid"], text=name)
+            return
         if d["action"] == "me":
             self.setting("set_name", name)
         elif d["action"] == "new":
@@ -1591,6 +1599,21 @@ class MainWindow(RecallPanes):
         except (OSError, subprocess.SubprocessError):
             print("window: could not open", target["value"], file=sys.stderr)
 
+    def resume_fb(self, action, key=None, item=None, text=None):
+        """Your word on a Resume suggestion (resume_feedback.py). Kept in its own file; memory is not touched."""
+        import config
+        import resume_feedback
+        path = config.paths().resume_feedback_file
+        try:
+            fb = resume_feedback.record(resume_feedback.load(path), action, step_key=key, item_id=item, text=text,
+                                        at=datetime.now().isoformat(timespec="seconds"))
+            resume_feedback.save(path, fb)
+        except (ValueError, OSError) as error:
+            print("window: could not keep that correction:", error, file=sys.stderr)
+            return
+        self.shown = None
+        self.render()
+
     def copy_brief(self, text):
         if text and self.copy_fn(text):
             self.copied_brief = text
@@ -1644,9 +1667,21 @@ class MainWindow(RecallPanes):
         if b["next"]:
             y = self._section(doc, "Possible next step", x, y, w)
             y = self._claim(doc, b["next"], x, y, w, emphasis=True)
-            for line in (b.get("why") and "Why: " + b["why"], b.get("confidence") and "Confidence: " + b["confidence"]):
+            req = b.get("request")
+            for line in ((req and "Status of your request: " + req["label"]), b.get("why") and "Why: " + b["why"],
+                         b.get("confidence") and "Confidence: " + b["confidence"],
+                         b.get("cant_tell") and "Resume cannot tell: " + "; ".join(b["cant_tell"]) + "."):
                 if line:
                     y += kit.put_text(doc, line, x, y, w, 12, 400, kit.mute()) + 4
+            key, src = b["next"].get("key"), b["next"]["source"]["item"]
+            if key:                                                # your word on it; the captured evidence is never changed
+                lx = x - 6
+                for label, call in (("Right" if not b.get("confirmed") else "Confirmed", lambda: self.resume_fb("right", key)),
+                                    ("Outdated", lambda: self.resume_fb("outdated", key)),
+                                    ("Edit…", lambda: self.open_name("step", pid=key)),
+                                    ("Don't use this source", lambda: self.resume_fb("exclude", item=src))):
+                    lx += self._link(doc, label, lx, y, call, size=12, color=kit.accent()) + 6
+                y += 26
             y += 8
         elif b.get("no_next"):
             y = self._section(doc, "Possible next step", x, y, w)
@@ -1669,6 +1704,9 @@ class MainWindow(RecallPanes):
         left = b.get("left_out") or []
         if left:
             y += kit.put_text(doc, f"Left out: {page_model.plural(len(left), 'thing')} that is LMemM's own file or screen.",
+                              x, y + 6, w, 12, 400, kit.mute()) + 6
+        if b.get("excluded"):
+            y += kit.put_text(doc, f"Left out because you said not to use {page_model.plural(len(b['excluded']), 'source')}.",
                               x, y + 6, w, 12, 400, kit.mute()) + 6
         y += 10
         y += kit.put_text(doc, f"Used: {used['notes']} of your notes, {used['screen']} lines seen on screen, "

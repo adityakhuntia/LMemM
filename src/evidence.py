@@ -334,3 +334,40 @@ def request_sentence(text):
                 return (parts[n - 1] + " " + parts[n]).rstrip(".")
             return parts[n].rstrip(".")
     return (parts[0] if parts else text).rstrip(".")
+
+
+# ---------------------------------------------------------------- what became of a request (R33)
+# A request is evidence of what you wanted when you wrote it. It never proves the request is still open, and a reply
+# never proves it was done. Four statuses, each with the only evidence that can establish it:
+#   completed         you said so: a later message of yours in that chat says it worked / is done / merged (DONE).
+#   open              you chased it: a later message of yours in that chat says it did not work or never arrived (CHASE).
+#   likely_addressed  something happened on that chat after it: its screen showed Claude working (last_signal), and only
+#                     when that screen holds a single chat, so the signal cannot belong to another one. Not completion.
+#   unknown           everything else. Claude's replies are OCR with no speaker, so they establish nothing.
+# "Unknown" is never turned into "open", and "likely addressed" is never turned into "completed".
+
+DONE = re.compile(r"\b(that worked|it works|works now|working now|all done|it'?s done|is done|merged it|shipped it|looks good now|fixed now)\b", re.I)
+CHASE = re.compile(r"\b(still (?:not|doesn'?t|isn'?t|no\b)|not working|didn'?t work|doesn'?t work|never got|nothing happened|no response|try again)\b", re.I)
+
+STATUS_LABEL = {"completed": "Completed", "open": "Open", "likely_addressed": "Likely addressed", "unknown": "Unknown"}
+
+
+def request_status(msg, chat_msgs, item, single_chat=True):
+    """-> {"status", "label", "why", "signal"}. `msg`: the request; `chat_msgs`: everything you typed in that chat;
+    `item`: the thing it was typed in; `single_chat`: whether that thing shows only this one chat."""
+    later = [m for m in chat_msgs if m["at"] > msg["at"]]
+    for m in later:
+        if DONE.search(m["text"]):
+            return {"status": "completed", "label": STATUS_LABEL["completed"], "signal": None,
+                    "why": f"You wrote “{m['text'][:80]}” afterwards."}
+    for m in later:
+        if CHASE.search(m["text"]):
+            return {"status": "open", "label": STATUS_LABEL["open"], "signal": None,
+                    "why": f"You wrote “{m['text'][:80]}” afterwards, which reads as it not having worked."}
+    signal = last_signal(item) if single_chat else None
+    if signal and parse(signal) and parse(msg["at"]) and parse(signal) > parse(msg["at"]):
+        return {"status": "likely_addressed", "label": STATUS_LABEL["likely_addressed"], "signal": signal,
+                "why": f"The screen showed Claude working at {parse(signal).strftime('%H:%M')}, after your request. That does not show it was finished."}
+    return {"status": "unknown", "label": STATUS_LABEL["unknown"], "signal": None,
+            "why": "Claude's reply and the result are not readable in what was remembered."
+                   + ("" if single_chat else " This window held more than one chat, so what it showed can't be tied to this one.")}

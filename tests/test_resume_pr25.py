@@ -113,10 +113,11 @@ class Pr25(unittest.TestCase):
         n = self.b["next"]
         self.assertEqual(n["kind"], "inferred")
         self.assertIn("AI inference", n["label"])
-        self.assertIn("Likely continuation", n["label"])
-        self.assertIn("does not establish", self.b["confidence"])
+        self.assertIn("Check the result", n["label"])
+        self.assertEqual(self.b["request"]["status"], "unknown")      # a request is not proof it is open, a reply is not proof it is done
+        self.assertIn("cannot tell what you should do there", self.b["confidence"])
         low = resume.as_text(self.b).lower()
-        for claim in ("tested", "merged", "deployed", "completed", "you decided", "see what it finished"):
+        for claim in ("was tested", "were tested", "merged", "deployed", "completed", "you decided", "see what it finished"):
             self.assertNotIn(claim, low)
 
     def test_your_own_words_identify_the_work(self):
@@ -132,10 +133,10 @@ class Pr25(unittest.TestCase):
         n = self.b["next"]
         self.assertIn("lets code this up", n["text"])
         self.assertIn("apple style", n["text"])
-        self.assertIn("what you wrote earlier", n["text"])
+        self.assertIn("check where it got to", n["text"])
         self.assertNotIn("Session 2", n["text"])               # the newer question is not the lead
         self.assertEqual(n["source"]["item"], CLAUDE)
-        earlier = next(s for s in self.b["sections"] if s["id"] == "earlier")
+        earlier = next(s for s in self.b["sections"] if s["id"] == "timeline")
         joined = " ".join(c["text"] for c in earlier["claims"])
         self.assertIn("clicking on back takes me to all projects", joined)
         self.assertIn("Apple's design principles", joined)

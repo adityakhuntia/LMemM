@@ -338,7 +338,10 @@ def resume_page(reg, items, state, now, events=None):
     import resume
     import tasks
     pid = state["pid"]
-    b = resume.brief(reg, items, pid, now, tasks.load_tasks(), events=events)
+    import config
+    import resume_feedback
+    b = resume.brief(reg, items, pid, now, tasks.load_tasks(), events=events,
+                     feedback=resume_feedback.load(config.paths().resume_feedback_file))
     return {"kind": "resume", "pid": pid, "title": b["title"], "meta": ("Where you left off. " + b["headline"]).strip(), "back": True, "brief": b,
             "details_open": "details" in state.get("ex_open", ()), "text": resume.as_text(b) if b["state"] != "empty" else "",
             "crumbs": crumbs(reg, pid)}

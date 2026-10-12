@@ -141,6 +141,10 @@ class Paths:
         return os.path.join(self.data_dir, "onboarding.json")
 
     @property
+    def resume_feedback_file(self):   # your corrections to Resume (resume_feedback.py); never part of memory
+        return os.path.join(self.data_dir, "resume_feedback.json")
+
+    @property
     def control_file(self):
         return os.path.splitext(self.pidfile)[0] + ".control.json"
 

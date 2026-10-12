@@ -69,3 +69,10 @@ choosing are command-line only so far.
 - Shared-word explanations are gone (R28). Only strong shared tokens (e.g. `180dc`) merge threads; weaker overlap shows as "Possibly related (uncertain)".
 - `resume_cli --trail FILE` reads a trail copy (read only). The window does not pass trail events yet.
 - Not supported by the snapshot: that UI code was pushed or untested on a Mac.
+
+## v1.3: what became of a request, and your corrections
+
+- R33 (evidence.py): a request is intent when written, not proof it is open; a reply is not proof it is done. Statuses: completed (you said so later in that chat), open (you chased it), likely addressed (the screen showed Claude working after it, only when that window holds one chat), unknown (everything else). Claude's replies are speaker-less OCR and establish nothing.
+- The next step is an open note on the thread, else a chased request, else "check where it got to" (open that conversation), else "I can identify the work, but I can't reliably tell what you planned to do next. Open the most recent source."
+- R34 (resume_feedback.py): Right, Outdated, Edit, Don't use this source. Own file `resume_feedback.json`; memory and trail are never edited. CLI: `--feedback FILE --mark right|outdated --replace TEXT --exclude ITEM`.
+- Window: buttons under the next step (Right / Outdated / Edit… / Don't use this source). Written without a Mac to run them on: not yet exercised.

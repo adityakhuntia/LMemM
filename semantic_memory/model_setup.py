@@ -17,7 +17,7 @@ MODEL='all-minilm:22m'
 
 class OwnedEmbeddingRuntime:
     def __init__(self,weights):
-        self.weights=Path(weights).resolve();self.process=None;self.control=None;self.lock=threading.RLock();self.stopped=False
+        self.weights=Path(weights).resolve();self.process=None;self.control=None;self.lock=threading.RLock();self.stopped=False;self.progress=None
     def manifest(self):
         return ModelManifest(MODEL,SELECTED_DIGEST,384,512,1,'ollama-local',str(self.weights/'manifests/registry.ollama.ai/library/all-minilm/22m'))
     def ensure(self):
@@ -46,9 +46,24 @@ class OwnedEmbeddingRuntime:
     def install(self):
         self.ensure()
         env={**os.environ,'OLLAMA_NO_CLOUD':'1','OLLAMA_HOST':'127.0.0.1:11455','OLLAMA_MODELS':str(self.weights)}
-        result=subprocess.run([shutil.which('ollama'),'pull',MODEL],env=env,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=600)
-        if result.returncode:raise ValueError('Local model download failed; retry setup')
+        self.progress=0;pull=subprocess.Popen([shutil.which('ollama'),'pull',MODEL],env=env,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+        deadline=time.monotonic()+600
+        threading.Thread(target=self._read_progress,args=(pull,),daemon=True).start()
+        while pull.poll() is None:
+            if time.monotonic()>deadline or self.stopped:
+                pull.kill();pull.wait();raise ValueError('Local model download timed out; check your connection and retry')
+            time.sleep(.2)
+        if pull.returncode:raise ValueError('Local model download failed; check your connection and retry')
+        self.progress=100
         manifest=self.manifest();validate_manifest(manifest);return manifest
+    def _read_progress(self,pull):
+        # Ollama prints 'pulling ... 45% ...' with carriage returns; keep the latest percentage.
+        import re
+        try:
+            for chunk in iter(lambda:pull.stdout.read1(512),b''):
+                found=re.findall(rb'(\d{1,3})%',chunk)
+                if found:self.progress=max(self.progress or 0,min(int(found[-1]),99))
+        except (OSError,ValueError):pass
     def close(self):
         with self.lock:
             self.stopped=True

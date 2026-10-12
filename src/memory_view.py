@@ -1,4 +1,5 @@
 """Native evidence pane using the existing Figtree drawing kit."""
+import time
 from datetime import datetime,timezone
 
 def friendly(at,now=None):
@@ -158,19 +159,25 @@ class MemoryPane:
         panel(x,y,w,th+24);kit.put_text(self.host,body,x+16,y+12,w-32,12,400,height=th);y+=th+36
         kit.button(self.host,'Copy context preview',x,y,200,30,lambda:self.action('copy_preview'),kind='outline',size=13,weight=600);self.bottom=y+46
     def _settings(self,view,x,w,kit,rgb,panel):
+        from AppKit import NSMakeRect
         host=self.host;y=8;notice=view.get('notice')
         kit.button(host,'‹  Memory',x,y,90,28,lambda:self.action('close_settings'),kind='link',size=14,weight=600);y+=40
         kit.put_text(host,'Memory settings',x,y,w,24,700,height=32);y+=48
-        def row(symbols,color,title,sub,buttons,status=None,status_color=GREEN,sub_color=None):
+        def row(symbols,color,title,sub,buttons,status=None,status_color=GREEN,sub_color=None,progress=False,fraction=None,seconds=0):
             nonlocal y
             widths=[kit.text_width(b[0],13,600)+30 for b in buttons];btn_w=sum(widths)+8*len(widths)
-            sub_w=max(w-76-btn_w-(100 if status else 0),160);sh=kit.text_height(sub,12,400,sub_w);h=max(62,sh+46)
+            sub_w=max(w-76-btn_w-(100 if status else 0),160);sh=kit.text_height(sub,12,400,sub_w);h=max(62,sh+46)+(14 if progress else 0)
             panel(x,y,w,h);kit.tile(host,symbols,rgb(color),x+16,y+(h-34)/2,34)
             kit.put_text(host,title,x+64,y+12,sub_w,14,600,wrap=False,height=18)
             kit.put_text(host,sub,x+64,y+32,sub_w,12,400,sub_color or kit.mute(),height=sh)
+            if progress:                                       # a thin bar: filled to the percentage, or a sliding block when it is not known
+                bar_w=sub_w;by=y+h-20;track=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(x+64,by,bar_w,5),lambda:None);track.fill=kit.faint(0.10);track.radius=2.5;host.addSubview_(track)
+                fw=bar_w*fraction if fraction is not None else bar_w*0.3;fx=0 if fraction is not None else (seconds*0.11%0.7)*bar_w
+                fill=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(x+64+fx,by,max(fw,5),5),lambda:None);fill.fill=rgb(color);fill.radius=2.5;host.addSubview_(fill)
             bx=x+w-14
-            for (label,action,kind),bw in reversed(list(zip(buttons,widths))):
-                bx-=bw;kit.button(host,label,bx,y+(h-30)/2,bw,30,lambda a=action:self.action(a),kind=kind,size=13,weight=600);bx-=8
+            for item,bw in reversed(list(zip(buttons,widths))):
+                label,action,kind=item[:3];on=item[3] if len(item)>3 else True
+                bx-=bw;kit.button(host,label,bx,y+(h-30)/2-(7 if progress else 0),bw,30,lambda a=action:self.action(a),kind=kind,size=13,weight=600,enabled=on);bx-=8
             if status:kit.put_text(host,status,bx-96,y,92,12,600,rgb(status_color),align=kit.RIGHT,wrap=False,height=h,middle=True)
             y+=h+8
         def cap(text):
@@ -183,10 +190,21 @@ class MemoryPane:
         cap('Capture')
         row(['folder.fill','folder'],RED,'Folder',root,[('Resume' if mode=='Paused' else 'Pause','resume' if mode=='Paused' else 'pause','outline')],status=STATE_LABELS.get(mode,mode).split(' ·')[0],status_color=STATE_COLORS.get(mode,GREEN))
         text,color=note_for('install_extension','Shares the text you view in the editor.')
-        row(['chevron.left.forwardslash.chevron.right','curlybraces'],BLUE,'VS Code',text,[('Connect…','reconnect_extension','outline'),('Install extension','install_extension','primary')],sub_color=color)
-        ready=view.get('status',{}).get('model_state')=='available'
-        text,color=note_for('install_model','On. Finds notes by meaning, not just by words.' if ready else 'A 46 MB model that stays on this Mac. Needs Ollama installed first.')
-        row(['sparkles'],VIOLET,'Meaning search',text,[] if ready else [('Install','confirm_model','primary')],status='On' if ready else None,sub_color=color)
+        busy=bool(notice and len(notice)>2 and notice[2]=='install_extension' and notice[0].startswith('Installing'))
+        if busy:text='Installing the extension in VS Code. This takes a few seconds.'
+        row(['chevron.left.forwardslash.chevron.right','curlybraces'],BLUE,'VS Code',text,[('Connect…','reconnect_extension','outline'),('Installing…' if busy else 'Install extension','install_extension','quiet' if busy else 'primary',not busy)],sub_color=color,progress=busy,seconds=int(time.time()))
+        status=view.get('status',{});ready=status.get('model_state')=='available';state=status.get('model_install')
+        starting=bool(notice and len(notice)>2 and notice[2]=='install_model' and not notice[1])
+        if state=='installing' or starting:
+            percent=status.get('model_install_percent');secs=status.get('model_install_seconds') or 0
+            text='Starting the download…' if state!='installing' else ('Downloading… %d%%'%percent if percent else 'Downloading…')+' · %d:%02d'%(secs//60,secs%60)
+            if secs>180:text+='. Taking longer than usual; check your connection.'
+            row(['sparkles'],VIOLET,'Meaning search',text,[('Installing…','confirm_model','quiet',False)],progress=True,fraction=(percent/100 if percent else None),seconds=secs)
+        elif state=='failed':
+            row(['sparkles'],VIOLET,'Meaning search',status.get('model_install_message') or 'The install failed. Try again.',[('Try again','confirm_model','primary')],sub_color=rgb(RED))
+        else:
+            text,color=note_for('install_model','On. Finds notes by meaning, not just by words.' if ready else 'A 46 MB model that stays on this Mac. Needs Ollama installed first.')
+            row(['sparkles'],VIOLET,'Meaning search',text,[] if ready else [('Install','confirm_model','primary')],status='On' if ready else None,sub_color=color)
         cap('Agents')
         row(['terminal.fill','terminal'],TEAL,'Codex','Can read this project’s notes and sources. You can turn it off at any time.',[('Preview','preview','outline'),('Revoke','revoke_agent','outline'),('Connect…','confirm_agent','primary')])
         cap('Danger zone')

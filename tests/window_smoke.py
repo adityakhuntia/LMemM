@@ -48,6 +48,7 @@ kit.LEFT, kit.RIGHT, kit.CENTER = 0, 2, 1
 kit.text_width = lambda *a, **k: 50
 kit.text_height = lambda *a, **k: 20
 kit._KitButton = type("_KitButton", (Base,), {"initWithFrame_callback_": lambda self, *a: self})
+
 sys.modules["setup_kit"] = kit
 import window
 print("window imported with fakes")
@@ -195,6 +196,17 @@ for label,notice,preview in (('settings',None,None),('settings with notice',('In
     w.memory_view=lambda pid,v=snapshot:v
     w._memory_action('open_settings')
     step('Memory '+label,render)
+for label,status,notice in (
+        ('model installing',{'state':'Ready','model_state':'missing','model_install':'installing','model_install_percent':42,'model_install_seconds':65},None),
+        ('model installing unknown percent, slow',{'state':'Ready','model_state':'missing','model_install':'installing','model_install_percent':None,'model_install_seconds':400},None),
+        ('model failed',{'state':'Ready','model_state':'missing','model_install':'failed','model_install_message':'Install the local Ollama runtime, then retry model setup'},None),
+        ('model starting',{'state':'Ready','model_state':'missing'},('Starting…',False,'install_model')),
+        ('extension installing',{'state':'Ready','model_state':'missing'},('Installing…',False,'install_extension'))):
+    state['preview']=None
+    snapshot=memory_view(state,binding,status,rich);snapshot['notice']=notice
+    w.memory_view=lambda pid,v=snapshot:v
+    w._memory_action('open_settings')
+    step('Memory settings: '+label,render)
 w._memory_action('close_settings')
 step('Memory back from settings',render)
 w._memory_action('source',{'citation_id':'c1'})

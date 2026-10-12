@@ -41,7 +41,7 @@ class MemoryService:
         try:fcntl.flock(self.lock_fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BaseException:os.close(self.lock_fd);raise
         self.closed=False;self.bridge=None;self.roots_dirty=True;self.backend=None;self.model_manifest=None
-        self.model_thread=None;self.model_error=None;self.last_retention=clock();self.last_focus=None;self.system_flags=set()
+        self.model_thread=None;self.model_error=None;self.install_state=None;self.install_message=None;self.install_started=None;self.last_retention=clock();self.last_focus=None;self.system_flags=set()
         self.focus_provider=focus_provider or (lambda:focused_context(excluded_pids={os.getpid(),os.getppid()}))
         from .embedding_runtime import load_backend
         self.backend_factory=backend_factory or load_backend
@@ -221,12 +221,14 @@ class MemoryService:
     def install_model(self):
         if not self.runtime:raise ValueError('Local runtime unavailable')
         if self.setup_thread and self.setup_thread.is_alive():return {'state':'Processing'}
-        self.model_error='Installing local model'
+        self.install_state='installing';self.install_message=None;self.install_started=time.monotonic();self.runtime.progress=None
         def install():
             try:
                 manifest=self.runtime.install()
                 if not self.closed:self.configure_model(dataclasses.asdict(manifest))
-            except Exception:self.model_error='Local model installation failed; check Ollama and retry'
+                self.install_state=None
+            except ValueError as error:self.install_state='failed';self.install_message=str(error)[:200]
+            except Exception:self.install_state='failed';self.install_message='Local model installation failed; check Ollama and retry'
         self.setup_thread=threading.Thread(target=install,daemon=True);self.setup_thread.start()
         return {'state':'Processing'}
 
@@ -300,6 +302,8 @@ class MemoryService:
             generation=active_generation(self.store)
             value=dataclasses.asdict(MemoryStatus(state,reason,generation['created_at'] if generation else None,enrolled,pending,failed,'available' if self.backend else 'missing',first,memory_usage(self.store)['total_bytes']))
             from .grants import revision
+            elapsed=int(time.monotonic()-self.install_started) if self.install_state=='installing' and self.install_started else None
+            value.update(model_install=self.install_state,model_install_message=self.install_message,model_install_percent=getattr(self.runtime,'progress',None),model_install_seconds=elapsed)
             value.update(service_epoch=self.service_epoch,policy_revision=revision(c),index_generation=generation['id'] if generation else None)
             return value
 

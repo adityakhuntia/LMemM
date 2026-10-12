@@ -39,6 +39,18 @@ class EmbeddingTests(unittest.TestCase):
             backend.embed(('What did we choose?',),query=True)
             self.assertEqual(post.call_args.args[0]['input'],['What did we choose?'])
 
+    def test_oversize_chunk_is_retried_truncated_instead_of_failing(self):
+        backend=runtime.load_backend(self.manifest)
+        good={'embeddings':[[3.0]+[4.0]+[0.0]*382]}
+        calls=[]
+        def post(payload):
+            calls.append(payload['truncate'])
+            if not payload['truncate']:raise ValueError('Local embedding input rejected; check model token limit')
+            return good
+        with patch.object(backend,'_post',side_effect=post):
+            self.assertEqual(backend.embed(('dense code',),query=False).shape,(1,384))
+        self.assertEqual(calls,[False,True])
+
     def test_invalid_shape_nonfinite_and_zero_vectors_are_rejected(self):
         backend=runtime.load_backend(self.manifest)
         for rows in ([[1,2]],[[0]*384],[[float('nan')]*384],[[float('inf')]*384],[]):

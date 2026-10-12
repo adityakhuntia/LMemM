@@ -80,7 +80,13 @@ class OllamaEmbeddingBackend:
         if any(not isinstance(t,str) or not t or len(t.encode())>cap for t in texts):
             raise ValueError('Invalid embedding input')
         # MiniLM uses symmetric sentence embeddings: no query/document prefix.
-        response=self._post({'model':self.manifest.model_id,'input':list(texts),'truncate':False,'keep_alive':'30s'})
+        payload={'model':self.manifest.model_id,'input':list(texts),'truncate':False,'keep_alive':'30s'}
+        try:response=self._post(payload)
+        except ValueError as error:
+            # MiniLM reads about 256 tokens; dense code in a 1 KB chunk can exceed that. Embed the part it can read
+            # (keyword search still covers the whole chunk) instead of failing the item for good.
+            if 'rejected' not in str(error):raise
+            response=self._post({**payload,'truncate':True})
         if self.cancelled.is_set():raise RuntimeError('Embedding cancelled')
         try:matrix=np.asarray(response['embeddings'],dtype=np.float32)
         except (KeyError,TypeError,ValueError) as error:raise ValueError('Invalid embeddings') from error

@@ -41,6 +41,8 @@ class MemoryController:
         # current extension (a running one may hold an old copy), then open vscode://… which VS Code asks the person to allow.
         import subprocess,threading,urllib.parse
         from pathlib import Path
+        if self.status.get('state')=='Paused':
+            self.set_notice('Memory is paused. Resume it in the Folder row above, then press Connect.',True,'connect_extension');return
         self.set_notice('Connecting…',False,'connect_extension')
         grant=str(Path(self.client().directory)/'bridge'/'grant.json')
         def work():

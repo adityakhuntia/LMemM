@@ -148,3 +148,16 @@ class SourceConnectedStatusTests(unittest.TestCase):
         snapshot = memory_view(state, {"workspace_root": "/r", "active": True, "project_id": "p"},
                                {"state": "Ready", "model_state": "available", "source_connected": True}, {})
         self.assertTrue(snapshot["status"]["source_connected"])
+
+
+class ConnectWhilePausedTests(unittest.TestCase):
+    def test_connect_asks_to_resume_instead_of_opening_vscode(self):
+        from unittest import mock
+        from memory_controller import MemoryController
+        controller = MemoryController(lambda: mock.Mock(directory=Path(tempfile.mkdtemp())), lambda: {}, lambda: None)
+        controller.status = {"state": "Paused"}
+        with mock.patch("subprocess.run") as run:
+            controller.action("reconnect_extension")
+        run.assert_not_called()
+        self.assertTrue(controller.notice[1])
+        self.assertIn("Resume", controller.notice[0])

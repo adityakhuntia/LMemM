@@ -220,12 +220,13 @@ def _top(out, nxt, latest, here, replaced, items=None):
         text = nxt["text"] if len(nxt["text"]) <= 160 else nxt["text"][:157] + "…"
         lead = (f"Your open note says: “{text}”. Open where you wrote it to pick up from there." if nxt["kind"] == AUTHORED
                 else f"LMemM's reading of this work suggests: {text} (an AI inference). Open it to check.")
-    if not nxt:
-        lead = f"I can identify the work ({here}), but I can't reliably tell what you planned to do next. Open {here} to pick up from there."
     src = nxt["source"] if nxt else out["latest"]
     item = next((i for i in (items or []) if i["id"] == src["item"]), latest)
     target = original_of(item)
     chat = item.get("kind") == "ai_conversation"
+    if not nxt:
+        go = f"Open {here}" if target and target["kind"] == "url" else f"Open {src.get('app') or 'it'} and look for {here}"
+        lead = f"I can identify the work ({here}), but I can't reliably tell what you planned to do next. {go} to pick up from there."
     if target and target["kind"] == "url":
         label, note = ("Open conversation" if chat else "Open original"), None
     else:                                            # an app, not an address: it opens the app, not one chat or document

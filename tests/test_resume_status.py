@@ -195,7 +195,7 @@ class Sparse(unittest.TestCase):
             self.assertEqual(b["state"], "limited")
             self.assertIsNone(b["next"])
             self.assertIn("can't reliably tell what you planned to do next", b["no_next"])
-            self.assertIn("Open Garage shelving ideas to pick up from there", resume.as_text(b))
+            self.assertIn("Open Safari and look for Garage shelving ideas to pick up from there", resume.as_text(b))
 
 
 if __name__ == "__main__":

@@ -143,9 +143,12 @@ def install_extension(directory):
     return {'installed':True,'vsix':str(path)}
 
 
+EXTENSION_VERSION='0.1.1'
+
 def extension_installed():
     home=Path.home()
-    return any(next(home.glob(folder+'/lmemm.lmemm-source-*'),None) for folder in ('.vscode/extensions','.vscode-insiders/extensions'))
+    # Only the current version counts: an older copy has no connect link, so it must be reinstalled.
+    return any(next(home.glob(folder+'/lmemm.lmemm-source-'+EXTENSION_VERSION),None) for folder in ('.vscode/extensions','.vscode-insiders/extensions'))
 
 def vscode_running():
     try:

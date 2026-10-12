@@ -178,3 +178,13 @@ class ReapOrphanTests(unittest.TestCase):
             with mock.patch('subprocess.run',return_value=mock.Mock(stdout='/usr/bin/vim')),mock.patch('os.killpg') as killpg:
                 runtime._reap_orphan()
             killpg.assert_not_called()
+class ExtensionVersionTests(unittest.TestCase):
+    def test_only_current_version_counts_as_installed(self):
+        from unittest import mock
+        from semantic_memory.model_setup import extension_installed,EXTENSION_VERSION
+        with tempfile.TemporaryDirectory() as tmp:
+            old=Path(tmp)/'.vscode/extensions/lmemm.lmemm-source-0.0.9';old.mkdir(parents=True)
+            with mock.patch('pathlib.Path.home',return_value=Path(tmp)):
+                self.assertFalse(extension_installed())
+                (Path(tmp)/('.vscode/extensions/lmemm.lmemm-source-'+EXTENSION_VERSION)).mkdir()
+                self.assertTrue(extension_installed())

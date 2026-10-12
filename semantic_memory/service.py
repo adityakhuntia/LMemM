@@ -81,7 +81,7 @@ class MemoryService:
                     self.backend=self.backend_factory(self.model_manifest)
                     if self.runtime:self.runtime.ensure()
                     self._ensure_model_generation(self.model_manifest)
-                except (OSError,ValueError):self.model_error='Local model unavailable'
+                except (OSError,ValueError) as error:self.model_error=self._model_reason(error)
         except BaseException:
             if hasattr(self,'store'):self.store.close()
             os.close(self.lock_fd);raise
@@ -264,8 +264,24 @@ class MemoryService:
         self._sync_bridge_pause()
         return {'state':'Paused'}
 
+    @staticmethod
+    def _model_reason(error):
+        text=str(error)
+        return 'Local model unavailable: '+text if text and len(text)<160 else 'Local model unavailable'
+
+    def _retry_model(self):
+        # 'Try again' must actually retry the local model, not only requeue jobs.
+        if not (self.model_error and self.model_manifest):return
+        try:
+            if self.runtime:self.runtime.ensure()
+            self.backend=self.backend_factory(self.model_manifest)
+            self._ensure_model_generation(self.model_manifest)
+            self.model_error=None
+        except (OSError,ValueError) as error:self.model_error=self._model_reason(error)
+
     def resume(self):
         if self.system_flags:raise ValueError('Resume after unlocking or waking the Mac')
+        self._retry_model()
         if self.model_thread and self.model_thread.is_alive():raise ValueError('Wait for cancelled indexing to finish')
         if self.model_manifest:self.backend=self.backend_factory(self.model_manifest)
         with self.store.transaction() as c:

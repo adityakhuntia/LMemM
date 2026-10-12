@@ -81,3 +81,26 @@ class ControllerExtensionInstallTests(unittest.TestCase):
         self.assertIn("VS Code was not found", controller.notice[0])
         self.assertTrue(controller.poll([]))
         client.request.assert_not_called()
+
+
+class VsCodeDiscoveryAndDownloadTests(unittest.TestCase):
+    def test_vscode_is_found_through_spotlight_when_not_in_applications(self):
+        from unittest import mock
+        from semantic_memory import model_setup
+        with tempfile.TemporaryDirectory() as d:
+            cli = Path(d) / "Elsewhere" / "Visual Studio Code.app" / "Contents" / "Resources" / "app" / "bin" / "code"
+            cli.parent.mkdir(parents=True);cli.write_text("#!/bin/sh\n")
+            listing = mock.Mock(stdout=str(Path(d) / "Elsewhere" / "Visual Studio Code.app") + "\n")
+            with mock.patch.object(model_setup.shutil, "which", return_value=None), \
+                 mock.patch.object(model_setup.subprocess, "run", return_value=listing):
+                self.assertEqual(model_setup._vscode_cli(), str(cli))
+
+    def test_download_progress_counts_bytes_on_disk_not_file_size(self):
+        from semantic_memory.model_setup import OwnedEmbeddingRuntime, DOWNLOAD_BYTES
+        with tempfile.TemporaryDirectory() as d:
+            runtime = OwnedEmbeddingRuntime(d);runtime.progress = 0
+            blobs = runtime.weights / "blobs";blobs.mkdir(parents=True)
+            sparse = blobs / "sha256-x-partial"
+            with open(sparse, "wb") as handle:handle.truncate(DOWNLOAD_BYTES)   # pre-sized, nothing written yet
+            runtime._measure_download()
+            self.assertLess(runtime.progress, 5)

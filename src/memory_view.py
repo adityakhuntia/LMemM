@@ -170,10 +170,10 @@ class MemoryPane:
             panel(x,y,w,h);kit.tile(host,symbols,rgb(color),x+16,y+(h-34)/2,34)
             kit.put_text(host,title,x+64,y+12,sub_w,14,600,wrap=False,height=18)
             kit.put_text(host,sub,x+64,y+32,sub_w,12,400,sub_color or kit.mute(),height=sh)
-            if progress:                                       # a thin bar: filled to the percentage, or a sliding block when it is not known
+            if progress:                                       # a thin bar, filled from the left to the percentage
                 bar_w=sub_w;by=y+h-20;track=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(x+64,by,bar_w,5),lambda:None);track.fill=kit.faint(0.10);track.radius=2.5;host.addSubview_(track)
-                fw=bar_w*fraction if fraction is not None else bar_w*0.3;fx=0 if fraction is not None else (seconds*0.11%0.7)*bar_w
-                fill=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(x+64+fx,by,max(fw,5),5),lambda:None);fill.fill=rgb(color);fill.radius=2.5;host.addSubview_(fill)
+                fw=bar_w*(fraction or 0)
+                if fw>0:fill=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(x+64,by,max(fw,5),5),lambda:None);fill.fill=rgb(color);fill.radius=2.5;host.addSubview_(fill)
             bx=x+w-14
             for item,bw in reversed(list(zip(buttons,widths))):
                 label,action,kind=item[:3];on=item[3] if len(item)>3 else True
@@ -192,14 +192,14 @@ class MemoryPane:
         text,color=note_for('install_extension','Shares the text you view in the editor.')
         busy=bool(notice and len(notice)>2 and notice[2]=='install_extension' and notice[0].startswith('Installing'))
         if busy:text='Installing the extension in VS Code. This takes a few seconds.'
-        row(['chevron.left.forwardslash.chevron.right','curlybraces'],BLUE,'VS Code',text,[('Connect…','reconnect_extension','outline'),('Installing…' if busy else 'Install extension','install_extension','quiet' if busy else 'primary',not busy)],sub_color=color,progress=busy,seconds=int(time.time()))
+        row(['chevron.left.forwardslash.chevron.right','curlybraces'],BLUE,'VS Code',text,[('Connect…','reconnect_extension','outline'),('Installing…' if busy else 'Install extension','install_extension','quiet' if busy else 'primary',not busy)],sub_color=color,)
         status=view.get('status',{});ready=status.get('model_state')=='available';state=status.get('model_install')
         starting=bool(notice and len(notice)>2 and notice[2]=='install_model' and not notice[1])
         if state=='installing' or starting:
             percent=status.get('model_install_percent');secs=status.get('model_install_seconds') or 0
-            text='Starting the download…' if state!='installing' else ('Downloading… %d%%'%percent if percent else 'Downloading…')+' · %d:%02d'%(secs//60,secs%60)
+            text='Starting the download…' if state!='installing' else ('Downloading… %d%%'%percent if percent else 'Starting the download…')+' · %d:%02d'%(secs//60,secs%60)
             if secs>180:text+='. Taking longer than usual; check your connection.'
-            row(['sparkles'],VIOLET,'Meaning search',text,[('Installing…','confirm_model','quiet',False)],progress=True,fraction=(percent/100 if percent else None),seconds=secs)
+            row(['sparkles'],VIOLET,'Meaning search',text,[('Installing…','confirm_model','quiet',False)],progress=True,fraction=(percent or 0)/100,seconds=secs)
         elif state=='failed':
             row(['sparkles'],VIOLET,'Meaning search',status.get('model_install_message') or 'The install failed. Try again.',[('Try again','confirm_model','primary')],sub_color=rgb(RED))
         else:

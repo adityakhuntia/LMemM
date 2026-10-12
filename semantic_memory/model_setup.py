@@ -14,6 +14,7 @@ from .embedding_runtime import validate_manifest
 
 SELECTED_DIGEST='1b226e2802dbb772b5fc32a58f103ca1804ef7501331012de126ab22f67475ef'
 MODEL='all-minilm:22m'
+DOWNLOAD_BYTES=45_960_589   # layers of the selected model, from the development selection record
 
 class OwnedEmbeddingRuntime:
     def __init__(self,weights):
@@ -50,12 +51,19 @@ class OwnedEmbeddingRuntime:
         deadline=time.monotonic()+600
         threading.Thread(target=self._read_progress,args=(pull,),daemon=True).start()
         while pull.poll() is None:
+            self._measure_download()
             if time.monotonic()>deadline or self.stopped:
                 pull.kill();pull.wait();raise ValueError('Local model download timed out; check your connection and retry')
             time.sleep(.2)
         if pull.returncode:raise ValueError('Local model download failed; check your connection and retry')
         self.progress=100
         manifest=self.manifest();validate_manifest(manifest);return manifest
+    def _measure_download(self):
+        # Bytes actually written so far (sparse, pre-sized partial files count only what is on disk), against the known download size.
+        try:
+            written=sum(f.stat().st_blocks*512 for f in (self.weights/'blobs').glob('*') if f.is_file())
+        except OSError:return
+        self.progress=max(self.progress or 0,min(99,int(100*written/DOWNLOAD_BYTES)))
     def _read_progress(self,pull):
         # Ollama prints 'pulling ... 45% ...' with carriage returns; keep the latest percentage.
         import re
@@ -85,10 +93,16 @@ def build_extension(output):
     return output
 
 def _vscode_cli():
-    home=Path.home()
-    names=['/Applications/Visual Studio Code.app','/Applications/Visual Studio Code - Insiders.app',str(home/'Applications/Visual Studio Code.app')]
-    for found in [shutil.which('code')]+[n+'/Contents/Resources/app/bin/code' for n in names]:
-        if found and Path(found).is_file():return found
+    # The shell command first, then the app in the usual folders, then wherever Spotlight says it lives.
+    home=Path.home();found=[shutil.which('code')]
+    for folder in ('/Applications',str(home/'Applications')):
+        for app in ('Visual Studio Code.app','Visual Studio Code - Insiders.app'):found.append(folder+'/'+app+'/Contents/Resources/app/bin/code')
+    for bundle in ('com.microsoft.VSCode','com.microsoft.VSCodeInsiders'):
+        try:
+            listing=subprocess.run(['mdfind','kMDItemCFBundleIdentifier == "'+bundle+'"'],capture_output=True,text=True,timeout=5,stdin=subprocess.DEVNULL).stdout
+        except (OSError,subprocess.TimeoutExpired):continue
+        found+=[line.strip()+'/Contents/Resources/app/bin/code' for line in listing.splitlines() if line.strip().endswith('.app')]
+    return next((c for c in found if c and Path(c).is_file()),None)
 
 def install_extension(directory):
     path=build_extension(Path(directory)/'lmemm-source.vsix')

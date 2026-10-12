@@ -30,6 +30,7 @@ class OwnedEmbeddingRuntime:
             if self.process and self.process.poll() is None:return
             executable=shutil.which('ollama')
             if not executable:raise ValueError('Install the local Ollama runtime, then retry model setup')
+            self._reap_orphan()
             # Never attach source-bearing requests to an unowned server.
             with socket.socket() as probe:
                 try:probe.bind(('127.0.0.1',11455))
@@ -37,7 +38,7 @@ class OwnedEmbeddingRuntime:
             self.weights.mkdir(parents=True,mode=0o700,exist_ok=True)
             r,w=os.pipe();self.control=w
             script=Path(__file__).resolve().parents[1]/'scripts/local_embedding_server.py'
-            try:self.process=subprocess.Popen([sys.executable,str(script),'--control-fd',str(r),'--models',str(self.weights),'--ollama',executable],pass_fds=(r,),stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            try:self.process=subprocess.Popen([sys.executable,str(script),'--control-fd',str(r),'--models',str(self.weights),'--ollama',executable,'--pidfile',str(self.weights/'.ollama.pid')],pass_fds=(r,),stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
             finally:os.close(r)
             opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
             for _ in range(200):
@@ -47,6 +48,26 @@ class OwnedEmbeddingRuntime:
                         if response.status==200:return
                 except OSError:time.sleep(.05)
             raise ValueError('Local model startup timed out')
+    def _reap_orphan(self):
+        # LMemM's own Ollama can outlive a crashed LMemM (for example when its terminal was closed). Stop only a process
+        # this runtime recorded and that still looks like 'ollama serve'; anything else on the port is left alone.
+        import signal
+        pidfile=self.weights/'.ollama.pid'
+        try:pid=int(pidfile.read_text())
+        except (OSError,ValueError):return
+        try:command=subprocess.run(['ps','-p',str(pid),'-o','command='],capture_output=True,text=True,timeout=5,stdin=subprocess.DEVNULL).stdout
+        except (OSError,subprocess.TimeoutExpired):return
+        if 'ollama' in command and 'serve' in command:
+            try:os.killpg(pid,signal.SIGTERM)
+            except OSError:
+                try:os.kill(pid,signal.SIGTERM)
+                except OSError:pass
+            for _ in range(30):
+                try:os.kill(pid,0)
+                except OSError:break
+                time.sleep(.1)
+        try:pidfile.unlink()
+        except OSError:pass
     def install(self):
         self.ensure()
         env={**os.environ,'OLLAMA_NO_CLOUD':'1','OLLAMA_HOST':'127.0.0.1:11455','OLLAMA_MODELS':str(self.weights)}

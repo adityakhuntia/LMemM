@@ -161,3 +161,20 @@ class ConnectWhilePausedTests(unittest.TestCase):
         run.assert_not_called()
         self.assertTrue(controller.notice[1])
         self.assertIn("Resume", controller.notice[0])
+class ReapOrphanTests(unittest.TestCase):
+    def test_kills_recorded_ollama_and_removes_pidfile(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime=OwnedEmbeddingRuntime(tmp);(runtime.weights/'.ollama.pid').write_text('4242')
+            ps=mock.Mock(stdout='/usr/local/bin/ollama serve')
+            with mock.patch('subprocess.run',return_value=ps),mock.patch('os.killpg') as killpg,mock.patch('os.kill',side_effect=OSError):
+                runtime._reap_orphan()
+            killpg.assert_called_once()
+            self.assertFalse((runtime.weights/'.ollama.pid').exists())
+    def test_leaves_unrelated_process_alone(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime=OwnedEmbeddingRuntime(tmp);(runtime.weights/'.ollama.pid').write_text('4242')
+            with mock.patch('subprocess.run',return_value=mock.Mock(stdout='/usr/bin/vim')),mock.patch('os.killpg') as killpg:
+                runtime._reap_orphan()
+            killpg.assert_not_called()

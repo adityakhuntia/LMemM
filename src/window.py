@@ -983,6 +983,7 @@ class MainWindow:
     def _memory_action(self,action,payload=None):
         payload=payload or {}
         try:
+            if action=='tab' and self.memory_pane is not None:self.memory_pane.settings=False        # choosing a tab always leaves Settings
             if action in {'open_settings','close_settings'}:
                 self._pane().settings=action=='open_settings'
                 if action=='open_settings':self.on_memory('tab',{'tab':'Memory'})
@@ -1395,13 +1396,13 @@ class MainWindow:
         self._label(host, page["meta"], x + 54, y + 33, w - 54, size=13, weight=400)
         y += 62
         if self.memory_snapshot:
-            tx=x
+            tx=x;in_settings=bool(self.memory_pane and self.memory_pane.settings and self.memory_snapshot.get('binding'))
             for tab in self.memory_snapshot['tabs']:
                 symbol={'Overview':'square.grid.2x2','Memory':'brain'}.get(tab)
-                tx+=kit.chip(host,tab,symbol,tx,y,self.memory_snapshot['tab']==tab,lambda t=tab:self._memory_action('tab',{'tab':t}))+8
+                tx+=kit.chip(host,tab,symbol,tx,y,self.memory_snapshot['tab']==tab and not in_settings,lambda t=tab:self._memory_action('tab',{'tab':t}))+8
             if self.memory_snapshot.get('binding'):                    # always in view, so setup is never hunted for
                 sx=x+w-kit.chip_width('Settings','gearshape')
-                kit.chip(host,'Settings','gearshape',sx,y,False,lambda:self._memory_action('open_settings'))
+                kit.chip(host,'Settings','gearshape',sx,y,in_settings,lambda:self._memory_action('open_settings'))
             y+=48
             if self.memory_snapshot['tab']=='Memory' or page.get('empty'):return y
         self._label(host, "PICK UP WHERE YOU LEFT OFF", x, y, w)

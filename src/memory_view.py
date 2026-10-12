@@ -61,6 +61,9 @@ class MemoryPane:
         self.note_typing=_Fields.alloc().initWithChange_submit_cancel_(lambda text:None,self._save_note,lambda:self.note.setStringValue_(''))
         self.note=NSTextField.alloc().initWithFrame_(NSMakeRect(0,0,100,30));self.note.setDelegate_(self.note_typing)
         self.note.setPlaceholderString_('Add a note… start with TODO: for a task, or “We decided … because …”');self.note.setAccessibilityLabel_('New intentional project note')
+        import setup_kit as kit
+        for field in (self.query,self.note):                       # no square bezel: the pane draws a rounded box behind each field
+            field.setBezeled_(False);field.setDrawsBackground_(False);field.setFocusRingType_(1);field.setFont_(kit.font(14,400))
         self.host.addSubview_(self.query);self.host.addSubview_(self.note)
     def _save_note(self,text):
         if text.strip():self.action('note',{'text':text});self.note.setStringValue_('')
@@ -99,6 +102,10 @@ class MemoryPane:
                 kit.put_text(host,name,cx+22,my-2,cw-24,11,500,kit.mute(),wrap=False,height=20,middle=True)
             if citation:kit.button(host,'View source',x+w-104,my-4,92,24,lambda c=citation:self.action('source',{'citation_id':c}),kind='link',size=12,weight=600)
             y=top+th+58+10
+        def field_box(field,fy,left=14):
+            box=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(x,fy,w,40),lambda:None);box.fill=kit.faint(0.05);box.border=kit.line();box.radius=11
+            host.addSubview_positioned_relativeTo_(box,-1,field)        # behind the field
+            field.setFrame_(NSMakeRect(x+left,fy+10,w-left-14,20))
         def para(text,size=13,weight=400,color=None,gap=10):
             nonlocal y
             y+=kit.put_text(host,str(text),x,y,w,size,weight,color or kit.mute())+gap
@@ -123,9 +130,10 @@ class MemoryPane:
             bx-=80;kit.button(host,'Refresh',bx,y,72,26,lambda:self.action('refresh'),kind='ghost',size=12,weight=600);y+=40
             if view.get('error'):para(view['error'],13,500,rgb(RED))
             if view.get('notice'):para(view['notice'][0],13,500,rgb(RED) if view['notice'][1] else kit.mute())
-            glyph=kit.icon('magnifyingglass',16,rgb(ORANGE),(x+4,y+8,18,18))
+            field_box(self.query,y,left=42)
+            glyph=kit.icon('magnifyingglass',16,rgb(ORANGE),(x+14,y+11,18,18))
             if glyph is not None:host.addSubview_(glyph)
-            self.query.setFrame_(NSMakeRect(x+30,y,w-30,32));y+=46
+            y+=54
             for i,period in enumerate(view['periods']):
                 kit.button(host,PERIOD_LABELS.get(period,period),x+i*70,y,64,26,lambda p=period:self.action('time_filter',{'period':p}),kind='outline' if period==view['period'] else 'quiet',size=12,weight=600)
             y+=44
@@ -149,7 +157,7 @@ class MemoryPane:
                 if p['open_enabled']:kit.button(host,'Open current file…',x,y,170,30,lambda c=source['citation_id']:self.action('open_file',{'citation_id':c}),kind='outline',size=13,weight=600)
                 kit.button(host,'Close source',x+(180 if p['open_enabled'] else 0),y,120,30,lambda:self.action('close_source'),kind='quiet',size=13,weight=600);y+=46
             y+=14;y+=label_row(['note.text','doc.text'],ORANGE,'Add a note',y)
-            self.note.setFrame_(NSMakeRect(x,y,w,32));y+=44
+            field_box(self.note,y);y+=54
         if view.get('preview') and binding:self._preview(view,x,w,y,kit,panel)
         end=(self.bottom if self.bottom is not None else y)+40
         self.host.setFrame_(NSMakeRect(0,0,width,max(end,500)))
@@ -164,7 +172,7 @@ class MemoryPane:
     def _settings(self,view,x,w,kit,rgb,panel):
         from AppKit import NSMakeRect
         host=self.host;y=8;notice=view.get('notice')
-        kit.button(host,'‹  Memory',x,y,90,28,lambda:self.action('close_settings'),kind='link',size=14,weight=600);y+=40
+        kit.chip(host,'Back to Memory','chevron.left',x,y,False,lambda:self.action('close_settings'));y+=46
         kit.put_text(host,'Memory settings',x,y,w,24,700,height=32);y+=48
         if self.confirm in CONFIRMS:
             title,detail,go=CONFIRMS[self.confirm];dh=kit.text_height(detail,13,400,w-32);top=y

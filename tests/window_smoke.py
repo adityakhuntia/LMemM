@@ -42,7 +42,7 @@ SIZE = types.SimpleNamespace(width=1080, height=720)
 fake_widget._Flipped.frame = lambda self: types.SimpleNamespace(size=SIZE)
 sys.modules["widget"] = fake_widget
 kit = types.ModuleType("setup_kit")
-for n in ("put_text","tile","button","text_width","text_height","ink","mute","accent","card_background","faint","line","icon","first_symbol","note","chip","chip_width"):
+for n in ("put_text","tile","button","text_width","text_height","ink","mute","accent","card_background","faint","line","icon","first_symbol","note","chip","chip_width","font"):
     setattr(kit, n, mock.MagicMock(return_value=20))
 kit.LEFT, kit.RIGHT, kit.CENTER = 0, 2, 1
 kit.text_width = lambda *a, **k: 50
@@ -223,7 +223,9 @@ memory_calls.clear();w._memory_action('confirm_model');w._memory_action('confirm
 if ('install_model',{'approved':True}) not in memory_calls:FAILED.append('confirm_yes did not start the install')
 w._memory_action('confirm_yes')
 if len([c for c in memory_calls if c[0]=='install_model'])!=1:FAILED.append('confirm_yes ran twice')
-w._memory_action('close_settings')
+w._memory_action('tab',{'tab':'Memory'})
+if w.memory_pane.settings:FAILED.append('choosing the Memory tab left Settings open')
+w._memory_action('open_settings');w._memory_action('close_settings')
 step('Memory back from settings',render)
 w._memory_action('source',{'citation_id':'c1'})
 if ('source',{'citation_id':'c1'}) not in memory_calls:FAILED.append('Memory citation callback not forwarded')

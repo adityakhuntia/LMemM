@@ -1,6 +1,6 @@
 {
- "name":"lmemm-source", "displayName":"LMemM Project Memory", "publisher":"lmemm", "version":"0.1.0",
- "engines":{"vscode":"^1.85.0"}, "main":"./extension.js", "activationEvents":["onCommand:lmemm.connect"],
+ "name":"lmemm-source", "displayName":"LMemM Project Memory", "publisher":"lmemm", "version":"0.1.1",
+ "engines":{"vscode":"^1.85.0"}, "main":"./extension.js", "activationEvents":["onCommand:lmemm.connect","onUri"],
  "capabilities":{"untrustedWorkspaces":{"supported":false},"virtualWorkspaces":false},
  "contributes":{"commands":[
   {"command":"lmemm.connect","title":"LMemM: Connect Project Memory"},

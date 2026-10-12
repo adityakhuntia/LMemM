@@ -207,6 +207,17 @@ for label,status,notice in (
     w.memory_view=lambda pid,v=snapshot:v
     w._memory_action('open_settings')
     step('Memory settings: '+label,render)
+state['preview']=None
+snapshot=memory_view(state,binding,{'state':'Ready','model_state':'missing'},rich);snapshot['extension_installed']=True;snapshot['notice']=('Opened VS Code. Choose Allow there to finish.',False,'connect_extension')
+w.memory_view=lambda pid,v=snapshot:v
+w._memory_action('open_settings');step('Memory settings: extension installed',render)
+for chosen in ('confirm_model','confirm_agent','confirm_disconnect'):
+    w._memory_action(chosen);step('Memory settings: '+chosen,render)
+w._memory_action('confirm_no');step('Memory settings: confirm cancelled',render)
+memory_calls.clear();w._memory_action('confirm_model');w._memory_action('confirm_yes')
+if ('install_model',{'approved':True}) not in memory_calls:FAILED.append('confirm_yes did not start the install')
+w._memory_action('confirm_yes')
+if len([c for c in memory_calls if c[0]=='install_model'])!=1:FAILED.append('confirm_yes ran twice')
 w._memory_action('close_settings')
 step('Memory back from settings',render)
 w._memory_action('source',{'citation_id':'c1'})

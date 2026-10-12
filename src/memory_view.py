@@ -26,6 +26,9 @@ BLUE,VIOLET,ORANGE,TEAL,GREEN,RED,GRAY=(.20,.44,.96),(.54,.31,.88),(.91,.45,.16)
 SECTIONS={'Search results':('Best matches',['magnifyingglass'],ORANGE),'Related evidence':('Related',['link'],TEAL),
           'Decisions':('Decisions',['flag.fill'],VIOLET),'Open tasks':('Open tasks',['checkmark.circle','checkmark.circle.fill'],BLUE),
           'Recent evidence':('Recent',['clock'],GRAY)}
+CONFIRMS={'confirm_model':('Install meaning search?','Downloads about 46 MB (the MiniLM model) to LMemM’s own folder on this Mac. Needs Ollama installed. No notes or text are sent anywhere.','Install'),
+          'confirm_agent':('Let Codex read this project’s memory?','Codex can search saved notes and sources and read the cited text. Using these tools sends that text to Codex and its provider. You can turn it off at any time.','Allow'),
+          'confirm_disconnect':('Disconnect Memory for this project?','Stops capture and revokes agent access. Saved notes stay on this Mac but can’t be searched until you enable Memory again.','Disconnect')}
 STATE_COLORS={'Ready':GREEN,'Processing':ORANGE,'Paused':GRAY,'Needs attention':RED}
 
 
@@ -50,7 +53,7 @@ class MemoryPane:
     def __init__(self,on_action):
         from AppKit import NSTextField,NSMakeRect
         from widget import _Fields,_Flipped
-        self.project=None;self.settings=False
+        self.project=None;self.settings=False;self.confirm=None
         self.action=on_action;self.host=_Flipped.alloc().initWithFrame_(NSMakeRect(0,0,800,600))
         self.query_typing=_Fields.alloc().initWithChange_submit_cancel_(lambda text:self.action('query',{'text':text}),lambda text:self.action('submit',{}),lambda:self.action('query',{'text':''}))
         self.query=NSTextField.alloc().initWithFrame_(NSMakeRect(0,0,100,30));self.query.setDelegate_(self.query_typing)
@@ -69,7 +72,7 @@ class MemoryPane:
         for sub in list(host.subviews()):
             if sub is not self.query and sub is not self.note:sub.removeFromSuperview()
         binding=view.get('binding');project=binding.get('project_id') if binding else None
-        if project!=self.project:self.project=project;self.settings=False;self.note.setStringValue_('')
+        if project!=self.project:self.project=project;self.settings=False;self.confirm=None;self.note.setStringValue_('')
         if str(self.query.stringValue())!=view['query']:self.query.setStringValue_(view['query'])
         hide=not binding or self.settings
         self.query.setHidden_(hide);self.note.setHidden_(hide)
@@ -163,6 +166,13 @@ class MemoryPane:
         host=self.host;y=8;notice=view.get('notice')
         kit.button(host,'‹  Memory',x,y,90,28,lambda:self.action('close_settings'),kind='link',size=14,weight=600);y+=40
         kit.put_text(host,'Memory settings',x,y,w,24,700,height=32);y+=48
+        if self.confirm in CONFIRMS:
+            title,detail,go=CONFIRMS[self.confirm];dh=kit.text_height(detail,13,400,w-32);top=y
+            panel(x,top,w,dh+88,ORANGE)
+            kit.put_text(host,title,x+16,top+14,w-32,15,700,wrap=False,height=20)
+            kit.put_text(host,detail,x+16,top+38,w-32,13,400,kit.mute(),height=dh)
+            kit.button(host,go,x+16,top+dh+50,110,30,lambda:self.action('confirm_yes'),kind='danger' if self.confirm=='confirm_disconnect' else 'primary',size=13,weight=600)
+            kit.button(host,'Cancel',x+134,top+dh+50,90,30,lambda:self.action('confirm_no'),kind='quiet',size=13,weight=600);y=top+dh+88+14
         def row(symbols,color,title,sub,buttons,status=None,status_color=GREEN,sub_color=None,progress=False,fraction=None,seconds=0):
             nonlocal y
             widths=[kit.text_width(b[0],13,600)+30 for b in buttons];btn_w=sum(widths)+8*len(widths)
@@ -189,10 +199,15 @@ class MemoryPane:
         mode=view['state'];root=(view.get('binding') or {}).get('workspace_root','')
         cap('Capture')
         row(['folder.fill','folder'],RED,'Folder',root,[('Resume' if mode=='Paused' else 'Pause','resume' if mode=='Paused' else 'pause','outline')],status=STATE_LABELS.get(mode,mode).split(' ·')[0],status_color=STATE_COLORS.get(mode,GREEN))
+        installed=view.get('extension_installed');kind=notice[2] if notice and len(notice)>2 else None
+        busy=bool(notice and kind in ('install_extension','connect_extension') and notice[0].endswith('…'))
         text,color=note_for('install_extension','Shares the text you view in the editor.')
-        busy=bool(notice and len(notice)>2 and notice[2]=='install_extension' and notice[0].startswith('Installing'))
-        if busy:text='Installing the extension in VS Code. This takes a few seconds.'
-        row(['chevron.left.forwardslash.chevron.right','curlybraces'],BLUE,'VS Code',text,[('Connect…','reconnect_extension','outline'),('Installing…' if busy else 'Install extension','install_extension','quiet' if busy else 'primary',not busy)],sub_color=color,)
+        if kind=='connect_extension':text,color=notice[0],(rgb(RED) if notice[1] else None)
+        if busy and kind=='install_extension':text='Installing in VS Code…'
+        if installed and not busy:
+            row(['chevron.left.forwardslash.chevron.right','curlybraces'],BLUE,'VS Code',text,[('Connect','reconnect_extension','primary')],status='Installed',sub_color=color)
+        else:
+            row(['chevron.left.forwardslash.chevron.right','curlybraces'],BLUE,'VS Code',text,[('Working…' if busy else 'Install extension','install_extension','quiet' if busy else 'primary',not busy)],sub_color=color)
         status=view.get('status',{});ready=status.get('model_state')=='available';state=status.get('model_install')
         starting=bool(notice and len(notice)>2 and notice[2]=='install_model' and not notice[1])
         if state=='installing' or starting:

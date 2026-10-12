@@ -69,11 +69,10 @@ class ControllerExtensionInstallTests(unittest.TestCase):
             for thread in threading.enumerate():
                 if thread is not threading.current_thread() and thread.daemon:
                     thread.join(2)
-        with mock.patch.object(model_setup, "install_extension", return_value={"installed": True}):
+        with mock.patch.object(model_setup, "install_extension", return_value={"installed": True}), mock.patch.object(model_setup, "vscode_running", return_value=True):
             controller.action("install_extension")
             wait()
-        self.assertIn("Quit VS Code", controller.notice[0])
-        self.assertFalse(controller.notice[1])
+        self.assertIsNone(controller.notice)
         with mock.patch.object(model_setup, "install_extension", side_effect=ValueError("VS Code was not found. Open VS Code…")):
             controller.action("install_extension")
             wait()
@@ -104,3 +103,42 @@ class VsCodeDiscoveryAndDownloadTests(unittest.TestCase):
             with open(sparse, "wb") as handle:handle.truncate(DOWNLOAD_BYTES)   # pre-sized, nothing written yet
             runtime._measure_download()
             self.assertLess(runtime.progress, 5)
+
+
+class ConnectExtensionTests(unittest.TestCase):
+    def test_connect_quits_a_stale_vscode_then_opens_the_uri_once(self):
+        import threading
+        from unittest import mock
+        from memory_controller import MemoryController
+        from semantic_memory import model_setup
+        client = mock.Mock(directory=Path(tempfile.mkdtemp()) / "project-memory")
+        controller = MemoryController(lambda: client, lambda: {}, lambda: None)
+        controller.vscode_restart = True
+        calls = []
+        def run(command, **kwargs):
+            calls.append(command[0]);return mock.Mock(returncode=0)
+        with mock.patch.object(model_setup, "vscode_running", return_value=True), mock.patch.object(model_setup, "quit_vscode", return_value=True) as quit_, \
+             mock.patch("subprocess.run", side_effect=run):
+            controller.action("reconnect_extension")
+            for thread in threading.enumerate():
+                if thread.daemon and thread is not threading.current_thread():thread.join(2)
+        quit_.assert_called_once()
+        self.assertEqual(calls, ["pbcopy", "open"])
+        self.assertFalse(controller.vscode_restart)
+        self.assertFalse(controller.notice[1])
+
+    def test_connect_explains_when_vscode_will_not_quit(self):
+        import threading
+        from unittest import mock
+        from memory_controller import MemoryController
+        from semantic_memory import model_setup
+        client = mock.Mock(directory=Path(tempfile.mkdtemp()) / "project-memory")
+        controller = MemoryController(lambda: client, lambda: {}, lambda: None)
+        controller.vscode_restart = True
+        with mock.patch.object(model_setup, "vscode_running", return_value=True), mock.patch.object(model_setup, "quit_vscode", return_value=False), \
+             mock.patch("subprocess.run", return_value=mock.Mock(returncode=0)):
+            controller.action("reconnect_extension")
+            for thread in threading.enumerate():
+                if thread.daemon and thread is not threading.current_thread():thread.join(2)
+        self.assertTrue(controller.notice[1])
+        self.assertIn("press Connect again", controller.notice[0])

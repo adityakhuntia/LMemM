@@ -6,7 +6,7 @@ class MemoryController:
     def __init__(self,client,items,save):
         self.client=client;self.items=items;self.save=save;self.state=new_memory_state()
         self.bindings=[];self.status={};self.pending={};self.serial=0;self.last_poll=0;self.ui_project=None
-        self.agents={};self.notice=None;self.notice_version=0;self.seen_notice=0
+        self.agents={};self.notice=None;self.notice_version=0;self.seen_notice=0;self.vscode_restart=False
     @property
     def agent(self):
         return next((a for a in self.agents.values() if self.binding and self.binding['project_id'] in a['project_ids'] and a.get('client_id','Codex')=='Codex'),None)
@@ -20,7 +20,6 @@ class MemoryController:
         changed=self.ui_project!=ui_project;self.ui_project=ui_project
         self.state=memory_reduce(self.state,'select_project',{'project_id':ui_project})
         if changed and self.binding and self.state['tab']=='Memory':self.action('submit',{})
-    NOTICES={'install_extension':'VS Code extension installed. Quit VS Code fully (Cmd+Q), reopen it, then run “LMemM: Connect Project Memory” from Cmd+Shift+P.'}
     def set_notice(self,text,error=False,kind=None):
         self.notice=(text,error,kind) if text else None;self.notice_version+=1
     def install_extension(self):
@@ -32,18 +31,43 @@ class MemoryController:
         directory=Path(self.client().directory).parent
         def work():
             try:
-                from semantic_memory.model_setup import install_extension
-                install_extension(directory);self.set_notice(self.NOTICES['install_extension'],False,'install_extension')
+                from semantic_memory.model_setup import install_extension,vscode_running
+                install_extension(directory);self.vscode_restart=vscode_running();self.set_notice(None)
             except ValueError as error:self.set_notice(str(error),True,'install_extension')
             except Exception:self.set_notice('Could not install the VS Code extension.',True,'install_extension')
         threading.Thread(target=work,daemon=True).start()
+    def connect_extension(self):
+        # One press: copy the grant path (the manual fallback), quit VS Code if it was open before the install so the
+        # extension loads, then open vscode://… which VS Code asks the person to allow.
+        import subprocess,threading,urllib.parse
+        from pathlib import Path
+        self.set_notice('Connecting…',False,'connect_extension')
+        grant=str(Path(self.client().directory)/'bridge'/'grant.json')
+        def work():
+            try:
+                from semantic_memory.model_setup import quit_vscode,vscode_running
+                subprocess.run(['pbcopy'],input=grant.encode(),timeout=5)
+                if self.vscode_restart and vscode_running() and not quit_vscode():
+                    raise ValueError('VS Code is still open. Save or close what it asks about, then press Connect again.')
+                self.vscode_restart=False
+                subprocess.run(['open','vscode://lmemm.lmemm-source/connect?grant='+urllib.parse.quote(grant)],timeout=10,check=True)
+                self.set_notice('Opened VS Code. Choose Allow there to finish.',False,'connect_extension')
+            except ValueError as error:self.set_notice(str(error),True,'connect_extension')
+            except Exception:self.set_notice('Could not open VS Code. The path is copied: in VS Code run “LMemM: Connect Project Memory” and paste it.',True,'connect_extension')
+        threading.Thread(target=work,daemon=True).start()
     def view(self):
         view=memory_view(self.state,self.binding,self.status if self.binding else {'state':'Disabled'},self.state['result'])
-        view['notice']=self.notice;return view
+        view['notice']=self.notice
+        try:
+            from semantic_memory.model_setup import extension_installed
+            view['extension_installed']=extension_installed()
+        except Exception:view['extension_installed']=False
+        return view
     def action(self,action,payload=None):
         payload=payload or {}
         if action=='enroll':self.send('enroll',{'ui_project_id':self.ui_project,'root':payload['root']},'enroll');return
         if action=='install_extension':self.install_extension();return
+        if action=='reconnect_extension':self.connect_extension();return
         if action=='install_model':self.set_notice('Starting…',False,'install_model')
         if action in {'pause','resume','install_model','recover_native_notes'}:self.send(action,{},action);return
         if action=='refresh':

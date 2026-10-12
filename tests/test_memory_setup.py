@@ -106,14 +106,13 @@ class VsCodeDiscoveryAndDownloadTests(unittest.TestCase):
 
 
 class ConnectExtensionTests(unittest.TestCase):
-    def test_connect_quits_a_stale_vscode_then_opens_the_uri_once(self):
+    def test_connect_quits_a_running_vscode_then_opens_the_uri_once(self):
         import threading
         from unittest import mock
         from memory_controller import MemoryController
         from semantic_memory import model_setup
         client = mock.Mock(directory=Path(tempfile.mkdtemp()) / "project-memory")
         controller = MemoryController(lambda: client, lambda: {}, lambda: None)
-        controller.vscode_restart = True
         calls = []
         def run(command, **kwargs):
             calls.append(command[0]);return mock.Mock(returncode=0)
@@ -124,7 +123,6 @@ class ConnectExtensionTests(unittest.TestCase):
                 if thread.daemon and thread is not threading.current_thread():thread.join(2)
         quit_.assert_called_once()
         self.assertEqual(calls, ["pbcopy", "open"])
-        self.assertFalse(controller.vscode_restart)
         self.assertFalse(controller.notice[1])
 
     def test_connect_explains_when_vscode_will_not_quit(self):
@@ -134,7 +132,6 @@ class ConnectExtensionTests(unittest.TestCase):
         from semantic_memory import model_setup
         client = mock.Mock(directory=Path(tempfile.mkdtemp()) / "project-memory")
         controller = MemoryController(lambda: client, lambda: {}, lambda: None)
-        controller.vscode_restart = True
         with mock.patch.object(model_setup, "vscode_running", return_value=True), mock.patch.object(model_setup, "quit_vscode", return_value=False), \
              mock.patch("subprocess.run", return_value=mock.Mock(returncode=0)):
             controller.action("reconnect_extension")

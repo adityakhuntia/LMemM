@@ -37,8 +37,8 @@ class MemoryController:
             except Exception:self.set_notice('Could not install the VS Code extension.',True,'install_extension')
         threading.Thread(target=work,daemon=True).start()
     def connect_extension(self):
-        # One press: copy the grant path (the manual fallback), quit VS Code if it was open before the install so the
-        # extension loads, then open vscode://… which VS Code asks the person to allow.
+        # One press: copy the grant path (the manual fallback), quit a running VS Code so a freshly started one loads the
+        # current extension (a running one may hold an old copy), then open vscode://… which VS Code asks the person to allow.
         import subprocess,threading,urllib.parse
         from pathlib import Path
         self.set_notice('Connecting…',False,'connect_extension')
@@ -47,7 +47,7 @@ class MemoryController:
             try:
                 from semantic_memory.model_setup import quit_vscode,vscode_running
                 subprocess.run(['pbcopy'],input=grant.encode(),timeout=5)
-                if self.vscode_restart and vscode_running() and not quit_vscode():
+                if vscode_running() and not quit_vscode():
                     raise ValueError('VS Code is still open. Save or close what it asks about, then press Connect again.')
                 self.vscode_restart=False
                 subprocess.run(['open','vscode://lmemm.lmemm-source/connect?grant='+urllib.parse.quote(grant)],timeout=10,check=True)

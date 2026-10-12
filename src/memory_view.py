@@ -216,6 +216,7 @@ class MemoryPane:
         if connected:
             row(['chevron.left.forwardslash.chevron.right','curlybraces'],BLUE,'VS Code','Sharing the text you view in the editor.',[],status='Connected')
         elif installed and not busy:
+            if not notice or kind not in ('connect_extension','install_extension'):text='Connecting restarts VS Code so it loads the extension. Your windows reopen.'
             row(['chevron.left.forwardslash.chevron.right','curlybraces'],BLUE,'VS Code',text,[('Connect','reconnect_extension','primary')],status='Installed',sub_color=color)
         else:
             row(['chevron.left.forwardslash.chevron.right','curlybraces'],BLUE,'VS Code',text,[('Working…' if busy else 'Install extension','install_extension','quiet' if busy else 'primary',not busy)],sub_color=color)

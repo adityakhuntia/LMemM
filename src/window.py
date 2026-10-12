@@ -984,6 +984,9 @@ class MainWindow:
         payload=payload or {}
         try:
             if action=='tab' and self.memory_pane is not None:self.memory_pane.settings=False        # choosing a tab always leaves Settings
+            if action in {'toggle_status','open_status'}:
+                pane=self._pane();pane.status_open=True if action=='open_status' else not pane.status_open;pane.settings=False
+                self.shown=None;self.render();return
             if action in {'open_settings','close_settings'}:
                 self._pane().settings=action=='open_settings'
                 if action=='open_settings':self.on_memory('tab',{'tab':'Memory'})
@@ -1403,6 +1406,8 @@ class MainWindow:
             if self.memory_snapshot.get('binding'):                    # always in view, so setup is never hunted for
                 sx=x+w-kit.chip_width('Settings','gearshape')
                 kit.chip(host,'Settings','gearshape',sx,y,in_settings,lambda:self._memory_action('open_settings'))
+                if in_settings:                                        # the way back sits right beside it
+                    bw=kit.chip_width('Back to Memory','chevron.left');kit.chip(host,'Back to Memory','chevron.left',sx-bw-8,y,False,lambda:self._memory_action('close_settings'))
             y+=48
             if self.memory_snapshot['tab']=='Memory' or page.get('empty'):return y
         self._label(host, "PICK UP WHERE YOU LEFT OFF", x, y, w)

@@ -53,7 +53,7 @@ class MemoryPane:
     def __init__(self,on_action):
         from AppKit import NSTextField,NSMakeRect
         from widget import _Fields,_Flipped
-        self.project=None;self.settings=False;self.confirm=None
+        self.project=None;self.settings=False;self.confirm=None;self.status_open=False
         self.action=on_action;self.host=_Flipped.alloc().initWithFrame_(NSMakeRect(0,0,800,600))
         self.query_typing=_Fields.alloc().initWithChange_submit_cancel_(lambda text:self.action('query',{'text':text}),lambda text:self.action('submit',{}),lambda:self.action('query',{'text':''}))
         self.query=NSTextField.alloc().initWithFrame_(NSMakeRect(0,0,100,30));self.query.setDelegate_(self.query_typing)
@@ -75,7 +75,7 @@ class MemoryPane:
         for sub in list(host.subviews()):
             if sub is not self.query and sub is not self.note:sub.removeFromSuperview()
         binding=view.get('binding');project=binding.get('project_id') if binding else None
-        if project!=self.project:self.project=project;self.settings=False;self.confirm=None;self.note.setStringValue_('')
+        if project!=self.project:self.project=project;self.settings=False;self.confirm=None;self.status_open=False;self.note.setStringValue_('')
         if str(self.query.stringValue())!=view['query']:self.query.setStringValue_(view['query'])
         hide=not binding or self.settings
         self.query.setHidden_(hide);self.note.setHidden_(hide)
@@ -120,15 +120,26 @@ class MemoryPane:
             if view.get('error'):y+=16;para(view['error'],13,500,rgb(RED))
         elif self.settings:self._settings(view,x,w,kit,rgb,panel)
         else:
-            color=rgb(STATE_COLORS.get(mode,GREEN));label=STATE_LABELS.get(mode,mode)
-            pw=kit.text_width(label,12,600)+34;chip=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(x,y,pw,26),lambda:None);chip.fill=rgb(STATE_COLORS.get(mode,GREEN),.14);chip.radius=13;host.addSubview_(chip)
-            dot=kit.icon('circle.fill',7,color,(x+12,y+9,8,8))
-            if dot is not None:host.addSubview_(dot)
-            kit.put_text(host,label,x+24,y,pw-26,12,600,color,wrap=False,height=26,middle=True)
-            bx=x+w
-            if mode=='Needs attention':bx-=140;kit.button(host,'Recover notes',bx,y,132,26,lambda:self.action('recover_native_notes'),kind='link',size=12,weight=600)
-            bx-=80;kit.button(host,'Refresh',bx,y,72,26,lambda:self.action('refresh'),kind='ghost',size=12,weight=600);y+=40
-            if mode=='Needs attention':para(view.get('message') or 'Memory needs attention.',13,500,rgb(RED))
+            color=rgb(STATE_COLORS.get(mode,GREEN));label=STATE_LABELS.get(mode,mode);shown=label+('  ⌃' if self.status_open else '  ›')
+            pw=kit.text_width(shown,12,600)+34;chip=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(x,y,pw,26),lambda:self.action('toggle_status'));chip.fill=rgb(STATE_COLORS.get(mode,GREEN),.14);chip.radius=13;host.addSubview_(chip)
+            dot=kit.icon('circle.fill',7,color,(12,9,8,8))
+            if dot is not None:chip.addSubview_(dot)
+            kit.put_text(chip,shown,24,0,pw-26,12,600,color,wrap=False,height=26,middle=True)   # inside the pill, so a click on the words is a click on the pill
+            rw=kit.chip_width('Refresh','arrow.clockwise');kit.chip(host,'Refresh','arrow.clockwise',x+w-rw,y-3,False,lambda:self.action('refresh'));y+=40
+            if self.status_open:
+                st=view.get('status',{});detail=view.get('message') or ''
+                facts=['Waiting: %s'%st.get('pending',0)]
+                if st.get('failed'):facts.append('Failed: %s'%st['failed'])
+                if st.get('indexed_at'):facts.append('Last indexed '+friendly(st['indexed_at']))
+                facts=' · '.join(facts);dh=kit.text_height(detail,13,400,w-32);top=y;btns=mode=='Needs attention'
+                panel(x,top,w,dh+(100 if btns else 62),STATE_COLORS.get(mode,GREEN))
+                kit.put_text(host,label if mode!='Needs attention' else 'What needs attention',x+16,top+12,w-32,14,700,wrap=False,height=20)
+                kit.put_text(host,detail,x+16,top+36,w-32,13,400,rgb(RED) if btns else kit.mute(),height=dh)
+                kit.put_text(host,facts,x+16,top+dh+42,w-32,11,400,kit.mute(),wrap=False,height=16)
+                if btns:
+                    kit.button(host,'Try again',x+16,top+dh+66,110,30,lambda:self.action('resume'),kind='primary',size=13,weight=600)
+                    kit.chip(host,'Recover notes','lifepreserver',x+134,top+dh+66,False,lambda:self.action('recover_native_notes'))
+                y=top+dh+(100 if btns else 62)+14
             if view.get('error'):para(view['error'],13,500,rgb(RED))
             if view.get('notice'):para(view['notice'][0],13,500,rgb(RED) if view['notice'][1] else kit.mute())
             field_box(self.query,y,left=42)
@@ -173,7 +184,7 @@ class MemoryPane:
     def _settings(self,view,x,w,kit,rgb,panel):
         from AppKit import NSMakeRect
         host=self.host;y=8;notice=view.get('notice')
-        kit.chip(host,'Back to Memory','chevron.left',x,y,False,lambda:self.action('close_settings'));y+=46
+        y+=4
         kit.put_text(host,'Memory settings',x,y,w,24,700,height=32);y+=48
         if self.confirm in CONFIRMS:
             title,detail,go=CONFIRMS[self.confirm];dh=kit.text_height(detail,13,400,w-32);top=y
@@ -207,7 +218,7 @@ class MemoryPane:
             return default,None
         mode=view['state'];root=(view.get('binding') or {}).get('workspace_root','')
         cap('Capture')
-        row(['folder.fill','folder'],RED,'Folder',(view.get('message') or root) if mode=='Needs attention' else root,[('Resume' if mode=='Paused' else 'Pause','resume' if mode=='Paused' else 'pause','outline')],status=STATE_LABELS.get(mode,mode).split(' ·')[0],status_color=STATE_COLORS.get(mode,GREEN),sub_color=rgb(RED) if mode=='Needs attention' else None)
+        row(['folder.fill','folder'],RED,'Folder',(view.get('message') or root) if mode=='Needs attention' else root,([('Details','open_status','outline')] if mode=='Needs attention' else [])+[('Resume' if mode=='Paused' else 'Pause','resume' if mode=='Paused' else 'pause','outline')],status=STATE_LABELS.get(mode,mode).split(' ·')[0],status_color=STATE_COLORS.get(mode,GREEN),sub_color=rgb(RED) if mode=='Needs attention' else None)
         installed=view.get('extension_installed');kind=notice[2] if notice and len(notice)>2 else None
         busy=bool(notice and kind in ('install_extension','connect_extension') and notice[0].endswith('…'))
         text,color=note_for('install_extension','Shares the text you view in the editor.')

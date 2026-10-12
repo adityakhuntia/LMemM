@@ -109,6 +109,19 @@ class MemoryPane:
         def para(text,size=13,weight=400,color=None,gap=10):
             nonlocal y
             y+=kit.put_text(host,str(text),x,y,w,size,weight,color or kit.mute())+gap
+        def error_card(text,at):
+            # A raw error line says nothing; say what happened, what is safe, and give a way out.
+            nonlocal y
+            slow='stopped' in text
+            title='Memory stopped' if slow else "Memory couldn't start"
+            body='LMemM keeps your notes safe on this Mac. Its private memory service is not responding right now. Try again, and if it keeps happening quit and reopen LMemM.'
+            bh=kit.text_height(body,13,400,w-32);top=at
+            panel(x,top,w,bh+90,RED)
+            kit.tile(host,['exclamationmark.triangle.fill','exclamationmark.triangle'],rgb(RED),x+16,top+14,22)
+            kit.put_text(host,title,x+48,top+16,w-64,14,700,wrap=False,height=20)
+            kit.put_text(host,body,x+16,top+46,w-32,13,400,kit.mute(),height=bh)
+            kit.button(host,'Try again',x+16,top+bh+54,110,30,lambda:self.action('refresh'),kind='primary',size=13,weight=600)
+            y=top+bh+90+14
         mode=view['state']
         if not binding:
             y=40;cx=x+w/2
@@ -117,7 +130,7 @@ class MemoryPane:
             body='Choose one folder. LMemM keeps new text you view in VS Code and the notes you write here. It never scans the folder or imports history.'
             bw=min(w,420);y+=kit.put_text(host,body,cx-bw/2,y,bw,14,400,kit.mute(),align=kit.CENTER)+20
             kit.button(host,'Choose folder…',cx-90,y,180,40,lambda:self.action('choose_root'),kind='primary',size=15);y+=40
-            if view.get('error'):y+=16;para(view['error'],13,500,rgb(RED))
+            if view.get('error'):y+=24;error_card(view['error'],y)
         elif self.settings:self._settings(view,x,w,kit,rgb,panel)
         else:
             color=rgb(STATE_COLORS.get(mode,GREEN));label=STATE_LABELS.get(mode,mode);shown=label+('  ⌃' if self.status_open else '  ›')
@@ -140,7 +153,7 @@ class MemoryPane:
                     kit.button(host,'Try again',x+16,top+dh+66,110,30,lambda:self.action('resume'),kind='primary',size=13,weight=600)
                     kit.chip(host,'Recover notes','lifepreserver',x+134,top+dh+66,False,lambda:self.action('recover_native_notes'))
                 y=top+dh+(100 if btns else 62)+14
-            if view.get('error'):para(view['error'],13,500,rgb(RED))
+            if view.get('error'):error_card(view['error'],y)
             if view.get('notice'):para(view['notice'][0],13,500,rgb(RED) if view['notice'][1] else kit.mute())
             field_box(self.query,y,left=42)
             glyph=kit.icon('magnifyingglass',16,rgb(ORANGE),(x+14,y+11,18,18))

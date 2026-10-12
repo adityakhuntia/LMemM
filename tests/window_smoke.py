@@ -238,5 +238,11 @@ w._memory_action('open_settings');w._memory_action('close_settings')
 step('Memory back from settings',render)
 w._memory_action('source',{'citation_id':'c1'})
 if ('source',{'citation_id':'c1'}) not in memory_calls:FAILED.append('Memory citation callback not forwarded')
+broken=dict(snapshot,error='Project memory unavailable')
+w.memory_view=lambda pid,v=broken:v
+step('Memory: error card with bound folder',render)
+unbound=dict(memory_view(state,None,{'state':'Disabled'},rich),error='Project memory unavailable')
+w.memory_view=lambda pid,v=unbound:v
+step('Memory: error card on empty state',render)
 print("FAILED:", FAILED) if FAILED else print("all pages drew")
 sys.exit(1 if FAILED else 0)

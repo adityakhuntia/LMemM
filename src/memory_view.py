@@ -51,6 +51,7 @@ class MemoryPane:
         if view.get('binding'):
             text('Enrolled: '+str(status.get('enrolled_at') or view['binding'].get('enrolled_at','unknown'))+' · Last index: '+str(status.get('indexed_at') or 'not yet')+' · Pending: '+str(status.get('pending',0)),11,400,kit.mute())
         if view.get('error'):text(view['error'],13,500)
+        if view.get('notice'):text(view['notice'][0],13,500,None if view['notice'][1] else kit.mute())
         binding=view.get('binding')
         project=binding.get('project_id') if binding else None
         if project!=self.project:

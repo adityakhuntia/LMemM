@@ -20,10 +20,15 @@ class MemoryController:
         changed=self.ui_project!=ui_project;self.ui_project=ui_project
         self.state=memory_reduce(self.state,'select_project',{'project_id':ui_project})
         if changed and self.binding and self.state['tab']=='Memory':self.action('submit',{})
-    def view(self):return memory_view(self.state,self.binding,self.status if self.binding else {'state':'Disabled'},self.state['result'])
+    NOTICES={'install_extension':'VS Code extension installed. Quit VS Code fully (Cmd+Q), reopen it, then run “LMemM: Connect Project Memory” from Cmd+Shift+P.',
+             'install_model':'Local model installed. New notes will now be found by meaning.'}
+    def view(self):
+        view=memory_view(self.state,self.binding,self.status if self.binding else {'state':'Disabled'},self.state['result'])
+        view['notice']=getattr(self,'notice',None);return view
     def action(self,action,payload=None):
         payload=payload or {}
         if action=='enroll':self.send('enroll',{'ui_project_id':self.ui_project,'root':payload['root']},'enroll');return
+        if action in {'install_model','install_extension'}:self.notice=('Installing…',False)
         if action in {'pause','resume','install_model','install_extension','recover_native_notes'}:self.send(action,{},action);return
         if action=='refresh':
             retry=getattr(self.client(),'retry',None)
@@ -73,7 +78,10 @@ class MemoryController:
             if not entry:continue
             kind,token=entry;changed=True
             if kind=='read':self.state=memory_reduce(self.state,'response',dict(request=token,result=event.get('result'),error=event.get('error')))
-            elif event.get('error'):self.state['error']=event['error']
+            elif event.get('error'):
+                if kind in self.NOTICES:self.notice=(str(event['error']),True)
+                else:self.state['error']=event['error']
+            elif kind in self.NOTICES:self.notice=(self.NOTICES[kind],False)
             elif kind=='bindings':
                 self.bindings=event['result']
                 if not self.binding:self.state=memory_reduce(self.state,'revoke',{})

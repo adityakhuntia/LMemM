@@ -15,3 +15,21 @@ class SetupTests(unittest.TestCase):
             self.assertIsNone(runtime.process)
             self.assertEqual(runtime.manifest().digest,SELECTED_DIGEST)
             runtime.close()
+
+
+class ExtensionInstallMessagesTests(unittest.TestCase):
+    def test_missing_vscode_says_how_to_install_by_hand(self):
+        from unittest import mock
+        from semantic_memory import model_setup
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(model_setup,'_vscode_cli',return_value=None):
+            with self.assertRaises(ValueError) as caught:model_setup.install_extension(d)
+        self.assertIn('Install from VSIX',str(caught.exception))
+        self.assertIn('lmemm-source.vsix',str(caught.exception))
+
+    def test_cli_failure_reports_its_own_message(self):
+        from unittest import mock
+        from semantic_memory import model_setup
+        failed=mock.Mock(returncode=1,stderr='bad extension\n',stdout='')
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(model_setup,'_vscode_cli',return_value='/bin/echo'), mock.patch.object(model_setup.subprocess,'run',return_value=failed):
+            with self.assertRaises(ValueError) as caught:model_setup.install_extension(d)
+        self.assertIn('bad extension',str(caught.exception))

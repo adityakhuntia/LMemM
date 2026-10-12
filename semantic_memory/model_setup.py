@@ -69,10 +69,22 @@ def build_extension(output):
             if (root/name).exists():z.write(root/name,'extension/'+name)
     return output
 
+def _vscode_cli():
+    home=Path.home()
+    names=['/Applications/Visual Studio Code.app','/Applications/Visual Studio Code - Insiders.app',str(home/'Applications/Visual Studio Code.app')]
+    for found in [shutil.which('code')]+[n+'/Contents/Resources/app/bin/code' for n in names]:
+        if found and Path(found).is_file():return found
+
 def install_extension(directory):
     path=build_extension(Path(directory)/'lmemm-source.vsix')
-    executable=shutil.which('code') or '/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code'
-    if not Path(executable).is_file():raise ValueError('VS Code is unavailable; install the VSIX from LMemM data manually')
-    result=subprocess.run([executable,'--install-extension',str(path),'--force'],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=30)
-    if result.returncode:raise ValueError('VS Code extension installation failed')
-    return {'installed':True}
+    manual='Open VS Code, press Cmd+Shift+X, choose ... > Install from VSIX, and pick '+str(path)
+    executable=_vscode_cli()
+    if not executable:raise ValueError('VS Code was not found. '+manual)
+    try:
+        result=subprocess.run([executable,'--install-extension',str(path),'--force'],stdin=subprocess.DEVNULL,capture_output=True,text=True,timeout=60)
+    except (OSError,subprocess.TimeoutExpired) as error:
+        raise ValueError('VS Code did not finish installing the extension ('+type(error).__name__+'). '+manual)
+    if result.returncode:
+        detail=(result.stderr or result.stdout or '').strip().splitlines()[-1:] or ['no details']
+        raise ValueError('VS Code could not install the extension: '+detail[0][:160]+'. '+manual)
+    return {'installed':True,'vsix':str(path)}

@@ -219,6 +219,11 @@ def button(parent, label, x, y, w, h, callback, kind="primary", size=16, weight=
         tap.border = line()
     elif kind == "ghost":
         color = mute()
+    elif kind == "link":                              # just accent-coloured text
+        color = accent()
+    elif kind == "danger":                            # bordered, red text
+        tap.border = line()
+        color = NSColor.colorWithRed_green_blue_alpha_(0.86, 0.22, 0.25, 1.0)
     if label:
         text = _KitText.alloc().initWithText_size_weight_color_align_wrap_middle_(label, size, weight, color, CENTER, False, True)
         text.setFrame_(NSMakeRect(0, 0, w, h))

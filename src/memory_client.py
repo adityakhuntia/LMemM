@@ -3,11 +3,28 @@ import concurrent.futures
 import os
 from pathlib import Path
 import queue
+import stat
 import subprocess
 import sys
 import threading
 import time
 
+STARTUP_TIMEOUT=45
+
+def _private_log(directory):
+    directory.mkdir(parents=True,mode=0o700,exist_ok=True)
+    info=directory.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid!=os.getuid() or info.st_mode&0o777!=0o700:
+        raise OSError('Private service directory required')
+    fd=os.open(directory/'service.log',os.O_WRONLY|os.O_CREAT|os.O_NOFOLLOW|os.O_NONBLOCK,0o600)
+    try:
+        info=os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid!=os.getuid() or info.st_nlink!=1:
+            raise OSError('Private service log required')
+        os.fchmod(fd,0o600);os.ftruncate(fd,0)
+        return fd
+    except BaseException:
+        os.close(fd);raise
 
 class MemoryClient:
     def __init__(self,data_dir,*,headless=False):
@@ -42,11 +59,18 @@ class MemoryClient:
             script=Path(__file__).resolve().parents[1]/'scripts/project_memory_service.py'
             args=[sys.executable,str(script),'--data-dir',str(self.directory),'--control-fd',str(read_fd)]
             if self.headless:args.append('--headless')
-            try:self.process=subprocess.Popen(args,pass_fds=(read_fd,),stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            try:
+                # Keep the service's last words in a private log: the IPC layer hides errors by design, so this is how a failed start is diagnosed.
+                try:
+                    log=_private_log(self.directory)
+                except OSError:log=subprocess.DEVNULL
+                try:self.process=subprocess.Popen(args,pass_fds=(read_fd,),stdin=subprocess.DEVNULL,stdout=log,stderr=log)
+                finally:
+                    if log!=subprocess.DEVNULL:os.close(log)
             finally:os.close(read_fd)
             if self.stopping:
                 self._close_control();self._reap(self.process);return
-            deadline=time.monotonic()+10
+            deadline=time.monotonic()+STARTUP_TIMEOUT
             info=self.directory/'service.json'
             while time.monotonic()<deadline and not self.stopping:
                 if self.process.poll() is not None:raise RuntimeError('Service unavailable')
@@ -81,7 +105,7 @@ class MemoryClient:
     def _request(self,method,params,request_id,generation):
         from semantic_memory.ipc import request
         try:
-            if not self.capability:self.ready.wait(10)
+            if not self.capability:self.ready.wait(STARTUP_TIMEOUT)
             if not self.capability or self.stopping or generation!=self.generation:raise ValueError('Service unavailable')
             value=request(self.directory/'service.json',self.capability,method,params,request_id)
             if generation==self.generation:self.events.put({'type':'response','id':request_id,'method':method,'result':value})

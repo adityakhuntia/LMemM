@@ -83,3 +83,21 @@ rejected resumed snapshots. Intake now applies the content-policy revision only
 after rechecking the current grant revision, pause state and active binding.
 A service regression exercises real handshake, pause/resume, snapshot retention
 and accepted acknowledgement. Full suite: 815 Python tests and 6 Node tests pass.
+
+### Portability and readiness remediation (2026-10-13)
+
+Integrated cofounder setup branch through b84f6db into local main, preserving
+75d9370's runtime failure fixes. Resolved stale-PID process killing, unsupported
+Insiders discovery (including symlink aliases), unconditional VS Code quit on
+Connect, inconsistent startup deadlines and global connection status. Added
+owned-child cleanup after startup failure and safe keyword/capture resume when
+semantic runtime is unavailable. Private service logging refuses symlink and
+hard-link targets before truncation. Setup guide/handover match the new Settings
+UI and explicit one-time editor reload. No new push yet.
+
+Fresh requirements-only Python environment: 839 tests pass; six Node tests pass.
+Ten real native synthetic states rendered and captured. Held-out real local-model
+hybrid retrieval remains 20/20 Recall@5. Independent review identified the fixed
+editor-symlink edge case. See the portability audit for evidence and limits;
+second-Mac setup, physical crash acceptance, paired resources and external users
+remain pending.

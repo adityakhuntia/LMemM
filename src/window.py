@@ -974,24 +974,38 @@ class MainWindow:
 
     # ------------------------------------------------------------ the page
 
+    def _pane(self):
+        if self.memory_pane is None:
+            from memory_view import MemoryPane
+            self.memory_pane=MemoryPane(self._memory_action)
+        return self.memory_pane
+
     def _memory_action(self,action,payload=None):
         payload=payload or {}
         try:
+            if action=='tab' and self.memory_pane is not None:self.memory_pane.settings=False        # choosing a tab always leaves Settings
+            if action in {'toggle_status','open_status'}:
+                self._pane().settings=True            # the details live in Settings, never on the Memory page
+                self.shown=None;self.render();return
+            if action in {'open_settings','close_settings'}:
+                self._pane().settings=action=='open_settings'
+                if action=='open_settings':self.on_memory('tab',{'tab':'Memory'})
+                self.shown=None;self.render();return
             if action=='choose_root':
                 from AppKit import NSOpenPanel
+                NSApplication.sharedApplication().activateIgnoringOtherApps_(True)     # bring the chooser in front
                 panel=NSOpenPanel.openPanel();panel.setCanChooseDirectories_(True);panel.setCanChooseFiles_(False);panel.setAllowsMultipleSelection_(False)
                 panel.setMessage_('Enable Memory for one workspace. Retain only new approved visible excerpts and project notes.')
                 if panel.runModal()!=1:return
                 action='enroll';payload={'root':str(panel.URL().path())}
             elif action in {'confirm_model','confirm_agent','confirm_disconnect'}:
-                from AppKit import NSAlert
-                titles={'confirm_model':'Install local semantic search?', 'confirm_agent':'Allow Codex to read this project’s memory?', 'confirm_disconnect':'Disconnect project Memory?'}
-                details={'confirm_model':'Download approximately 46 MB of MiniLM weights to LMemM’s embedding-models folder. The cloud-disabled local Ollama runtime must already be installed. No source text is sent during installation.',
-                         'confirm_agent':'Codex can search retained project excerpts and intentional notes, read cited context, and resolve sources. Invoking these tools sends that text to the agent and its configured provider. Capture permission is separate. You can revoke access here.',
-                         'confirm_disconnect':'Stop source capture and revoke all agent grants containing this project. Retained data remains local; it becomes inaccessible until explicitly re-enabled.'}
-                alert=NSAlert.alloc().init();alert.setMessageText_(titles[action]);alert.setInformativeText_(details[action]);alert.addButtonWithTitle_('Continue');alert.addButtonWithTitle_('Cancel')
-                if alert.runModal()!=1000:return
-                action={'confirm_model':'install_model','confirm_agent':'connect_agent','confirm_disconnect':'disconnect'}[action];payload={'approved':True}
+                self._pane().confirm=action;self.shown=None;self.render();return        # asked in the window itself: a pop-up could open out of sight
+            elif action=='confirm_no':
+                self._pane().confirm=None;self.shown=None;self.render();return
+            elif action=='confirm_yes':
+                pane=self._pane();chosen=pane.confirm;pane.confirm=None
+                if not chosen:return
+                action={'confirm_model':'install_model','confirm_agent':'connect_agent','confirm_disconnect':'disconnect'}[chosen];payload={'approved':True}
             elif action=='copy_preview':
                 from AppKit import NSPasteboard
                 import json
@@ -999,12 +1013,6 @@ class MainWindow:
                 if preview:
                     paste=NSPasteboard.generalPasteboard();paste.clearContents();paste.setString_forType_(json.dumps(preview,ensure_ascii=False,indent=2),'public.utf8-plain-text')
                 return
-            elif action=='reconnect_extension':
-                from AppKit import NSAlert,NSPasteboard
-                import config,os
-                path=os.path.join(config.paths().semantic_dir,'bridge','grant.json')
-                paste=NSPasteboard.generalPasteboard();paste.clearContents();paste.setString_forType_(path,'public.utf8-plain-text')
-                alert=NSAlert.alloc().init();alert.setMessageText_('Reconnect VS Code source sharing');alert.setInformativeText_('In VS Code, run “LMemM: Connect Project Memory” from the Command Palette and paste the copied grant path. Approve the local workspace. This grants capture only, not agent access.');alert.runModal();return
             self.on_memory(action,payload)
         except (ValueError,OSError) as error:
             if self.memory_snapshot:self.memory_snapshot['error']=str(error)
@@ -1391,8 +1399,15 @@ class MainWindow:
         self._label(host, page["meta"], x + 54, y + 33, w - 54, size=13, weight=400)
         y += 62
         if self.memory_snapshot:
-            for i,tab in enumerate(self.memory_snapshot['tabs']):
-                kit.button(host,tab,x+i*124,y,116,32,lambda t=tab:self._memory_action('tab',{'tab':t}),kind='outline' if self.memory_snapshot['tab']==tab else 'quiet',size=14,weight=600)
+            tx=x;in_settings=bool(self.memory_pane and self.memory_pane.settings and self.memory_snapshot.get('binding'))
+            for tab in self.memory_snapshot['tabs']:
+                symbol={'Overview':'square.grid.2x2','Memory':'brain'}.get(tab)
+                tx+=kit.chip(host,tab,symbol,tx,y,self.memory_snapshot['tab']==tab and not in_settings,lambda t=tab:self._memory_action('tab',{'tab':t}))+8
+            if self.memory_snapshot.get('binding'):                    # always in view, so setup is never hunted for
+                sx=x+w-kit.chip_width('Settings','gearshape')
+                kit.chip(host,'Settings','gearshape',sx,y,in_settings,lambda:self._memory_action('open_settings'))
+                if in_settings:                                        # the way back sits right beside it
+                    bw=kit.chip_width('Back to Memory','chevron.left');kit.chip(host,'Back to Memory','chevron.left',sx-bw-8,y,False,lambda:self._memory_action('close_settings'))
             y+=48
             if self.memory_snapshot['tab']=='Memory' or page.get('empty'):return y
         self._label(host, "PICK UP WHERE YOU LEFT OFF", x, y, w)

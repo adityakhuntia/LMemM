@@ -59,7 +59,7 @@ After correcting the fixed-date test only, the cofounder snapshot passes all
 - His branch adds model retry handling, longer startup allowance and a service
   log. These are useful changes but do not by themselves prove fresh-Mac setup.
 
-## Remaining issues in the cofounder snapshot
+## Issues found in the cofounder snapshot (resolved in follow-up below)
 
 1. **High: orphan cleanup cannot reliably identify ownership.**
    `_reap_orphan` reads a PID, accepts any command containing `ollama` and `serve`,
@@ -111,3 +111,44 @@ without copied weights, installed extensions or the ignored demonstration data.
 Verify install failure/retry, keyword-only mode, model download, source connect,
 capture, pause/resume, isolation, note edits/deletion, citations, sleep/lock,
 restart and approved agent access. A green mock-heavy suite cannot replace this.
+
+## Readiness remediation — completed locally 2026-10-13
+
+The cofounder branch through `b84f6db` has now been integrated into local main,
+with both sides of the three merge conflicts preserved. All five listed code
+concerns have been addressed:
+
+- Stale PID files never authorize process signals. The owned supervisor handles
+  its child; occupied ports produce actionable errors without killing strangers.
+- Installer discovery/status supports standard VS Code only. Canonical symlink
+  resolution and available bundle identity prevent selecting Insiders through
+  a PATH shortcut; this was an independent-review regression finding.
+- Connect opens the URI without quitting VS Code. Installation explains the
+  one-time window reload for already-running editors; recovery wording matches.
+- Startup and separate control requests use a shared 45-second readiness budget.
+- Bridge clients associate with validated workspace snapshots; service status
+  lists connected project IDs, and UI filters by the selected project. Paused
+  connections explicitly say capture is paused. Agent access labels reflect
+  actual project permission instead of implying access before consent.
+
+Additional failures reproduced and fixed: a failed runtime handshake now closes
+its control pipe and reaps its owned child before retry; resume can retain safe
+keyword/capture operation when local embeddings remain unavailable; service
+logging validates ownership, directory/file permissions and link count before
+truncation, with O_NOFOLLOW/O_NONBLOCK to refuse unsafe destinations. A symlink
+target survived the formerly destructive startup path in the regression test.
+
+Verification: requirements installed into a brand-new temporary Python 3.11
+environment, then all **839 Python tests passed** there. Six Node tests pass.
+Ten real AppKit synthetic states (including Settings, paused Settings and model
+recovery) rendered and were captured; ready and recovery views were inspected.
+Refreshed owned local MiniLM evaluation preserved hybrid held-out Recall@5
+20/20, exact 10/10 and paraphrase 10/10. Keyword remains 15/20 overall. See
+[refreshed results](benchmarks/project-memory/hybrid-mvp/readiness-held-out.json).
+Only synthetic evaluation text was used; no downloads were needed for the model.
+
+The temporary clean environment verifies dependency instructions on this Mac;
+it does not replace a different machine, architecture or fresh macOS permission
+state. Formal resource, original physical crash and external-user acceptance
+remain outstanding. This is a verified local beta integration, not a promise
+that no possible defect remains.

@@ -1,13 +1,30 @@
 # LMemM — continuation handover
 
-Updated 2026-10-11. Read [current context](docs/current-context.md), [runbook](docs/hybrid-memory-runbook.md), and [acceptance](docs/benchmarks/project-memory/hybrid-mvp/acceptance.md).
+Updated 2026-10-13. Read [current context](docs/current-context.md), [runbook](docs/hybrid-memory-runbook.md), and [acceptance](docs/benchmarks/project-memory/hybrid-mvp/acceptance.md).
 
-2026-10-13 portability/lifecycle follow-up: see the
-[systematic audit](docs/2026-10-13-memory-portability-audit.md). Main now has two
-additional runtime failure fixes and 817 passing Python tests. Cofounder setup
-fixes at `b84f6db` are on `origin/claude/project-thread-1wwhgq`, not main; the audit
-records remaining issues to resolve before integrating that branch. These audit
-changes are committed locally; publication is separate from the October 11 push.
+2026-10-13 readiness follow-up: cofounder setup improvements through `b84f6db`
+are integrated into local main, preserving the audit fixes. All five concerns
+from the [systematic audit](docs/2026-10-13-memory-portability-audit.md) have code
+resolutions: no stale-PID killing; standard VS Code only (including symlink
+checks); Connect keeps editor windows open; one 45-second startup budget;
+project-scoped connection status. Failed model startup is cleaned up, semantic
+requests fail closed, and capture/keyword recall can still resume. Service logs
+reject symlinks/hard links and use private permissions. The setup/error UI,
+Ollama layout compatibility and visible installation progress are included.
+
+Validation: **839 Python tests in a fresh pip-only virtual environment**, six
+Node tests, ten real native synthetic UI states, and refreshed real local-model
+held-out retrieval (20/20 Recall@5). Independent review's editor-symlink finding
+was reproduced and fixed. This new integration is local and not yet pushed;
+the October 11 push remains `66bcd65`. A clean second Mac, original crash run,
+formal paired resource workload and external testers remain launch gates.
+
+For users: choose the project → Memory → Settings, install the extension and
+local model, then Connect. Reload the VS Code window once after extension
+installation if it was already running; LMemM never quits the whole editor.
+Use standard VS Code, not Insiders. Follow the updated runbook for exact setup
+and failure recovery. The October 11 walkthrough below is historical; its
+source-sharing controls now live in Settings.
 
 Work in the root checkout on **main**, per the user's explicit request. Remote main was fetched and verified as an ancestor before this delivery. Publication is authorized. Preserve untracked user `context.md` and its integration safety stash. The old feature worktree remains a checkpoint with local assets; never stage its environment files or force-clean it.
 

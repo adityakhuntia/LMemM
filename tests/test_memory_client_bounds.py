@@ -5,6 +5,23 @@ class HeldExecutor:
     def submit(self,*args):return concurrent.futures.Future()
     def shutdown(self,**kwargs):pass
 class BoundsTests(unittest.TestCase):
+    def test_service_log_cannot_truncate_a_symlink_target(self):
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            directory=Path(tmp)/'memory';directory.mkdir(mode=0o700)
+            target=Path(tmp)/'keep.txt';target.write_text('keep this')
+            (directory/'service.log').symlink_to(target)
+            c=MemoryClient(directory);self.addCleanup(c.stop)
+            process=MagicMock();process.poll.return_value=1
+            with patch('memory_client.subprocess.Popen',return_value=process):c._start()
+            self.assertEqual(target.read_text(),'keep this')
+
+    def test_controls_wait_for_the_full_service_startup_window(self):
+        c=MemoryClient('/tmp/unused');self.addCleanup(c.stop)
+        c.started=True;c.ready=MagicMock()
+        c._request('pause',{},'pause-1',c.generation)
+        self.assertGreaterEqual(c.ready.wait.call_args.args[0],45)
+
     def test_unconsumed_requests_are_bounded(self):
         c=MemoryClient('/tmp/unused');c.executor.shutdown();c.controls.shutdown();c.executor=HeldExecutor();c.controls=HeldExecutor();c.started=True
         for i in range(100):c.request('get_project_context',{'project_id':'p'},i)

@@ -29,6 +29,11 @@ def _sha256(path):
     return h.hexdigest()
 
 
+def MANIFEST_LAYOUTS(model,tag):
+    # Ollama before 0.40 keeps manifests under registry.ollama.ai; newer versions under manifests-v2/ollama.com.
+    return {('manifests','registry.ollama.ai','library',model,tag),('manifests-v2','ollama.com','library',model,tag)}
+
+
 def validate_manifest(manifest):
     if (manifest.runtime!='ollama-local' or manifest.model_id not in CANDIDATES
         or manifest.dimension!=CANDIDATES[manifest.model_id] or manifest.max_input_tokens!=512
@@ -38,7 +43,7 @@ def validate_manifest(manifest):
     if not path.is_absolute() or not path.is_file() or path.stat().st_size>32768:
         raise ValueError('Local model assets required')
     model,tag=manifest.model_id.split(':')
-    if tuple(path.parts[-5:])!=('manifests','registry.ollama.ai','library',model,tag) or _sha256(path)!=manifest.digest:
+    if tuple(path.parts[-5:]) not in MANIFEST_LAYOUTS(model,tag) or _sha256(path)!=manifest.digest:
         raise ValueError('Embedding manifest digest/path mismatch')
     doc=json.loads(path.read_text());layers=doc.get('layers',[])
     if not layers or not any(l.get('mediaType')=='application/vnd.ollama.image.model' for l in layers):
@@ -75,7 +80,13 @@ class OllamaEmbeddingBackend:
         if any(not isinstance(t,str) or not t or len(t.encode())>cap for t in texts):
             raise ValueError('Invalid embedding input')
         # MiniLM uses symmetric sentence embeddings: no query/document prefix.
-        response=self._post({'model':self.manifest.model_id,'input':list(texts),'truncate':False,'keep_alive':'30s'})
+        payload={'model':self.manifest.model_id,'input':list(texts),'truncate':False,'keep_alive':'30s'}
+        try:response=self._post(payload)
+        except ValueError as error:
+            # MiniLM reads about 256 tokens; dense code in a 1 KB chunk can exceed that. Embed the part it can read
+            # (keyword search still covers the whole chunk) instead of failing the item for good.
+            if 'rejected' not in str(error):raise
+            response=self._post({**payload,'truncate':True})
         if self.cancelled.is_set():raise RuntimeError('Embedding cancelled')
         try:matrix=np.asarray(response['embeddings'],dtype=np.float32)
         except (KeyError,TypeError,ValueError) as error:raise ValueError('Invalid embeddings') from error

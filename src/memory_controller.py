@@ -6,7 +6,7 @@ class MemoryController:
     def __init__(self,client,items,save):
         self.client=client;self.items=items;self.save=save;self.state=new_memory_state()
         self.bindings=[];self.status={};self.pending={};self.serial=0;self.last_poll=0;self.ui_project=None
-        self.agents={}
+        self.agents={};self.notice=None;self.notice_version=0;self.seen_notice=0;self.vscode_restart=False
     @property
     def agent(self):
         return next((a for a in self.agents.values() if self.binding and self.binding['project_id'] in a['project_ids'] and a.get('client_id','Codex')=='Codex'),None)
@@ -20,11 +20,58 @@ class MemoryController:
         changed=self.ui_project!=ui_project;self.ui_project=ui_project
         self.state=memory_reduce(self.state,'select_project',{'project_id':ui_project})
         if changed and self.binding and self.state['tab']=='Memory':self.action('submit',{})
-    def view(self):return memory_view(self.state,self.binding,self.status if self.binding else {'state':'Disabled'},self.state['result'])
+    def set_notice(self,text,error=False,kind=None):
+        self.notice=(text,error,kind) if text else None;self.notice_version+=1
+    def install_extension(self):
+        # Built and installed by the app itself: it touches no memory data, and the service
+        # hides error details from the app, which would hide why an install failed.
+        import threading
+        from pathlib import Path
+        self.set_notice('Installing…',False,'install_extension')
+        directory=Path(self.client().directory).parent
+        def work():
+            try:
+                from semantic_memory.model_setup import install_extension,vscode_running
+                install_extension(directory);self.vscode_restart=vscode_running()
+                self.set_notice('Installed. In VS Code run Developer: Reload Window once, then press Connect.' if self.vscode_restart else 'Extension installed. Press Connect to continue.',False,'install_extension')
+            except ValueError as error:self.set_notice(str(error),True,'install_extension')
+            except Exception:self.set_notice('Could not install the VS Code extension.',True,'install_extension')
+        threading.Thread(target=work,daemon=True).start()
+    def connect_extension(self):
+        # Open the approved connect URI without closing unrelated editor windows.
+        import subprocess,threading,urllib.parse
+        from pathlib import Path
+        if self.status.get('state')=='Paused':
+            self.set_notice('Memory is paused. Resume it in the Folder row above, then press Connect.',True,'connect_extension');return
+        self.set_notice('Connecting…',False,'connect_extension')
+        grant=str(Path(self.client().directory)/'bridge'/'grant.json')
+        def work():
+            try:
+                subprocess.run(['pbcopy'],input=grant.encode(),timeout=5)
+                self.vscode_restart=False
+                subprocess.run(['open','vscode://lmemm.lmemm-source/connect?grant='+urllib.parse.quote(grant)],timeout=10,check=True)
+                self.set_notice('Opened VS Code. Choose Allow there to finish.',False,'connect_extension')
+            except ValueError as error:self.set_notice(str(error),True,'connect_extension')
+            except Exception:self.set_notice('Could not open VS Code. The path is copied: in VS Code run “LMemM: Connect Project Memory” and paste it.',True,'connect_extension')
+        threading.Thread(target=work,name='memory-connect',daemon=True).start()
+    def view(self):
+        status=dict(self.status) if self.binding else {'state':'Disabled'}
+        if self.binding and 'source_connected_project_ids' in status:
+            status['source_connected']=self.binding['project_id'] in status['source_connected_project_ids']
+        view=memory_view(self.state,self.binding,status,self.state['result'])
+        view['notice']=self.notice;view['agent_connected']=self.agent is not None
+        try:
+            from semantic_memory.model_setup import extension_installed
+            view['extension_installed']=extension_installed()
+        except Exception:view['extension_installed']=False
+        return view
     def action(self,action,payload=None):
         payload=payload or {}
         if action=='enroll':self.send('enroll',{'ui_project_id':self.ui_project,'root':payload['root']},'enroll');return
-        if action in {'pause','resume','install_model','install_extension','recover_native_notes'}:self.send(action,{},action);return
+        if action=='install_extension':self.install_extension();return
+        if action=='reconnect_extension':self.connect_extension();return
+        if action=='install_model':self.set_notice('Starting…',False,'install_model')
+        if action in {'pause','resume','install_model','recover_native_notes'}:self.send(action,{},action);return
         if action=='refresh':
             retry=getattr(self.client(),'retry',None)
             if retry:retry()
@@ -73,13 +120,17 @@ class MemoryController:
             if not entry:continue
             kind,token=entry;changed=True
             if kind=='read':self.state=memory_reduce(self.state,'response',dict(request=token,result=event.get('result'),error=event.get('error')))
-            elif event.get('error'):self.state['error']=event['error']
+            elif event.get('error'):
+                if kind=='install_model':self.set_notice('Could not start the model install. Refresh Memory and try again.',True,kind)
+                else:self.state['error']=event['error']
             elif kind=='bindings':
                 self.bindings=event['result']
                 if not self.binding:self.state=memory_reduce(self.state,'revoke',{})
             elif kind=='status':
                 previous=(self.status.get('service_epoch'),self.status.get('policy_revision'),self.status.get('index_generation'))
                 self.status=event['result']
+                if self.notice and self.notice[2]=='connect_extension' and self.binding and self.binding['project_id'] in self.status.get('source_connected_project_ids',[]):self.set_notice(None)
+                if self.notice and self.notice[2]=='install_model' and (self.status.get('model_install') or self.status.get('model_state')=='available'):self.set_notice(None)
                 current=(self.status.get('service_epoch'),self.status.get('policy_revision'),self.status.get('index_generation'))
                 if current!=previous:
                     self.state=memory_reduce(self.state,'generation',{'generation':current})
@@ -102,6 +153,7 @@ class MemoryController:
                 self.last_poll=0
                 if kind=='enroll':self.bindings=[b for b in self.bindings if b['ui_project_id']!=event['result']['ui_project_id']]+[event['result']]
                 if kind in {'enroll','recover_native_notes','resume'}:self.action('submit',{})
+        if self.seen_notice!=self.notice_version:self.seen_notice=self.notice_version;changed=True
         if self.ui_project and time.monotonic()-self.last_poll>2:
             self.last_poll=time.monotonic();self.send('bindings',{},'bindings');self.send('status',{},'status');self.send('agent_connections',{},'agents')
         return changed

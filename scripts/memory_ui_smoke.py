@@ -20,11 +20,20 @@ actions=[]
 w=window.MainWindow(lambda *a:None,lambda:(reg,items),on_memory=lambda *a:actions.append(a),memory_view=lambda _:snapshot)
 w.nav=page_model.press(reg,w.nav,'go',pid)
 w.show(window_model.view({'screen':True}));app.activateIgnoringOtherApps_(True)
-for label in ['disabled','ready','processing','paused','error','source','overview']:
+for label in ['disabled','ready','processing','paused','error','source','overview','settings','settings-paused','settings-error']:
     state['tab']='Overview' if label=='overview' else 'Memory'
     status={'state':{'disabled':'Disabled','processing':'Processing','paused':'Paused','error':'Needs attention'}.get(label,'Ready'),'model_state':'missing' if label=='disabled' else 'available','enrolled_at':'2026-10-10T09:00:00Z','indexed_at':'2026-10-10T10:21:00Z','pending':2 if label=='processing' else 0}
     state['source']={'text':'We decided to use local embeddings because project evidence stays on device.','locator':'/synthetic/lmemm-mvp/notes.md','at':'2026-10-10T10:00:00Z','citation_id':'synthetic-1','can_open_file':False,'origin_type':'user_note','truncated':False} if label=='source' else None
     snapshot=memory_view(state,None if label=='disabled' else binding,status,result)
+    snapshot['extension_installed']=True
+    if label.startswith('settings'):
+        w.memory_pane.settings=True
+        if label=='settings-paused':
+            snapshot['state']='Paused';snapshot['status']['source_connected']=True
+        if label=='settings-error':
+            snapshot['state']='Needs attention';snapshot['message']='Local model unavailable. Keyword search is available.'
+            snapshot['status']['model_state']='missing'
+    elif w.memory_pane:w.memory_pane.settings=False
     w.shown=None;w.render()
     for _ in range(8):macos.next_event(app,.05)
     import Quartz

@@ -178,9 +178,13 @@ class ServiceTests(unittest.TestCase):
         self.addCleanup(self.service.close)
         self.assertIsNone(self.service.backend)
         self.assertEqual(self.service.status()['model_state'],'missing')
+        self.service.pause()
         with patch.object(self.service.runtime,'ensure',side_effect=ValueError('Port occupied')):
-            with self.assertRaises(ValueError):self.service.resume()
+            self.service.resume()
         self.assertIsNone(self.service.backend)
+        self.assertEqual(self.service.status()['state'],'Needs attention')
+        from semantic_memory.index_worker import paused
+        self.assertFalse(paused(self.service.store))
 
     def test_model_upgrade_recovers_on_both_sides_of_generation_commit(self):
         import dataclasses,json,numpy as np
@@ -249,6 +253,8 @@ class ServiceTests(unittest.TestCase):
         self.service.tick()
         self.assertEqual(self.service.store.count('sources'),1)
         self.assertTrue(read_private_json(bridge.directory/'acks'/(client+'.json'))['accepted'])
+        connected=self.service.status()['source_connected_project_ids']
+        self.assertEqual(connected,[self.enroll()['project_id']])
 
     def test_challenge_closing_after_ack_keeps_same_native_window_verified(self):
         from dataclasses import replace

@@ -119,6 +119,7 @@ class Bridge:
             for s in spans:
                 if not isinstance(s['text'],str) or len(s['text'].encode())>4096 or type(s.get('truncated',False))!=bool: return None
             if sum(len(s['text'].encode()) for s in spans)>16384: return None
+            old['workspace']=str(root)
             note_id=None;source_at=at
             if m['kind']=='note':
                 note_id=m.get('note_id');source_at=m.get('note_at')

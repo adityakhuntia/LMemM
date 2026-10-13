@@ -43,3 +43,11 @@ Original crash-sequence reproduction, a measured paired 30-minute resource run
 and three external testers are still pending. No full launch acceptance is claimed.
 Latest regression suite: 815 Python tests and 6 Node extension tests pass.
 See the updated [handover](../../../../handover.md) for a reproducible live demo.
+
+2026-10-13 readiness remediation: cofounder setup improvements are integrated
+locally with all five audit concerns resolved. Requirements installed into a
+fresh Python 3.11 environment; all 839 Python tests and six extension tests pass.
+Ten native synthetic UI states rendered, including settings and recovery.
+[Refreshed held-out retrieval](readiness-held-out.json) remains hybrid 20/20
+Recall@5 (exact 10/10, paraphrase 10/10), using the owned installed local model.
+This does not replace fresh second-Mac permissions/setup or pending launch gates.

@@ -41,7 +41,7 @@ class MemoryService:
         try:fcntl.flock(self.lock_fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BaseException:os.close(self.lock_fd);raise
         self.closed=False;self.bridge=None;self.roots_dirty=True;self.backend=None;self.model_manifest=None
-        self.model_thread=None;self.model_error=None;self.last_retention=clock();self.last_focus=None;self.system_flags=set()
+        self.model_thread=None;self.model_error=None;self.install_state=None;self.install_message=None;self.install_started=None;self.last_retention=clock();self.last_focus=None;self.system_flags=set()
         self.focus_provider=focus_provider or (lambda:focused_context(excluded_pids={os.getpid(),os.getppid()}))
         from .embedding_runtime import load_backend
         self.backend_factory=backend_factory or load_backend
@@ -81,8 +81,8 @@ class MemoryService:
                     self.backend=self.backend_factory(self.model_manifest)
                     if self.runtime:self.runtime.ensure()
                     self._ensure_model_generation(self.model_manifest)
-                except (OSError,ValueError):
-                    self.backend=None;self.model_error='Local model unavailable'
+                except (OSError,ValueError) as error:
+                    self.backend=None;self.model_error=self._model_reason(error)
         except BaseException:
             if hasattr(self,'store'):self.store.close()
             os.close(self.lock_fd);raise
@@ -222,12 +222,14 @@ class MemoryService:
     def install_model(self):
         if not self.runtime:raise ValueError('Local runtime unavailable')
         if self.setup_thread and self.setup_thread.is_alive():return {'state':'Processing'}
-        self.model_error='Installing local model'
+        self.install_state='installing';self.install_message=None;self.install_started=time.monotonic();self.runtime.progress=None
         def install():
             try:
                 manifest=self.runtime.install()
                 if not self.closed:self.configure_model(dataclasses.asdict(manifest))
-            except Exception:self.model_error='Local model installation failed; check Ollama and retry'
+                self.install_state=None
+            except ValueError as error:self.install_state='failed';self.install_message=str(error)[:200]
+            except Exception:self.install_state='failed';self.install_message='Local model installation failed; check Ollama and retry'
         self.setup_thread=threading.Thread(target=install,daemon=True);self.setup_thread.start()
         return {'state':'Processing'}
 
@@ -263,19 +265,32 @@ class MemoryService:
         self._sync_bridge_pause()
         return {'state':'Paused'}
 
+    @staticmethod
+    def _model_reason(error):
+        text=str(error)
+        return 'Local model unavailable: '+text if text and len(text)<160 else 'Local model unavailable'
+
+    def _retry_model(self):
+        # 'Try again' must actually retry the local model, not only requeue jobs.
+        if not self.model_manifest:return
+        try:
+            if self.runtime:self.runtime.ensure()
+            self.backend=self.backend_factory(self.model_manifest)
+            self._ensure_model_generation(self.model_manifest)
+            self.model_error=None
+        except (OSError,ValueError) as error:
+            self.backend=None;self.model_error=self._model_reason(error)
+
     def resume(self):
         if self.system_flags:raise ValueError('Resume after unlocking or waking the Mac')
         if self.model_thread and self.model_thread.is_alive():raise ValueError('Wait for cancelled indexing to finish')
-        if self.model_manifest:
-            if self.runtime:self.runtime.ensure()
-            self.backend=self.backend_factory(self.model_manifest)
-            self.model_error=None
+        self._retry_model()
         with self.store.transaction() as c:
             c.execute("DELETE FROM meta WHERE key='memory_paused'")
             c.execute("UPDATE index_jobs SET state='queued',error=NULL WHERE state IN ('running','failed')")
             bump_revision(c)
         self._sync_bridge_pause()
-        return {'state':'Processing' if self.backend else 'Ready'}
+        return {'state':'Needs attention' if self.model_error else 'Processing' if self.backend else 'Ready'}
 
     def _sync_bridge_pause(self):
         # Pause changes intake authority, not the approved source connection.
@@ -296,7 +311,7 @@ class MemoryService:
             enrolled=c.execute('SELECT min(enrolled_at) FROM project_bindings WHERE active=1').fetchone()[0]
             is_paused=paused(self.store)
             pending+=c.execute('SELECT count(*) FROM note_fences').fetchone()[0]
-            reason='Paused by user' if is_paused else self.model_error
+            reason='Paused by user' if is_paused else self.model_error or ('%d saved item%s could not be indexed for meaning search (the local model failed). Keyword search still works.'%(failed,'' if failed==1 else 's') if failed else None)
             state='Paused' if is_paused else 'Needs attention' if failed or self.model_error else 'Processing' if pending else 'Ready' if enrolled else 'Disabled'
             journal=self.directory/'native-notes.pending.json'
             if not is_paused and journal.exists() and read_private_json(journal).get('phase')=='preparing':
@@ -304,6 +319,18 @@ class MemoryService:
             generation=active_generation(self.store)
             value=dataclasses.asdict(MemoryStatus(state,reason,generation['created_at'] if generation else None,enrolled,pending,failed,'available' if self.backend else 'missing',first,memory_usage(self.store)['total_bytes']))
             from .grants import revision
+            elapsed=int(time.monotonic()-self.install_started) if self.install_state=='installing' and self.install_started else None
+            connected_roots=set()
+            if self.bridge:
+                for client in list(self.bridge.clients.values()):
+                    if not client.get('disconnected') and (is_paused or self.bridge.clock()-client['at']<=2):
+                        if client.get('workspace'):connected_roots.add(client['workspace'])
+            connected_projects=sorted(row['project_id'] for row in c.execute(
+                'SELECT project_id,workspace_root FROM project_bindings WHERE active=1')
+                if row['workspace_root'] in connected_roots)
+            value.update(source_connected=bool(connected_projects),source_connected_project_ids=connected_projects,
+                         model_install=self.install_state,model_install_message=self.install_message,
+                         model_install_percent=getattr(self.runtime,'progress',None),model_install_seconds=elapsed)
             value.update(service_epoch=self.service_epoch,policy_revision=revision(c),index_generation=generation['id'] if generation else None)
             return value
 

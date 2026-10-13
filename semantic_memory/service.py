@@ -81,7 +81,8 @@ class MemoryService:
                     self.backend=self.backend_factory(self.model_manifest)
                     if self.runtime:self.runtime.ensure()
                     self._ensure_model_generation(self.model_manifest)
-                except (OSError,ValueError):self.model_error='Local model unavailable'
+                except (OSError,ValueError):
+                    self.backend=None;self.model_error='Local model unavailable'
         except BaseException:
             if hasattr(self,'store'):self.store.close()
             os.close(self.lock_fd);raise
@@ -265,7 +266,10 @@ class MemoryService:
     def resume(self):
         if self.system_flags:raise ValueError('Resume after unlocking or waking the Mac')
         if self.model_thread and self.model_thread.is_alive():raise ValueError('Wait for cancelled indexing to finish')
-        if self.model_manifest:self.backend=self.backend_factory(self.model_manifest)
+        if self.model_manifest:
+            if self.runtime:self.runtime.ensure()
+            self.backend=self.backend_factory(self.model_manifest)
+            self.model_error=None
         with self.store.transaction() as c:
             c.execute("DELETE FROM meta WHERE key='memory_paused'")
             c.execute("UPDATE index_jobs SET state='queued',error=NULL WHERE state IN ('running','failed')")

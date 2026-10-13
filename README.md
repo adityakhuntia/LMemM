@@ -12,13 +12,22 @@ benchmark is separate and remains disabled in capture.
 
 ## Setup (once)
 
-macOS only. From the repository root:
+macOS only, with **Python 3.10 or newer** (the pinned MCP dependency requires it).
+Check `python3 --version` before creating the environment; an older system Python
+will not install this project's full dependencies. From the repository root:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 python3 -m pip install -r requirements.txt
 ```
+
+Project Memory's semantic search also requires a separately installed **Ollama**
+runtime and its explicitly downloaded local embedding model; pip does not install
+them. Standard **Visual Studio Code** plus LMemM's source extension is required for
+visible editor capture. See the [Project Memory setup runbook](docs/hybrid-memory-runbook.md)
+for enrollment, model installation and connecting the extension. Keyword recall
+of retained notes works without the embedding model.
 
 Then give the app you launch it from (Terminal, iTerm, VS Code…) these permissions in
 **System Settings → Privacy & Security**, and quit/reopen that app:

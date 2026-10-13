@@ -70,7 +70,7 @@ class NoteSyncTests(unittest.TestCase):
         note=self.save_note();note['text']='Rollback test results are attached.'
         native_store.save_memory(self.items);self.service.tick()
         self.assertEqual(self.packet()['open_tasks'],[])
-        result=self.service.serve_request(self.service.owner_capability,'search_project_memory',{'project_id':self.binding['project_id'],'query':'Rollback'})
+        result=self.service.serve_request(self.service.owner_capability,'search_project_memory',{'project_id':self.binding['project_id'],'query':'Rollback','start':'2026-10-01T00:00:00+00:00','end':'2026-11-01T00:00:00+00:00'})
         self.assertEqual(result['primary'][0]['text'],'Rollback test results are attached.')
 
     def test_pending_save_is_not_consumed_while_native_writer_holds_lock(self):

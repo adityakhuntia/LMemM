@@ -2,6 +2,13 @@
 
 Updated 2026-10-11. Read [current context](docs/current-context.md), [runbook](docs/hybrid-memory-runbook.md), and [acceptance](docs/benchmarks/project-memory/hybrid-mvp/acceptance.md).
 
+2026-10-13 portability/lifecycle follow-up: see the
+[systematic audit](docs/2026-10-13-memory-portability-audit.md). Main now has two
+additional runtime failure fixes and 817 passing Python tests. Cofounder setup
+fixes at `b84f6db` are on `origin/claude/project-thread-1wwhgq`, not main; the audit
+records remaining issues to resolve before integrating that branch. These audit
+changes are committed locally; publication is separate from the October 11 push.
+
 Work in the root checkout on **main**, per the user's explicit request. Remote main was fetched and verified as an ancestor before this delivery. Publication is authorized. Preserve untracked user `context.md` and its integration safety stash. The old feature worktree remains a checkpoint with local assets; never stage its environment files or force-clean it.
 
 The hybrid MVP backend, private supervised service, durable native-note sync, native Overview/Memory UI and official SDK MCP adapter are implemented. Latest verification: **815 Python tests and 6 Node tests pass**. Synthetic native screenshots, held-out retrieval (20/20 Recall@5), fresh assertion precision (8/8 supported), 10k full-search probe (0.251s p95), and an actual synthetic-only hosted Codex resume are recorded. These synthetic benchmarks are not guarantees for arbitrary personal data.

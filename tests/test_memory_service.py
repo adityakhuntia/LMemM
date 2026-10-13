@@ -163,6 +163,25 @@ class ServiceTests(unittest.TestCase):
         import json
         self.assertEqual(json.loads(generation['manifest']),dataclasses.asdict(manifest))
 
+    def test_failed_owned_runtime_start_disables_embedding_backend(self):
+        import dataclasses
+        from types import SimpleNamespace
+        from semantic_memory.live_bridge import write_private_json
+        from test_memory_embeddings import local_manifest
+        manifest=local_manifest(Path(self.tmp.name)/'runtime-weights')
+        self.service.close()
+        write_private_json(self.directory/'model.json',dataclasses.asdict(manifest))
+        backend=SimpleNamespace(cancel=lambda:None)
+        with patch('semantic_memory.embedding_runtime.load_backend',return_value=backend), \
+             patch('semantic_memory.model_setup.OwnedEmbeddingRuntime.ensure',side_effect=ValueError('Port occupied')):
+            self.service=MemoryService(self.directory,focus_provider=lambda:None)
+        self.addCleanup(self.service.close)
+        self.assertIsNone(self.service.backend)
+        self.assertEqual(self.service.status()['model_state'],'missing')
+        with patch.object(self.service.runtime,'ensure',side_effect=ValueError('Port occupied')):
+            with self.assertRaises(ValueError):self.service.resume()
+        self.assertIsNone(self.service.backend)
+
     def test_model_upgrade_recovers_on_both_sides_of_generation_commit(self):
         import dataclasses,json,numpy as np
         from types import SimpleNamespace

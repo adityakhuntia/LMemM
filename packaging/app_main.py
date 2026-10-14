@@ -1,6 +1,16 @@
 """Entry point of LMemM.app: the same as `python3 lmemm.py start`, with no terminal menu."""
+import locale
 import os
 import sys
+
+# An app starts with the "C" locale, so open() would read memory.json as ASCII (and the launcher
+# ignores PYTHONUTF8). Switching the character locale makes the default encoding UTF-8 again.
+for _loc in ("en_US.UTF-8", "UTF-8", "C.UTF-8"):
+    try:
+        locale.setlocale(locale.LC_CTYPE, _loc)
+        break
+    except locale.Error:
+        continue
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # alias build: the app points back at this repo (…/LMemM/packaging); a standalone build keeps lmemm.py beside it

@@ -18,6 +18,12 @@ RED_ON_LIGHT_PILL = (0.74, 0.22, 0.14)
 ORANGE_TEXT_ON_LIGHT = (0.75, 0.30, 0.02)     # orange words on the light card ("Listening")
 ORANGE_TEXT_ON_DARK = ORANGE_ON_DARK_PILL     # ... and on the dark card
 
+# green, orange and red words on the light card (the system colours are 2.1, 2.1 and 3.4 : 1 there); dark mode keeps the system ones
+GREEN_TEXT_ON_LIGHT = (0.10, 0.52, 0.22)
+ORANGE_STATUS_ON_LIGHT = (0.75, 0.30, 0.02)
+RED_TEXT_ON_LIGHT = (0.80, 0.15, 0.12)
+TOAST_LIGHT, TOAST_DARK = 0.12, 0.22                   # the toast's grey in each mode (the dark page is 0.133)
+
 ACCENT = (0.17, 0.40, 0.92)                    # buttons: white text on this
 ACCENT_TEXT_ON_LIGHT = ACCENT                  # blue words on the light card
 ACCENT_TEXT_ON_DARK = (0.40, 0.60, 1.0)        # blue words on the dark card (a lighter blue)

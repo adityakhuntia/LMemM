@@ -8,6 +8,20 @@ from memory_view import ADMIN_GROUPS, evidence_rows, pause_action, source_presen
 from widget import _Fields, _Flipped, _Tap
 
 
+def when(stamp, empty):
+    """An ISO time as words for a person ("Oct 14, 6:03 PM", in their time zone); `empty` when there is none."""
+    if not stamp:
+        return empty
+    try:
+        from datetime import datetime
+        moment = datetime.fromisoformat(str(stamp).replace('Z', '+00:00'))
+        if moment.tzinfo is not None:
+            moment = moment.astimezone()
+        return moment.strftime('%b %-d, %-I:%M %p')
+    except (ValueError, TypeError):
+        return str(stamp)
+
+
 class _StateDot(_Flipped):
     """The small round dot beside the state."""
 
@@ -110,8 +124,8 @@ class MemoryPane:
         text(view['message'], 13, 400, kit.mute(), gap=8)
         status = view.get('status', {})
         if binding:
-            text('Enrolled ' + str(status.get('enrolled_at') or binding.get('enrolled_at', 'unknown')) + ' · last indexed '
-                 + str(status.get('indexed_at') or 'not yet') + ' · ' + str(status.get('pending', 0)) + ' waiting',
+            text('Enrolled ' + when(status.get('enrolled_at') or binding.get('enrolled_at'), 'unknown') + ' · last indexed '
+                 + when(status.get('indexed_at'), 'not yet') + ' · ' + str(status.get('pending', 0)) + ' waiting',
                  12, 400, kit.mute())
         if view.get('error'):
             y += kit.note(host, 'warn', str(view['error']), x, y, w) + 12

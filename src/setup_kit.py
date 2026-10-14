@@ -48,6 +48,20 @@ def accent_text():
         return accent()
 
 
+def status_text(kind):
+    """Green, orange or red *words*: the system colour in dark mode, a deeper one on the light card so it reads."""
+    light = {"green": palette.GREEN_TEXT_ON_LIGHT, "orange": palette.ORANGE_STATUS_ON_LIGHT, "red": palette.RED_TEXT_ON_LIGHT}[kind]
+    system = {"green": NSColor.systemGreenColor, "orange": NSColor.systemOrangeColor, "red": NSColor.systemRedColor}[kind]
+    try:
+        def pick(appearance):
+            dark = appearance.bestMatchFromAppearancesWithNames_(["NSAppearanceNameAqua", "NSAppearanceNameDarkAqua"]) \
+                == "NSAppearanceNameDarkAqua"
+            return system() if dark else NSColor.colorWithRed_green_blue_alpha_(*light, 1.0)
+        return NSColor.colorWithName_dynamicProvider_(None, pick)
+    except Exception:
+        return system()
+
+
 def ink():
     return NSColor.labelColor()
 
@@ -195,6 +209,11 @@ def put_text(parent, text, x, y, w, size=15, weight=400, color=None, align=LEFT,
         text, size, weight, color or ink(), align, wrap, middle)
     view.setFrame_(NSMakeRect(x, y, w, h))
     parent.addSubview_(view)
+    try:
+        if not wrap and text and text_width(text, size, weight) > w + 1 and not parent.toolTip():
+            parent.setToolTip_(text)                 # a cut-off name can still be read (the text view itself takes no mouse)
+    except Exception:
+        pass
     return h
 
 

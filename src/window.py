@@ -22,6 +22,7 @@ import motion
 import notes
 import keynav
 import page_model
+import palette
 import project_actions
 import rules
 import setup_kit as kit
@@ -37,6 +38,15 @@ PAD = 32
 MIN_MAIN, MAX_MAIN = 560, 980                          # the page's reading column: it grows with the window, up to this
 TOP = 32                                               # below the title bar
 TONES = {"red": "red", "grey": None, "calm": None}      # the banner box's tone (red is only for what is off)
+
+
+def _is_dark():
+    try:
+        match = NSApplication.sharedApplication().effectiveAppearance().bestMatchFromAppearancesWithNames_(
+            ["NSAppearanceNameAqua", "NSAppearanceNameDarkAqua"])
+        return match == "NSAppearanceNameDarkAqua"
+    except Exception:
+        return False
 
 
 def hue_color(hue):
@@ -519,11 +529,11 @@ class MainWindow:
         width = min(kit.text_width(text, 13, 500) + (74 if undoable else 36), self.main_w)
         self.toast_host.setFrame_(NSMakeRect(SIDE_W + (self.W - SIDE_W - width) / 2, self.H - bar - 54, width, 36))
         pill = self._tap(self.toast_host, 0, 0, width, 36, None)
-        pill.tint = NSColor.colorWithWhite_alpha_(0.12, 0.94)
+        pill.tint = NSColor.colorWithWhite_alpha_(palette.TOAST_DARK if _is_dark() else palette.TOAST_LIGHT, 0.96)       # dark page is 0.133: lift the toast so it has an edge
         kit.put_text(pill, text, 18, 0, width - 36, 13, 500, NSColor.whiteColor(), wrap=False, height=36, middle=True)
         if undoable:
             link = self._tap(pill, width - 62, 0, 56, 36, undo)
-            kit.put_text(link, "Undo", 0, 0, 56, 13, 600, NSColor.colorWithRed_green_blue_alpha_(0.55, 0.75, 1.0, 1.0),
+            kit.put_text(link, "Undo", 0, 0, 56, 13, 600, NSColor.colorWithRed_green_blue_alpha_(*palette.ACCENT_TEXT_ON_DARK, 1.0),
                          align=kit.CENTER, wrap=False, height=36, middle=True)
         if arriving:
             motion.pop(self.toast_host, origin="center")
@@ -710,10 +720,12 @@ class MainWindow:
         self.dlg_field.setHidden_(True)
         if d is None:
             return
-        scrim = self._tap(self.overlay, 0, 0, self.W, self.H, self.close_dialog)
+        forms = d["kind"] in ("name", "pick", "tpick", "appick")      # a click outside must not throw away what was typed
+        scrim = self._tap(self.overlay, 0, 0, self.W, self.H, None if forms else self.close_dialog)
         scrim.tint = NSColor.colorWithWhite_alpha_(0.0, 0.32)
         scrim.washes = False                                         # a backdrop does not light up under the pointer
-        cw, cx, cy = 460, (self.W - 460) / 2, 120
+        cw, cx = 460, (self.W - 460) / 2
+        cy = max(16, min(120, (self.H - 520) // 2))                  # a tall picker still ends inside the smallest window
         card = self._tap(self.overlay, cx, cy, cw, 100, None)
         card.tint = kit.card_background()
         reg = self._reg()
@@ -990,7 +1002,7 @@ class MainWindow:
             if action=='choose_root':
                 from AppKit import NSOpenPanel
                 panel=NSOpenPanel.openPanel();panel.setCanChooseDirectories_(True);panel.setCanChooseFiles_(False);panel.setAllowsMultipleSelection_(False)
-                panel.setMessage_('Enable Memory for one workspace. Retain only new approved visible excerpts and project notes.')
+                panel.setMessage_('Choose the folder for this project. LMemM will keep only new text you view there and the notes you add.')
                 panel.setPrompt_('Enable Memory')
                 def chosen(result):                          # a sheet on this window: it cannot open out of sight, and the app never blocks
                     if result==1:self._memory_dispatch('enroll',{'root':str(panel.URL().path())})
@@ -998,14 +1010,18 @@ class MainWindow:
                 panel.beginSheetModalForWindow_completionHandler_(self.window,chosen);return
             elif action in {'confirm_model','confirm_agent','confirm_disconnect'}:
                 from AppKit import NSAlert
-                titles={'confirm_model':'Install local semantic search?', 'confirm_agent':'Allow Codex to read this project’s memory?', 'confirm_disconnect':'Disconnect project Memory?'}
-                details={'confirm_model':'Download approximately 46 MB of MiniLM weights to LMemM’s embedding-models folder. The cloud-disabled local Ollama runtime must already be installed. No source text is sent during installation.',
-                         'confirm_agent':'Codex can search retained project excerpts and intentional notes, read cited context, and resolve sources. Invoking these tools sends that text to the agent and its configured provider. Capture permission is separate. You can revoke access here.',
-                         'confirm_disconnect':'Stop source capture and revoke all agent grants containing this project. Retained data remains local; it becomes inaccessible until explicitly re-enabled.'}
-                alert=NSAlert.alloc().init();alert.setMessageText_(titles[action]);alert.setInformativeText_(details[action]);alert.addButtonWithTitle_('Continue');alert.addButtonWithTitle_('Cancel')
+                titles={'confirm_model':'Install the search model?', 'confirm_agent':'Let Codex read this project’s memory?', 'confirm_disconnect':'Disconnect project Memory?'}
+                details={'confirm_model':'This downloads about 46 MB to LMemM’s own folder and needs the local Ollama app to be installed. None of your text is sent while it installs.',
+                         'confirm_agent':'Codex will be able to search the excerpts and notes LMemM kept for this project and read them. When it does, that text goes to Codex and the service behind it. Screen capture is a separate permission. You can take this back here.',
+                         'confirm_disconnect':'LMemM stops remembering this project and every app you connected to it loses access. What was already kept stays on this Mac, but nothing can read it until you turn Memory on again.'}
+                verbs={'confirm_model':'Install', 'confirm_agent':'Allow Codex', 'confirm_disconnect':'Disconnect'}
+                careful=action=='confirm_disconnect'                  # Return must not run the one that cuts things off
+                alert=NSAlert.alloc().init();alert.setMessageText_(titles[action]);alert.setInformativeText_(details[action])
+                if careful:alert.addButtonWithTitle_('Cancel');alert.addButtonWithTitle_(verbs[action])
+                else:alert.addButtonWithTitle_(verbs[action]);alert.addButtonWithTitle_('Cancel')
                 target={'confirm_model':'install_model','confirm_agent':'connect_agent','confirm_disconnect':'disconnect'}[action]
                 def answered(result):
-                    if result==1000:self._memory_dispatch(target,{'approved':True})
+                    if result==(1001 if careful else 1000):self._memory_dispatch(target,{'approved':True})
                 self.window.makeKeyAndOrderFront_(None)
                 alert.beginSheetModalForWindow_completionHandler_(self.window,answered);return
             elif action=='toggle_admin':
@@ -1017,6 +1033,7 @@ class MainWindow:
                 preview=self.memory_snapshot.get('preview')
                 if preview:
                     paste=NSPasteboard.generalPasteboard();paste.clearContents();paste.setString_forType_(json.dumps(preview,ensure_ascii=False,indent=2),'public.utf8-plain-text')
+                    self.done={"message":"Copied the context preview","undo":None,"until":time.time()+3};self.render_now()
                 return
             elif action=='reconnect_extension':
                 from AppKit import NSAlert,NSPasteboard
@@ -1559,7 +1576,7 @@ class MainWindow:
             tw = (w - gap * (len(page["stats"]) - 1)) / len(page["stats"])
             for i, (k, v) in enumerate(page["stats"]):
                 tile = self._tap(doc, x + i * (tw + gap), y, tw, 62, None, fill=True)
-                kit.put_text(tile, k.upper(), 14, 11, tw - 28, 10, 600, kit.mute(), wrap=False, height=14)
+                kit.put_text(tile, k.upper(), 14, 11, tw - 28, 11, 600, kit.mute(), wrap=False, height=14)
                 kit.put_text(tile, v, 14, 28, tw - 28, 17, 700, wrap=False, height=26)
             y += 62 + 22
         y = self._section(doc, f"Notes · {page['open_count']} open", x, y, w)
@@ -1598,6 +1615,7 @@ class MainWindow:
         tap = self._tap(box, 0, 0, 40, 44, (lambda i=n["id"], d=n["done"]: self.tick_note(i, not d)))
         tap.checked, tap.ax_label = bool(n["done"]), n["text"]
         ring = _Ring.alloc().initWithChecked_(n["done"])
+        ring.blue = True
         ring.setFrame_(NSMakeRect(14, 13, 17, 17))
         tap.addSubview_(ring)
         width = inner - 26 - 86

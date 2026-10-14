@@ -78,6 +78,8 @@ ICONS = {"code_file": ("chevron.left.forwardslash.chevron.right", (0.48, 0.35, 0
          "mailbox": ("envelope", (0.84, 0.34, 0.24))}
 DEFAULT_ICON = ("square.on.square", (0.45, 0.45, 0.5))
 DONE_SECONDS = 1.5                  # "Pricing created." stays this long, then the card closes
+PEEK_MAX = 340                      # the widest the peeking pill gets, whatever the language
+LISTEN_W = 240                      # the pill while it shows the words as you say them
 SUGGEST_WORDS = "Group these?"
 SAVED_SECONDS = 1.8                 # "Saved to Q3 plan" stays on the pill this long
 PROJECT_EXPLAINER = ("A project keeps related things and your notes together, so you can pick up "
@@ -103,6 +105,14 @@ def _dark():
     return match == "NSAppearanceNameDarkAqua"
 
 
+def _more_contrast():
+    try:
+        from AppKit import NSWorkspace
+        return bool(NSWorkspace.sharedWorkspace().accessibilityDisplayShouldIncreaseContrast())
+    except Exception:
+        return False
+
+
 def _rgb(rgb, alpha=1.0):
     return NSColor.colorWithRed_green_blue_alpha_(rgb[0], rgb[1], rgb[2], alpha)
 
@@ -114,6 +124,33 @@ def _orange():
 
 def _text_width(text, font):
     return NSAttributedString.alloc().initWithString_attributes_(text, {NSFontAttributeName: font}).size().width
+
+
+def _fit(text, font, room, tail=False):
+    """`text` cut to measured width `room`: at the end with … (or, for tail=True, keep the end and cut the start)."""
+    if _text_width(text, font) <= room:
+        return text
+    lo, hi = 0, len(text)
+    while lo < hi:                                     # longest piece that fits
+        mid = (lo + hi + 1) // 2
+        piece = ("…" + text[-mid:]) if tail else (text[:mid] + "…")
+        if _text_width(piece, font) <= room:
+            lo = mid
+        else:
+            hi = mid - 1
+    return ("…" + text[-lo:]) if tail else (text[:lo].rstrip() + "…")
+
+
+def _initial(name):
+    """The first whole character of a name (a flag or an accented letter is one character, not half of one)."""
+    try:
+        from Foundation import NSString
+        text = NSString.stringWithString_(name or "")
+        if text.length():
+            return str(text.substringWithRange_(text.rangeOfComposedCharacterSequenceAtIndex_(0))).upper()
+    except Exception:
+        pass
+    return (name or "")[:1].upper()
 
 
 def _label(text, size=11, bold=False, color=None, frame=(0, 0, 10, 10), wrap=False, strike=False):
@@ -274,7 +311,7 @@ class _Control(_Flipped):
                         text = str(sub.stringValue())
                     except Exception:
                         text = None
-                if text:
+                if text and str(text).strip() not in ("›", "⌄", "‹", "▾", "▸"):      # decorative glyphs are not words
                     words.append(str(text))
                 collect(sub)
         collect(self)
@@ -302,6 +339,11 @@ class _Tap(_Control):
         if self.tint is not None:
             self.tint.setFill()
             NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(self.bounds(), 10, 10).fill()
+            fraction = 0.28 if self.pressed else 0.14 if self.hovered else 0.0
+            if fraction and self.live() and self.washes:            # near-black / near-white fills: a label-coloured wash is invisible, so move toward grey
+                self.tint.blendedColorWithFraction_ofColor_(fraction, NSColor.colorWithWhite_alpha_(0.5, 1.0)).setFill()
+                NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(self.bounds(), 10, 10).fill()
+            return
         elif self.fill:
             NSColor.labelColor().colorWithAlphaComponent_(0.07).setFill()
             NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(self.bounds(), 10, 10).fill()
@@ -387,7 +429,7 @@ class _Badge(_Flipped):
 
     def drawRect_(self, rect):
         if self.tone == "accent":
-            NSColor.systemOrangeColor().setFill()
+            _rgb(palette.ORANGE_TEXT_ON_LIGHT).setFill()
         elif self.tone == "bad":
             NSColor.systemRedColor().colorWithAlphaComponent_(0.14).setFill()
         else:
@@ -414,12 +456,13 @@ class _Ring(_Flipped):
     def initWithChecked_(self, checked):
         self = objc.super(_Ring, self).initWithFrame_(NSMakeRect(0, 0, 17, 17))
         self.checked = checked
+        self.blue = False                                  # the windows use the blue accent; the pill's card keeps its orange
         return self
 
     def drawRect_(self, rect):
         circle = NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(1, 1, 15, 15))
         if self.checked:
-            NSColor.systemOrangeColor().setFill()
+            (_rgb(palette.ACCENT) if self.blue else _rgb(palette.ORANGE_TEXT_ON_LIGHT)).setFill()      # white tick on it: 4.9:1 / 5.0:1
             circle.fill()
             tick = NSBezierPath.bezierPath()
             tick.moveToPoint_((5, 8.8))
@@ -431,7 +474,7 @@ class _Ring(_Flipped):
             NSColor.whiteColor().setStroke()
             tick.stroke()
         else:
-            NSColor.tertiaryLabelColor().setStroke()
+            NSColor.secondaryLabelColor().setStroke()
             circle.setLineWidth_(1.5)
             circle.stroke()
 
@@ -460,7 +503,8 @@ class _PillView(NSView):
         ink = NSColor.colorWithWhite_alpha_(0.97 if dark else 0.09, 1.0)       # the pill itself
         on_ink = NSColor.colorWithWhite_alpha_(0.09 if dark else 1.0, 1.0)     # text on the pill
         quiet = w.mode_of_pill() == "rest"
-        ink.colorWithAlphaComponent_(0.45 if quiet and not self.hover else 0.94).setFill()
+        rest = 0.9 if _more_contrast() else 0.45
+        ink.colorWithAlphaComponent_(rest if quiet and not self.hover else 0.94).setFill()
         NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(capsule, ch / 2, ch / 2).fill()
         state = w.mode_of_pill()
         mid = PILL_MARGIN[1] + ch / 2
@@ -541,6 +585,9 @@ class _PillView(NSView):
     def accessibilityPerformPress(self):
         self.widget.toggle_card()
         return True
+
+    def viewDidChangeEffectiveAppearance(self):
+        self.widget.layout()                    # the mark's tint was set for the old appearance
 
     def mouseEntered_(self, event):
         if not self.hover:
@@ -664,15 +711,14 @@ class Widget:
 
     def peek_text(self):
         if not self.count:
-            return self.sug["peek"] if self.sug else "No notes here"
-        text = self.first.replace("\n", " ")
-        return text if len(text) <= 32 else text[:31] + "…"
+            return _fit(self.sug["peek"], NSFont.systemFontOfSize_(13), PEEK_MAX - 44) if self.sug else "No notes here"
+        return _fit(self.first.replace("\n", " "), NSFont.systemFontOfSize_(13), PEEK_MAX - 44)
 
     def heard_text(self):
         text = (self.listening or "").replace("\n", " ").strip()
         if not text:
             return "Listening…"
-        return text if len(text) <= 30 else "…" + text[-29:]
+        return _fit(text, NSFont.systemFontOfSize_(13), LISTEN_W - 48, tail=True)
 
     def _capsule(self):
         """Size of the drawn capsule for the current state."""
@@ -684,7 +730,7 @@ class Widget:
         if state == "saved":
             return _text_width(self.saved, NSFont.systemFontOfSize_(13)) + 48, 28
         if state == "listening":
-            return _text_width(self.heard_text(), NSFont.systemFontOfSize_(13)) + 48, 30
+            return LISTEN_W, 30                          # one width: it does not chase every word
         if state == "count":
             return 44, 22
         if state == "suggest":
@@ -746,9 +792,6 @@ class Widget:
             self.layout()
         elif heard is not None:
             self.pill_view.setNeedsDisplay_(True)
-            if abs(_text_width(self.heard_text(), NSFont.systemFontOfSize_(13)) + 48 + 2 * PILL_MARGIN[0]
-                   - self.pill.frame().size.width) > 2:
-                self.layout()
 
     def _flow_step(self):
         """Advance the finished-notes flow (R10): the one "clear" and the pill's check mark."""
@@ -794,6 +837,7 @@ class Widget:
             self.mode, self.show_done, self.scroll = (
                 "suggest" if self.sug and not self.count and not self.status.get("paused") else "here"), False, None
             self.query, self.also = "", True
+            self.search = None
             self.celebrate_now = False      # opening it later shows the calm state, never the celebration
             self.data = self.provider()
             self.render()
@@ -853,6 +897,8 @@ class Widget:
         if show_done is not None:
             self.show_done = show_done
         self.scroll = None                  # a different view starts at the top
+        if mode != "pick":
+            self.search = None
         self.pick_empty = False
         self.render()
 
@@ -1201,7 +1247,20 @@ class Widget:
         self.card.makeFirstResponder_(field)
         editor = field.currentEditor()
         if editor is not None:
-            editor.setSelectedRange_((len(field.stringValue()), 0))
+            keep, self.keep_range = getattr(self, "keep_range", None), None
+            end = len(field.stringValue())
+            if keep is not None:                    # typing in the middle of a word keeps the caret where it was
+                editor.setSelectedRange_((min(keep.location, end), min(keep.length, max(0, end - keep.location))))
+            else:
+                editor.setSelectedRange_((end, 0))
+
+    def _search_field(self, placeholder):
+        """The picker's text field. While you type it is the same field object, so its caret and undo survive."""
+        old = getattr(self, "reuse_search", False) and self.search
+        if old:
+            old.setFrame_(NSMakeRect(12, 8, CARD_W - 16 - 24, 18))
+            return old
+        return _field(self.query, placeholder, 13, False, (12, 8, CARD_W - 16 - 24, 18), self.fields)
 
     def _item_id(self):
         return (self.data or {}).get("item")
@@ -1209,7 +1268,15 @@ class Widget:
     def _typed(self, text):
         if self.mode == "pick":
             self.query = text
-            self.render()
+            editor = self.search.currentEditor() if self.search is not None else None
+            if editor is not None and editor.hasMarkedText():
+                return                              # an input method is mid-word: rebuild when it commits
+            self.keep_range = editor.selectedRange() if editor is not None else None
+            self.reuse_search = self.search is not None
+            try:
+                self.render()                       # the rows follow the typing; the field itself is kept
+            finally:
+                self.reuse_search = False
 
     def _submitted(self, text):
         if self.mode == "pick" and text.strip():
@@ -1323,7 +1390,7 @@ class Widget:
         y += 72
         field = _Tap.alloc().initWithFrame_callback_(NSMakeRect(8, y, CARD_W - 16, 34), None)
         field.fill = True
-        self.search = _field(self.query, "Name it, like Pricing", 13, False, (12, 8, CARD_W - 16 - 24, 18), self.fields)
+        self.search = self._search_field("Name it, like Pricing")
         field.addSubview_(self.search)
         body.addSubview_(field)
         y += 42
@@ -1344,7 +1411,7 @@ class Widget:
                                                                 lambda: self._go("here")))
         box = _Tap.alloc().initWithFrame_callback_(NSMakeRect(8, y - 6, CARD_W - 16, 34), None)
         box.fill = True
-        self.search = _field(self.query, SEARCH_PLACEHOLDER, 13, False, (12, 8, CARD_W - 16 - 24, 18), self.fields)
+        self.search = self._search_field(SEARCH_PLACEHOLDER)
         box.addSubview_(self.search)
         body.addSubview_(box)
         y += 36
@@ -1369,10 +1436,10 @@ class Widget:
                 (lambda: self._file(typed)) if typed else (lambda: self._focus(self.search)))
         for p in view["rows"]:
             if p["here"]:
-                y = row(y, p["name"][:1].upper(), p["name"], "Here now. Click to take it out.",
+                y = row(y, _initial(p["name"]), p["name"], "Here now. Click to take it out.",
                         lambda: (self.on_unfile(self._item_id()), self._finish("Taken out of the project.")))
             else:
-                y = row(y, p["name"][:1].upper(), p["name"], p["meta"], lambda name=p["name"]: self._file(name))
+                y = row(y, _initial(p["name"]), p["name"], p["meta"], lambda name=p["name"]: self._file(name))
         if view["also"]:
             names = " and ".join(a["title"] for a in view["also"])
             tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(6, y + 4, CARD_W - 12, 36),

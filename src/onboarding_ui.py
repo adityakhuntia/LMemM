@@ -247,7 +247,7 @@ class SetupWindow:
         start = y
         for kind, h in items:
             if kind == "error":
-                kit.put_text(root, view["error"], X, y, CW, 13, 500, NSColor.systemRedColor(), CENTER)
+                kit.put_text(root, view["error"], X, y, CW, 13, 500, kit.status_text("red"), CENTER)
             elif kind == "trust":
                 self._trust(root, trust, y)
             elif kind == "primary":
@@ -267,7 +267,7 @@ class SetupWindow:
             kit.put_text(root, text, X, y, CW, 13, 400, kit.mute(), CENTER)
             return
         left = (W - (width + 20)) / 2
-        lock = kit.icon("lock.fill", 12, NSColor.systemGreenColor(), (left, y + 4, 12, 14))
+        lock = kit.icon("lock.fill", 12, kit.status_text("green"), (left, y + 4, 12, 14))
         if lock is not None:
             root.addSubview_(lock)
         kit.put_text(root, text, left + 20, y, width + 4, 13, 400, kit.mute(), LEFT, wrap=False, height=22, middle=True)
@@ -363,10 +363,10 @@ class SetupWindow:
         hw = kit.text_width(head, 15, 600)
         kit.put_text(body, head, text_x, ty, hw + 4, 15, 600, wrap=False, height=20)
         if row["tag"]:
-            kit.put_text(body, row["tag"].upper(), text_x + hw + 8, ty + 3, 80, 10.5, 600, kit.mute(), wrap=False, height=16)
+            kit.put_text(body, row["tag"].upper(), text_x + hw + 8, ty + 3, 80, 11, 600, kit.mute(), wrap=False, height=16)
         ty += 21
-        color = (NSColor.systemRedColor() if state == onboarding.DENIED else
-                 NSColor.systemOrangeColor() if state == onboarding.RESTART else kit.mute())
+        color = (kit.status_text("red") if state == onboarding.DENIED else
+                 kit.status_text("orange") if state == onboarding.RESTART else kit.mute())
         ty += kit.put_text(body, row["line"], text_x, ty, text_w, 13, 400, color) + 2
         if row["key"] == "screen":
             some = bool(view["watch_apps"])
@@ -382,10 +382,10 @@ class SetupWindow:
             kit.button(body, row["button"], CW - button_w, y + 3, button_w, 30,
                        (lambda a=action, k=row["key"]: self._do(self.setup.press, a, k)), kind="primary", size=13, weight=600)
         else:
-            check = kit.icon("checkmark.circle.fill", 18, NSColor.systemGreenColor(), (CW - 62, y + 8, 18, 18))
+            check = kit.icon("checkmark.circle.fill", 18, kit.status_text("green"), (CW - 62, y + 8, 18, 18))
             if check is not None:
                 body.addSubview_(check)
-            kit.put_text(body, "On", CW - 40, y + 5, 40, 13, 600, NSColor.systemGreenColor(), LEFT, wrap=False, height=24, middle=True)
+            kit.put_text(body, "On", CW - 40, y + 5, 40, 13, 600, kit.status_text("green"), LEFT, wrap=False, height=24, middle=True)
         return max(ty, y + 38) + pad
 
     def _try(self, body, view):
@@ -437,6 +437,7 @@ class SetupWindow:
         self._link(sheet, "Allow all apps instead", (W - 200) / 2, self.h - 52, self._picker_all, w=200, align=CENTER)
         self._update_picker_button()
         self.stage.addSubview_(sheet)
+        self.window.makeFirstResponder_(search)                      # the ring is drawn around it, so the cursor really is there
 
     def _query(self, text):
         self.picker["query"] = text
@@ -457,6 +458,7 @@ class SetupWindow:
                 tap.addSubview_(holder)
             kit.put_text(tap, app["name"], 48, 0, CW - 48 - 44, 14, 500, wrap=False, height=44, middle=True)
             ring = _Ring.alloc().initWithChecked_(app["id"] in state["chosen"])
+            ring.blue = True
             ring.setFrame_(NSMakeRect(CW - 32, 13, 18, 18))
             tap.addSubview_(ring)
             doc.addSubview_(tap)

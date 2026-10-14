@@ -53,3 +53,17 @@ between mouse-down and mouse-up, which could drop it).
 - Setup window: resizable (min 480x600), the column is centred in a `stage` view, and a body taller than the room scrolls above the pinned Continue button.
 - Memory tab: Enable button label shortened and clamped to the column; `MemoryController.busy` shows "Enabling Memory..." until the answer, an error or a restart.
 - `Tracker.window_memory_action` takes the shared lock only for notes, so the main thread never waits on it. The hang itself was not reproduced; verify on the Mac.
+
+## Fourth pass fixes (audit section 14)
+
+Done: blue ticks and rings in the windows (pill card keeps orange, deeper so white reads: 4.9:1); empty ring stroke darker;
+hover and press visible on dark/light primary buttons of the pill card; project picker keeps its field while typing (caret stays,
+input methods are not interrupted); dialogs end inside the smallest window and a click outside no longer closes a form;
+green/orange/red words use deeper light-mode colours (`palette`, `setup_kit.status_text`); toast has an edge in dark mode;
+Memory alerts name their verb and Cancel is the default for Disconnect; plain wording; "Copied" toast; setup app picker really focuses its search;
+timestamps as words; tooltips on cut-off text; whole-character initials; pill text fitted by measured width and a fixed listening width;
+mark tint follows light/dark; Increase Contrast raises the resting pill; chevrons not read by VoiceOver; 11 pt label floor.
+
+Not done (needs the Mac or is a larger change): pill resize animation (M1), waveform on Core Animation (M2), card body and
+fold transitions (M4, M5), dialog and toast exits (M6), blur-scale check (M7), SF Symbols for glyphs (C11), ellipsis check (W3),
+select-bar overflow (W7), resize debounce (W9), second display (W12), press scale (B2).

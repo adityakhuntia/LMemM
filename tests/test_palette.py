@@ -22,6 +22,16 @@ class PaletteContrast(unittest.TestCase):
         self.assertGreaterEqual(p.contrast(p.ORANGE_TEXT_ON_LIGHT, p.CARD_LIGHT), 4.5)
         self.assertGreaterEqual(p.contrast(p.ORANGE_TEXT_ON_DARK, p.CARD_DARK), 4.5)
 
+    def test_ticks_and_status_words_on_the_light_card(self):
+        white = (1, 1, 1)
+        self.assertGreaterEqual(p.contrast(white, p.ORANGE_TEXT_ON_LIGHT), 3.0)       # the pill card's tick and badge
+        self.assertGreaterEqual(p.contrast(white, p.ACCENT), 3.0)                     # the window's blue tick
+        for words in (p.GREEN_TEXT_ON_LIGHT, p.ORANGE_STATUS_ON_LIGHT, p.RED_TEXT_ON_LIGHT):
+            self.assertGreaterEqual(p.contrast(words, p.CARD_LIGHT), 4.5)
+
+    def test_the_toast_has_an_edge_in_dark_mode(self):
+        self.assertGreaterEqual(p.contrast((p.TOAST_DARK,) * 3, p.CARD_DARK), 1.2)
+
     def test_contrast_is_symmetric_and_bounded(self):
         self.assertAlmostEqual(p.contrast((0, 0, 0), (1, 1, 1)), 21.0, places=1)
         self.assertEqual(p.contrast(p.ACCENT, (1, 1, 1)), p.contrast((1, 1, 1), p.ACCENT))

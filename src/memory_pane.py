@@ -132,6 +132,8 @@ class MemoryPane:
             busy = view.get('busy')
             if busy:                                              # the press was heard: say so, and stop a second press
                 buttons([(busy, 'choose_root', None, 'primary', False)])
+                text('Starting the memory service and setting up this workspace. This can take a few seconds. '
+                     'If it fails, the reason appears here.', 12, 400, kit.mute())
             else:
                 buttons([('Enable Memory…', 'choose_root', None, 'primary')])
         else:

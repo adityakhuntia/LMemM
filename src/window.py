@@ -991,6 +991,9 @@ class MainWindow:
                 from AppKit import NSOpenPanel
                 panel=NSOpenPanel.openPanel();panel.setCanChooseDirectories_(True);panel.setCanChooseFiles_(False);panel.setAllowsMultipleSelection_(False)
                 panel.setMessage_('Enable Memory for one workspace. Retain only new approved visible excerpts and project notes.')
+                from AppKit import NSApplication
+                NSApplication.sharedApplication().activateIgnoringOtherApps_(True)       # LMemM is a background app: bring the picker to the front
+                panel.setLevel_(3);panel.makeKeyAndOrderFront_(None)
                 if panel.runModal()!=1:return
                 action='enroll';payload={'root':str(panel.URL().path())}
             elif action in {'confirm_model','confirm_agent','confirm_disconnect'}:

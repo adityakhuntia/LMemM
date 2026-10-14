@@ -24,7 +24,7 @@ import setup_kit as kit
 from setup_kit import CENTER, LEFT
 from widget import _Fields, _field, _Flipped, _Ring, _Tap
 
-W, H, X = 480, 600, 36
+W, H, X = 480, 600, 36                                         # H is the smallest height; the window can grow
 CW = W - 2 * X
 TOP = 60                                                        # below the dots
 ROLE_SYMBOLS = {"Code": "chevron.left.forwardslash.chevron.right", "Writing": "pencil", "Research": "magnifyingglass",
@@ -48,6 +48,9 @@ class _SetupClosing(NSObject):
         self.owner.closed = True
         return True
 
+    def windowDidResize_(self, note):
+        self.owner.resized()
+
 
 class SetupWindow:
     def __init__(self, setup):
@@ -62,19 +65,24 @@ class SetupWindow:
         self.name_field = self.primary_tap = self.hint = None
         self.last_index = None                                     # the screen last drawn (for the push between screens)
 
-        style = 1 | 2 | (1 << 15)                                  # titled, closable, content under the title bar
+        self.h = H
+        style = 1 | 2 | 8 | (1 << 15)                              # titled, closable, resizable, content under the title bar
         self.window = _SetupWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             NSMakeRect(0, 0, W, H), style, 2, False)
         self.window.setTitlebarAppearsTransparent_(True)
         self.window.setTitleVisibility_(1)
-        for button in (1, 2):                                      # no minimise, no zoom: only a way out
-            self.window.standardWindowButton_(button).setHidden_(True)
+        self.window.standardWindowButton_(1).setHidden_(True)      # no minimise; zoom stays so it can grow
+        self.window.setContentMinSize_((W, H))
         self.window.setReleasedWhenClosed_(False)
         self.window.setBackgroundColor_(kit.card_background())
         self.closing = _SetupClosing.alloc().initWithOwner_(self)
         self.window.setDelegate_(self.closing)
         self.root = _Flipped.alloc().initWithFrame_(NSMakeRect(0, 0, W, H))
+        self.root.setAutoresizingMask_(18)                           # follows the window
         self.window.setContentView_(self.root)
+        self.stage = _Flipped.alloc().initWithFrame_(NSMakeRect(0, 0, W, H))   # the 480-wide column, centred when the window is wider
+        self.stage.setAutoresizingMask_(1 | 4)                       # stays centred horizontally
+        self.root.addSubview_(self.stage)
         self.window.center()
         self.fields = _Fields.alloc().initWithChange_submit_cancel_(self._typed, lambda _t: self._primary(), lambda: None)
 
@@ -154,16 +162,26 @@ class SetupWindow:
 
     # ------------------------------------------------------------ drawing
 
+    def resized(self):
+        """The window was dragged to a new size: re-lay the column out for it (the same screen, no push)."""
+        if getattr(self, "stage", None) is None:
+            return
+        size = self.window.contentView().frame().size
+        self.h = max(H, size.height)
+        self.stage.setFrame_(NSMakeRect((size.width - W) / 2, 0, W, self.h))
+        if self.setup.view():
+            self.render()
+
     def render(self):
         view = self.setup.view()
         if self.last_index is not None and view["index"] != self.last_index:
-            motion.step(self.root, forward=view["index"] > self.last_index)     # a new screen arrives from the side it belongs to
+            motion.step(self.stage, forward=view["index"] > self.last_index)     # a new screen arrives from the side it belongs to
         self.last_index = view["index"]
-        for sub in list(self.root.subviews()):
+        for sub in list(self.stage.subviews()):
             sub.removeFromSuperview()
         self.name_field = self.primary_tap = self.hint = None
         self.signature = self._signature()
-        root = self.root
+        root = self.stage
         dots = kit._KitDots.alloc().initWithIndex_(view["index"])
         dots.setFrame_(NSMakeRect((W - 65) / 2, 28, 65, 8))
         root.addSubview_(dots)
@@ -176,8 +194,20 @@ class SetupWindow:
                   "try": self._try}[step](body, view)
         room = foot_top - 14 - TOP
         top = TOP if step == "access" or height >= room else TOP + (room - height) / 2      # centred, as in the mock-up
-        body.setFrame_(NSMakeRect(X, top, CW, height))
-        root.addSubview_(body)
+        if height > room and room > 0:                              # taller than the space above the button: scroll, never overlap it
+            scroll = NSScrollView.alloc().initWithFrame_(NSMakeRect(X, TOP, CW, room))
+            scroll.setDrawsBackground_(False)
+            scroll.setHasVerticalScroller_(True)
+            scroll.setAutohidesScrollers_(True)
+            body.setFrame_(NSMakeRect(0, 0, CW, height))
+            scroll.setDocumentView_(body)
+            root.addSubview_(scroll)
+            if self.show_saved and step == "you":                   # the list just opened: bring it into view
+                scroll.contentView().scrollToPoint_((0, max(0, height - room)))
+                scroll.reflectScrolledClipView_(scroll.contentView())
+        else:
+            body.setFrame_(NSMakeRect(X, top, CW, height))
+            root.addSubview_(body)
         if self.picker is not None:
             self._picker_view()
         elif step == "you":
@@ -213,7 +243,7 @@ class SetupWindow:
             items.insert(0, ("error", kit.text_height(view["error"], 13, 500, CW) + 2))
         gap = 12
         total = sum(h for _k, h in items) + gap * max(0, len(items) - 1)
-        y = H - 30 - total
+        y = self.h - 30 - total
         start = y
         for kind, h in items:
             if kind == "error":
@@ -380,7 +410,7 @@ class SetupWindow:
 
     def _picker_view(self):
         state = self.picker
-        sheet = kit._KitCanvas.alloc().initWithFrame_(NSMakeRect(0, 0, W, H))
+        sheet = kit._KitCanvas.alloc().initWithFrame_(NSMakeRect(0, 0, W, self.h))
         y = 52
         y += kit.put_text(sheet, "Where should LMemM look?", X, y, CW, 25, 700, align=CENTER) + 8
         y += kit.put_text(sheet, "Apps installed on this Mac. LMemM looks only at the ones you pick and stays off in every other app.",
@@ -393,20 +423,20 @@ class SetupWindow:
         search.setFont_(kit.font(14, 400))
         sheet.addSubview_(search)
         y += 38 + 10
-        scroll = NSScrollView.alloc().initWithFrame_(NSMakeRect(X, y, CW, H - y - 132))
+        scroll = NSScrollView.alloc().initWithFrame_(NSMakeRect(X, y, CW, self.h - y - 132))
         scroll.setDrawsBackground_(False)
         scroll.setHasVerticalScroller_(True)
         state["scroll"] = scroll
         sheet.addSubview_(scroll)
         self._fill_picker()
-        state["done"] = kit.button(sheet, "", (W - 220) / 2, H - 108, 220, 48, self._picker_done)
+        state["done"] = kit.button(sheet, "", (W - 220) / 2, self.h - 108, 220, 48, self._picker_done)
         label = kit._KitText.alloc().initWithText_size_weight_color_align_wrap_middle_("", 16, 600, NSColor.whiteColor(), CENTER, False, True)
         label.setFrame_(NSMakeRect(0, 0, 220, 48))
         state["done"].addSubview_(label)
         state["done"].label = label
-        self._link(sheet, "Allow all apps instead", (W - 200) / 2, H - 52, self._picker_all, w=200, align=CENTER)
+        self._link(sheet, "Allow all apps instead", (W - 200) / 2, self.h - 52, self._picker_all, w=200, align=CENTER)
         self._update_picker_button()
-        self.root.addSubview_(sheet)
+        self.stage.addSubview_(sheet)
 
     def _query(self, text):
         self.picker["query"] = text

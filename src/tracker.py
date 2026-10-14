@@ -811,7 +811,9 @@ class Tracker:
         return controller.view()
 
     def window_memory_action(self,action,payload):
-        with self.lock:self._memory_controller().action(action,payload)
+        if action=='note':                              # only a note touches the shared items; the rest must never wait on the lock
+            with self.lock:self._memory_controller().action(action,payload)
+        else:self._memory_controller().action(action,payload)
 
     def show_memory_file(self):
         subprocess.run(["open", "-R", config.paths().items_file], check=False)

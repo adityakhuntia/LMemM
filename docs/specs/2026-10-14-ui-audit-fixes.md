@@ -47,3 +47,9 @@ Press and hover feel; the Tab order and focus ring; VoiceOver reading the pill, 
 pill card and dialogs (and that reduced motion turns the scale off); the setup push; contrast over real wallpapers;
 the Memory tab at 880 px wide with real data; a click that lands while the window re-renders (the control is rebuilt
 between mouse-down and mouse-up, which could drop it).
+
+## Follow-up after the Mac run
+
+- Setup window: resizable (min 480x600), the column is centred in a `stage` view, and a body taller than the room scrolls above the pinned Continue button.
+- Memory tab: Enable button label shortened and clamped to the column; `MemoryController.busy` shows "Enabling Memory..." until the answer, an error or a restart.
+- `Tracker.window_memory_action` takes the shared lock only for notes, so the main thread never waits on it. The hang itself was not reproduced; verify on the Mac.

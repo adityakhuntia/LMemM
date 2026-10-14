@@ -40,3 +40,13 @@ class ControllerTests(unittest.TestCase):
         m.send('agent_connections',{},'agents');rid=c.calls[-1][2]
         m.poll([dict(type='response',id=rid,result=[dict(grant_id='gb',client_id='Codex',project_ids=['pb'])])])
         m.action('revoke_agent');self.assertEqual(c.calls[-1][:2],('revoke_agent',{'grant_id':'gb'}))
+    def test_enable_shows_progress_until_the_answer_or_a_failure(self):
+        c=Client();m=MemoryController(lambda:c,lambda:{},lambda:None);m.select('a')
+        self.assertNotIn('busy',m.view())
+        m.action('enroll',{'root':'/a'});rid=c.calls[-1][2]
+        self.assertEqual(m.view()['busy'],'Enabling Memory…')
+        m.poll([dict(type='response',id=rid,error='Project memory unavailable')])
+        self.assertNotIn('busy',m.view())
+        m.action('enroll',{'root':'/a'});self.assertIn('busy',m.view())
+        m.poll([dict(type='error',error='Project memory service unavailable.')])
+        self.assertNotIn('busy',m.view())

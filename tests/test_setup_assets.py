@@ -51,6 +51,13 @@ class SetupAssets(unittest.TestCase):
         self.assertNotIn("_label(", ui)                   # NSTextField labels sit high in a button
         self.assertNotIn("systemOrange", ui.replace("NSColor.systemOrangeColor() if state == onboarding.RESTART", ""))
 
+    def test_setup_window_resizes_and_never_lets_the_body_cover_the_button(self):
+        ui = open(os.path.join(ROOT, "src", "onboarding_ui.py")).read()
+        self.assertIn("1 | 2 | 8", ui)                    # resizable
+        self.assertIn("setContentMinSize_", ui)
+        self.assertIn("windowDidResize_", ui)
+        self.assertIn("NSScrollView.alloc().initWithFrame_(NSMakeRect(X, TOP, CW, room))", ui)   # a tall body scrolls above the foot
+
 
 if __name__ == "__main__":
     unittest.main()

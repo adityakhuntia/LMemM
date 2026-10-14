@@ -69,12 +69,13 @@ class MemoryPane:
             """Small buttons side by side, wrapping when the column is narrow: (label, action, payload, kind)."""
             nonlocal y
             cx = x
-            for label, action, payload, kind in items:
-                wide = kit.text_width(label, 13, 500) + 28
+            for label, action, payload, kind, *rest in items:
+                enabled = rest[0] if rest else True
+                wide = min(w, kit.text_width(label, 13, 500) + 28)       # never wider than the column: the label is not cut
                 if cx > x and cx + wide > x + w:
                     cx, y = x, y + 38
                 kit.button(host, label, cx, y, wide, 32, (lambda a=action, p=payload: self.action(a, p or {})),
-                           kind=kind, size=13, weight=500)
+                           kind=kind, size=13, weight=500, enabled=enabled)
                 cx += wide + 8
             y += 44
 
@@ -128,7 +129,11 @@ class MemoryPane:
         if not binding:
             text('Choose one workspace folder. Only new text you view in VS Code, and notes you add yourself, are kept. '
                  'Nothing is scanned and no history is imported.')
-            buttons([('Enable Memory · choose workspace…', 'choose_root', None, 'primary')])
+            busy = view.get('busy')
+            if busy:                                              # the press was heard: say so, and stop a second press
+                buttons([(busy, 'choose_root', None, 'primary', False)])
+            else:
+                buttons([('Enable Memory…', 'choose_root', None, 'primary')])
         else:
             text(binding['workspace_root'], 12, 400, kit.mute(), gap=12)
             self.query.setFrame_(NSMakeRect(x, y, w, 32))

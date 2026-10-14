@@ -864,6 +864,11 @@ class Tracker:
         elif self.widget:
             self.widget.flash("All access is on")
 
+    def _open_window(self):
+        """The main window when it is on screen: a question about it becomes a sheet on it."""
+        win = self.main_window
+        return win.window if win is not None and win.visible() else None
+
     def confirm_leaving(self, row):
         """Ask before a restart, reopening setup or deleting everything. The words come from
         menu_model; nothing happens on Cancel."""
@@ -874,10 +879,10 @@ class Tracker:
             except ValueError as error:
                 say(str(error))
                 return False
-            return self.menubar.ask(title, text, "Delete everything", careful=True)
+            return self.menubar.ask(title, text, "Delete everything", careful=True, window=self._open_window())
         if row == "setup":
             title, text = menu_model.setup_words()
-            return self.menubar.ask(title, text, "Reopen setup")
+            return self.menubar.ask(title, text, "Reopen setup", window=self._open_window())
         return True                                      # a restart has nothing to lose
 
     def widget_pause(self, kind):

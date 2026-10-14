@@ -63,7 +63,7 @@ FLOATING = 25                       # NSStatusWindowLevel: above normal windows
 
 CARD_W, CARD_MAX_H, PAD = 272, 360, 14
 PILL_MARGIN = (10, 6)               # hit area around the drawn capsule
-PILL_BOTTOM = 6
+PILL_BOTTOM = 12                    # clear of the Dock edge
 TRACK = 1 | 128 | 512               # mouseEnteredAndExited | activeAlways | inVisibleRect
 POPOVER_MATERIAL, BEHIND_WINDOW, ACTIVE = 6, 0, 1
 CLICK_MASK = (1 << 1) | (1 << 3)    # left and right mouse down, in any app
@@ -153,6 +153,21 @@ def _initial(name):
     return (name or "")[:1].upper()
 
 
+class _Veil(NSView):
+    """A soft fill under a card's content, so the page behind the blur cannot read through it."""
+
+    def drawRect_(self, rect):
+        NSColor.windowBackgroundColor().colorWithAlphaComponent_(0.72).set()
+        NSBezierPath.fillRect_(self.bounds())
+
+    def isOpaque(self):
+        return False
+
+
+def _veil(width, height):
+    return _Veil.alloc().initWithFrame_(NSMakeRect(0, 0, width, height))
+
+
 def _label(text, size=11, bold=False, color=None, frame=(0, 0, 10, 10), wrap=False, strike=False):
     """A text field. wrap=True lets it run to several lines; the frame's height is then
     set from the text. Returns (field, height)."""
@@ -167,6 +182,9 @@ def _label(text, size=11, bold=False, color=None, frame=(0, 0, 10, 10), wrap=Fal
         field.setFont_(font)
         field.setTextColor_(color)
     field.setLineBreakMode_(0 if wrap else 4)         # wrap words / truncate tail
+    if wrap:
+        field.setMaximumNumberOfLines_(0)             # a label draws one line unless told otherwise
+        field.setUsesSingleLineMode_(False)
     x, y, w, h = frame
     if wrap:
         h = max(h, field.cell().cellSizeForBounds_(NSMakeRect(0, 0, w, 10000)).height)
@@ -772,7 +790,7 @@ class Widget:
         else:
             icon.setContentTintColor_(NSColor.colorWithWhite_alpha_(0.09 if dark else 1.0, 1.0))
         icon.setHidden_(image is None)
-        self.pill_view.setToolTip_(tip)
+        self.pill_view.setToolTip_(tip if bad else None)    # the system draws a tooltip down-right of the pointer, onto the Dock; the card says the rest
         icon.setAccessibilityElement_(False)            # the pill reads as one button (accessibility_text)
 
     def pulse(self, heard):
@@ -954,6 +972,7 @@ class Widget:
         content.setWantsLayer_(True)
         content.layer().setCornerRadius_(18)
         content.layer().setMasksToBounds_(True)
+        content.addSubview_(_veil(CARD_W, height))
         scroll = NSScrollView.alloc().initWithFrame_(NSMakeRect(0, 0, CARD_W, height))
         scroll.setDrawsBackground_(False)
         scroll.setHasVerticalScroller_(y > CARD_MAX_H)

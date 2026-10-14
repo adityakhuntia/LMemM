@@ -8,6 +8,7 @@ from setuptools import setup
 
 OPTIONS = {
     "argv_emulation": False,
+    "iconfile": "assets/LMemM.icns",
     "plist": {
         "CFBundleName": "LMemM",
         "CFBundleDisplayName": "LMemM",

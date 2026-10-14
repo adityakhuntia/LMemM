@@ -19,7 +19,7 @@ from AppKit import (NSBezierPath, NSColor, NSFont, NSMakeRect, NSScreen, NSScrol
 
 import palette
 import widget
-from widget import _Flipped, _label, _panel, PAD, PILL_BOTTOM, POPOVER_MATERIAL, BEHIND_WINDOW, ACTIVE
+from widget import _Flipped, _label, _panel, _veil, PAD, PILL_BOTTOM, POPOVER_MATERIAL, BEHIND_WINDOW, ACTIVE
 
 CARD_W, CARD_H = 320, 150
 GAP = 46                                    # from the screen's bottom edge to the card: clear of the pill
@@ -87,6 +87,7 @@ class NoteCard:
         content.setWantsLayer_(True)
         content.layer().setCornerRadius_(18)
         content.layer().setMasksToBounds_(True)
+        content.addSubview_(_veil(CARD_W, CARD_H))
         body = _Flipped.alloc().initWithFrame_(NSMakeRect(0, 0, CARD_W, CARD_H))
         mute = NSColor.secondaryLabelColor()
 

@@ -168,10 +168,19 @@ def _veil(width, height):
     return _Veil.alloc().initWithFrame_(NSMakeRect(0, 0, width, height))
 
 
+def _font(size, bold=False):
+    """Figtree, the window's typeface, so the pill's cards read as the same product; the system font if it is missing."""
+    try:
+        import setup_kit                              # imported late: setup_kit imports this module
+        return setup_kit.font(size, 600 if bold else 400)
+    except Exception:
+        return NSFont.systemFontOfSize_weight_(size, 0.4) if bold else NSFont.systemFontOfSize_(size)
+
+
 def _label(text, size=11, bold=False, color=None, frame=(0, 0, 10, 10), wrap=False, strike=False):
     """A text field. wrap=True lets it run to several lines; the frame's height is then
     set from the text. Returns (field, height)."""
-    font = NSFont.systemFontOfSize_weight_(size, 0.4) if bold else NSFont.systemFontOfSize_(size)
+    font = _font(size, bold)
     color = color or NSColor.labelColor()
     field = NSTextField.labelWithString_(text)
     if strike:
@@ -398,7 +407,7 @@ def _field(text, placeholder, size, bold, frame, delegate):
     field = NSTextField.alloc().initWithFrame_(NSMakeRect(*frame))
     field.setStringValue_(text)
     field.setPlaceholderString_(placeholder)
-    field.setFont_(NSFont.systemFontOfSize_weight_(size, 0.4) if bold else NSFont.systemFontOfSize_(size))
+    field.setFont_(_font(size, bold))
     field.setBordered_(False)
     field.setDrawsBackground_(False)
     field.setFocusRingType_(1)                       # none
@@ -581,7 +590,7 @@ class _PillView(NSView):
 
     @objc.python_method
     def _text(self, text, size, bold, color, area, centre=False):
-        font = NSFont.systemFontOfSize_weight_(size, 0.4) if bold else NSFont.systemFontOfSize_(size)
+        font = _font(size, bold)
         attrs = {NSFontAttributeName: font, NSForegroundColorAttributeName: color}
         wide = _text_width(text, font)
         high = NSAttributedString.alloc().initWithString_attributes_(text, attrs).size().height
@@ -728,30 +737,30 @@ class Widget:
 
     def peek_text(self):
         if not self.count:
-            return _fit(self.sug["peek"], NSFont.systemFontOfSize_(13), PEEK_MAX - 44) if self.sug else "No notes here"
-        return _fit(self.first.replace("\n", " "), NSFont.systemFontOfSize_(13), PEEK_MAX - 44)
+            return _fit(self.sug["peek"], _font(13), PEEK_MAX - 44) if self.sug else "No notes here"
+        return _fit(self.first.replace("\n", " "), _font(13), PEEK_MAX - 44)
 
     def heard_text(self):
         text = (self.listening or "").replace("\n", " ").strip()
         if not text:
             return "Listening…"
-        return _fit(text, NSFont.systemFontOfSize_(13), LISTEN_W - 48, tail=True)
+        return _fit(text, _font(13), LISTEN_W - 48, tail=True)
 
     def _capsule(self):
         """Size of the drawn capsule for the current state."""
         state = self.mode_of_pill()
         if state == "peek":
-            return _text_width(self.peek_text(), NSFont.systemFontOfSize_(13)) + 44 + (4 if not self.count and self.sug else 0), 28
+            return _text_width(self.peek_text(), _font(13)) + 44 + (4 if not self.count and self.sug else 0), 28
         if state in MARKS:
             return 28, 28
         if state == "saved":
-            return _text_width(self.saved, NSFont.systemFontOfSize_(13)) + 48, 28
+            return _text_width(self.saved, _font(13)) + 48, 28
         if state == "listening":
             return LISTEN_W, 30                          # one width: it does not chase every word
         if state == "count":
             return 44, 22
         if state == "suggest":
-            return (_text_width(SUGGEST_WORDS, NSFont.systemFontOfSize_(13)) + 52, 28) if self.sug["first_time"] else (44, 22)
+            return (_text_width(SUGGEST_WORDS, _font(13)) + 52, 28) if self.sug["first_time"] else (44, 22)
         return 36, 5
 
     def layout(self, animate=False):

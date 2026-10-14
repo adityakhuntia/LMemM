@@ -19,7 +19,7 @@ from AppKit import (NSBezierPath, NSColor, NSFont, NSMakeRect, NSScreen, NSScrol
 
 import palette
 import widget
-from widget import _Flipped, _label, _panel, _veil, PAD, PILL_BOTTOM, POPOVER_MATERIAL, BEHIND_WINDOW, ACTIVE
+from widget import _Flipped, _font, _label, _panel, _veil, PAD, PILL_BOTTOM, POPOVER_MATERIAL, BEHIND_WINDOW, ACTIVE
 
 CARD_W, CARD_H = 320, 150
 GAP = 46                                    # from the screen's bottom edge to the card: clear of the pill
@@ -104,7 +104,7 @@ class NoteCard:
         scroll.setHasVerticalScroller_(False)
         self.text = NSTextView.alloc().initWithFrame_(NSMakeRect(0, 0, CARD_W - 2 * PAD, 68))
         self.text.setDrawsBackground_(False)
-        self.text.setFont_(NSFont.systemFontOfSize_(16))
+        self.text.setFont_(_font(16))
         self.text.setRichText_(False)
         self.text.setTextContainerInset_((0, 2))
         self.text.textContainer().setLineFragmentPadding_(0)

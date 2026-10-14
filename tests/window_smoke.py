@@ -42,8 +42,9 @@ SIZE = types.SimpleNamespace(width=1080, height=720)
 fake_widget._Flipped.frame = lambda self: types.SimpleNamespace(size=SIZE)
 sys.modules["widget"] = fake_widget
 kit = types.ModuleType("setup_kit")
-for n in ("put_text","tile","button","text_width","text_height","ink","mute","accent","card_background","faint","line","icon","first_symbol","note"):
+for n in ("put_text","tile","button","text_width","text_height","ink","mute","accent","accent_text","card_background","faint","line","icon","first_symbol","note"):
     setattr(kit, n, mock.MagicMock(return_value=20))
+kit._KitRule = type("_KitRule", (Base,), {"initWithFrame_": lambda self, *a: self})
 kit.LEFT, kit.RIGHT, kit.CENTER = 0, 2, 1
 kit.text_width = lambda *a, **k: 50
 sys.modules["setup_kit"] = kit
@@ -177,6 +178,15 @@ for memory_status in ('Disabled','Ready','Processing','Paused','Needs attention'
     w.nav=page_model.press(reg,w.nav,'go',ids['q3'])
     step('Memory '+memory_status,render)
 w._memory_action('source',{'citation_id':'c1'})
+# The folded "Connections and setup" opens and closes without leaving the window (a view-only action, never sent on).
+w._memory_action('toggle_admin'); step('Memory setup open',render)
+if not w.memory_pane.show_admin:FAILED.append('Memory setup did not open')
+w._memory_action('toggle_admin'); step('Memory setup folded',render)
+if any(c[0]=='toggle_admin' for c in memory_calls):FAILED.append('toggle_admin must stay in the window')
+# A dialog arrives with its short pop, and every control answers VoiceOver's press.
+w.open_name('new'); step('dialog arriving',lambda:None); w.close_dialog()
+for tap in [v for v in w.side_foot.subviews() if hasattr(v,'accessibilityPerformPress')][:1]:
+    if tap.accessibilityRole()!='AXButton':FAILED.append('side foot control is not a button for VoiceOver')
 if ('source',{'citation_id':'c1'}) not in memory_calls:FAILED.append('Memory citation callback not forwarded')
 print("FAILED:", FAILED) if FAILED else print("all pages drew")
 sys.exit(1 if FAILED else 0)

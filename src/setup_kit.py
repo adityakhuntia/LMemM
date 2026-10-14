@@ -10,10 +10,11 @@ import os
 
 import objc
 from AppKit import (NSAttributedString, NSBezierPath, NSColor, NSFont, NSFontAttributeName,
-                    NSForegroundColorAttributeName, NSImage, NSImageView, NSMakeRect, NSMakeSize,
+                    NSForegroundColorAttributeName, NSImage, NSImageView, NSKernAttributeName, NSMakeRect, NSMakeSize,
                     NSMutableParagraphStyle, NSParagraphStyleAttributeName)
 
-from widget import _Flipped
+import palette
+from widget import _Control, _Flipped
 
 LEFT, CENTER, RIGHT = 0, 1, 2                         # NSTextAlignment on current macOS (the old 1 = right, 2 = centre is gone)
 _FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "fonts")
@@ -26,11 +27,39 @@ _fonts = {}
 
 # ---------------------------------------------------------------- colour
 
-ACCENT = (0.20, 0.44, 0.96)                          # a calm blue, in place of the pill's orange
+ACCENT = (0.17, 0.40, 0.92)                          # a calm blue, in place of the pill's orange (= palette.ACCENT)
 
 
 def accent(alpha=1.0):
+    """The blue for fills (a button with white words on it)."""
     return NSColor.colorWithRed_green_blue_alpha_(*ACCENT, alpha)
+
+
+def accent_text():
+    """The blue for blue *words* and thin marks: a lighter blue on the dark card so it can still be read."""
+    try:
+        def pick(appearance):
+            dark = appearance.bestMatchFromAppearancesWithNames_(["NSAppearanceNameAqua", "NSAppearanceNameDarkAqua"]) \
+                == "NSAppearanceNameDarkAqua"
+            r, g, b = palette.ACCENT_TEXT_ON_DARK if dark else palette.ACCENT_TEXT_ON_LIGHT
+            return NSColor.colorWithRed_green_blue_alpha_(r, g, b, 1.0)
+        return NSColor.colorWithName_dynamicProvider_(None, pick)
+    except Exception:
+        return accent()
+
+
+def status_text(kind):
+    """Green, orange or red *words*: the system colour in dark mode, a deeper one on the light card so it reads."""
+    light = {"green": palette.GREEN_TEXT_ON_LIGHT, "orange": palette.ORANGE_STATUS_ON_LIGHT, "red": palette.RED_TEXT_ON_LIGHT}[kind]
+    system = {"green": NSColor.systemGreenColor, "orange": NSColor.systemOrangeColor, "red": NSColor.systemRedColor}[kind]
+    try:
+        def pick(appearance):
+            dark = appearance.bestMatchFromAppearancesWithNames_(["NSAppearanceNameAqua", "NSAppearanceNameDarkAqua"]) \
+                == "NSAppearanceNameDarkAqua"
+            return system() if dark else NSColor.colorWithRed_green_blue_alpha_(*light, 1.0)
+        return NSColor.colorWithName_dynamicProvider_(None, pick)
+    except Exception:
+        return system()
 
 
 def ink():
@@ -109,9 +138,11 @@ def _attributed(text, size, weight, color, align, wrap):
     style.setAlignment_(align)
     style.setLineBreakMode_(0 if wrap else 4)
     style.setLineHeightMultiple_(1.18 if wrap else 1.0)
-    return NSAttributedString.alloc().initWithString_attributes_(
-        text, {NSFontAttributeName: font(size, weight), NSForegroundColorAttributeName: color,
-               NSParagraphStyleAttributeName: style})
+    attrs = {NSFontAttributeName: font(size, weight), NSForegroundColorAttributeName: color,
+             NSParagraphStyleAttributeName: style}
+    if size >= 24:                                   # large type reads too loose: tighten it as it grows
+        attrs[NSKernAttributeName] = -0.02 * size
+    return NSAttributedString.alloc().initWithString_attributes_(text, attrs)
 
 
 def text_width(text, size, weight=400):
@@ -147,6 +178,25 @@ class _KitText(_Flipped):
     def hitTest_(self, point):
         return None                                  # clicks go to whatever holds the text
 
+    # VoiceOver: this view draws its own words, so it has to say them. Inside a pressable control the
+    # control speaks for them (_Control.accessibilityLabel), so they are not read twice.
+    def isAccessibilityElement(self):
+        view = self.superview()
+        while view is not None:
+            if isinstance(view, _Control) and view.live():
+                return False
+            view = view.superview()
+        return bool(self.text)
+
+    def accessibilityRole(self):
+        return "AXStaticText"
+
+    def accessibilityLabel(self):
+        return self.text
+
+    def accessibilityValue(self):
+        return self.text
+
     def setText_(self, text):
         self.text = text
         self.setNeedsDisplay_(True)
@@ -159,6 +209,11 @@ def put_text(parent, text, x, y, w, size=15, weight=400, color=None, align=LEFT,
         text, size, weight, color or ink(), align, wrap, middle)
     view.setFrame_(NSMakeRect(x, y, w, h))
     parent.addSubview_(view)
+    try:
+        if not wrap and text and text_width(text, size, weight) > w + 1 and not parent.toolTip():
+            parent.setToolTip_(text)                 # a cut-off name can still be read (the text view itself takes no mouse)
+    except Exception:
+        pass
     return h
 
 
@@ -176,13 +231,14 @@ def icon(name, size, color, frame):
     return holder
 
 
-class _KitButton(_Flipped):
+class _KitButton(_Control):
     """A rounded button. fill / border are colours or None; the label is centred on both axes.
-    Anything else (a chip's icon) is added as a subview by the caller."""
+    Anything else (a chip's icon) is added as a subview by the caller. Hover, press, Tab, the focus ring
+    and VoiceOver come from _Control; callback=None makes it inert (a holder, or a disabled button)."""
 
     def initWithFrame_callback_(self, frame, callback):
-        self = objc.super(_KitButton, self).initWithFrame_(frame)
-        self.callback = callback
+        self = objc.super(_KitButton, self).initWithFrame_callback_(frame, callback)
+        self.focusable = True
         self.fill = self.border = None
         self.radius = 12
         self.label = None
@@ -199,17 +255,12 @@ class _KitButton(_Flipped):
             path.setLineWidth_(1.5)
             self.border.setStroke()
             path.stroke()
-
-    def mouseDown_(self, event):
-        self.callback()
-
-    def acceptsFirstMouse_(self, event):
-        return True
+        self.paint_state()
 
 
 def button(parent, label, x, y, w, h, callback, kind="primary", size=16, weight=600, enabled=True):
     """kind: primary (blue, white text), quiet (soft grey), ghost (just text), outline (bordered)."""
-    tap = _KitButton.alloc().initWithFrame_callback_(NSMakeRect(x, y, w, h), callback if enabled else (lambda: None))
+    tap = _KitButton.alloc().initWithFrame_callback_(NSMakeRect(x, y, w, h), callback if enabled else None)
     color = ink()
     if kind == "primary":
         tap.fill, color = accent(), NSColor.whiteColor()

@@ -20,6 +20,20 @@ ICON_W, ICON_H = 24, 18
 VARIABLE_LENGTH = -1                          # NSVariableStatusItemLength
 
 
+def _run_sheet(alert, window):
+    """Show the alert as a sheet on window and wait for the answer without freezing the app."""
+    from AppKit import NSDate, NSEventMaskAny, NSDefaultRunLoopMode
+    answer = []
+    alert.beginSheetModalForWindow_completionHandler_(window, lambda code: answer.append(code))
+    app = NSApplication.sharedApplication()
+    while not answer:
+        event = app.nextEventMatchingMask_untilDate_inMode_dequeue_(
+            NSEventMaskAny, NSDate.dateWithTimeIntervalSinceNow_(0.05), NSDefaultRunLoopMode, True)
+        if event is not None:
+            app.sendEvent_(event)
+    return answer[0]
+
+
 class _MenuTarget(NSObject):
     """Receives the menu's clicks and passes the row's id on."""
 
@@ -143,9 +157,10 @@ class MenuBar:
             menu.addItem_(_row_item(row, self.target))
         self.item.setMenu_(menu)
 
-    def ask(self, title, text, ok, careful=False):
+    def ask(self, title, text, ok, careful=False, window=None):
         """A question in words with two buttons. True when the person says yes. careful=True is for
-        what cannot be undone: Cancel is the button Return presses."""
+        what cannot be undone: Cancel is the button Return presses and the other is marked destructive.
+        With a window, the question is a sheet on it (it cannot open out of sight); without, a dialog."""
         NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
         alert = NSAlert.alloc().init()
         alert.setMessageText_(title)
@@ -153,10 +168,20 @@ class MenuBar:
         if careful:
             alert.addButtonWithTitle_("Cancel")
             alert.addButtonWithTitle_(ok)
-            return alert.runModal() == 1001               # NSAlertSecondButtonReturn
-        alert.addButtonWithTitle_(ok)
-        alert.addButtonWithTitle_("Cancel")
-        return alert.runModal() == 1000                   # NSAlertFirstButtonReturn
+        else:
+            alert.addButtonWithTitle_(ok)
+            alert.addButtonWithTitle_("Cancel")
+        buttons = alert.buttons()
+        yes, no = (buttons[1], buttons[0]) if careful else (buttons[0], buttons[1])
+        if careful:
+            no.setKeyEquivalent_("\r")                               # Return presses Cancel; the other has no shortcut
+            yes.setKeyEquivalent_("")
+        if careful and hasattr(yes, "setHasDestructiveAction_"):
+            yes.setHasDestructiveAction_(True)
+        yes_code = 1001 if careful else 1000
+        if window is not None and window.isVisible():
+            return _run_sheet(alert, window) == yes_code
+        return alert.runModal() == yes_code
 
     def remove(self):
         NSStatusBar.systemStatusBar().removeStatusItem_(self.item)

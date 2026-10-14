@@ -8,8 +8,6 @@ from setuptools import setup
 
 OPTIONS = {
     "argv_emulation": False,
-    "packages": ["mcp"],
-    "includes": ["objc", "AppKit", "Foundation", "Quartz", "Vision", "ApplicationServices"],
     "plist": {
         "CFBundleName": "LMemM",
         "CFBundleDisplayName": "LMemM",

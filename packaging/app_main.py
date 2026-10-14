@@ -10,6 +10,13 @@ for root in (os.path.dirname(HERE), HERE):
         os.chdir(root)
         break
 
+# py2app's bootstrap puts the base interpreter's site-packages first; an older PyObjC there
+# (e.g. Anaconda's) shadows the one in .venv and fails with "no attribute registerNewKeywordsFromSelector"
+import glob  # noqa: E402
+
+for site in glob.glob(os.path.join(os.getcwd(), ".venv", "lib", "python*", "site-packages")):
+    sys.path.insert(0, site)
+
 import lmemm  # noqa: E402
 
 if __name__ == "__main__":

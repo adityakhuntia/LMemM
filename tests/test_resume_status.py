@@ -100,8 +100,8 @@ class Pr25(unittest.TestCase):
             for bit in ("mac", "push", "test it", "merged", "is still open", "unfinished"):
                 self.assertNotIn(bit, top["headline"].lower())
             text = resume.as_text(b)
-            self.assertLess(text.index(top["headline"]), text.index("## Why this suggestion?"))
-            self.assertLess(text.index("Action: Open Claude"), text.index("## Why this suggestion?"))
+            self.assertLess(text.index(top["headline"]), text.index("## Why open"))
+            self.assertLess(text.index("Action: Open Claude"), text.index("## Why open"))
 
     def test_a_chat_with_an_address_opens_the_conversation(self):
         items = copy.deepcopy(self.items)
@@ -186,6 +186,29 @@ class Pr25(unittest.TestCase):
             self.assertNotEqual((resume_cli.run(args)["next"] or {}).get("key"), first["next"]["key"])
 
 
+class Explained(unittest.TestCase):
+    def test_every_state_explains_its_recommendation(self):
+        reg, items, book = resume_demo.build(NOW)
+        for pid, p in reg["projects"].items():
+            top = resume.brief(reg, items, pid, NOW, book)["top"]
+            self.assertTrue(top["because"].strip(), p["name"])
+            self.assertTrue(top["why_label"].startswith("Why ") and top["why_label"].endswith("?"))
+
+    def test_pr25_explains_why_it_points_at_the_app_not_the_chat(self):
+        doc = pr25.load_doc()
+        b = resume.brief_scope({i["id"]: i for i in doc["items"]}, "PR 25", NOW, {}, None, doc["trail"])
+        self.assertEqual(b["top"]["why_label"], "Why open Claude?")
+        self.assertIn("can't read Claude's replies", b["top"]["because"])
+        self.assertIn("not the exact chat", b["top"]["because"])
+
+    def test_the_demo_says_it_is_a_demo_not_that_setup_is_unfinished(self):
+        import window_model
+        banner = window_model.demo_banner()
+        self.assertEqual((banner["tone"], banner["kind"]), ("calm", "demo"))
+        self.assertIn("made-up", banner["line"])
+        self.assertNotIn("Setup", banner["title"] + banner["line"])
+
+
 class Sparse(unittest.TestCase):
     def test_garage_shelves_stays_limited_in_both_paths(self):
         reg, items, book = resume_demo.build(NOW)
@@ -195,7 +218,13 @@ class Sparse(unittest.TestCase):
             self.assertEqual(b["state"], "limited")
             self.assertIsNone(b["next"])
             self.assertIn("can't reliably tell what you planned to do next", b["no_next"])
-            self.assertIn("Open Safari and look for Garage shelving ideas to pick up from there", resume.as_text(b))
+            text = resume.as_text(b)
+            self.assertIn("I found “Garage shelving ideas,” but I can't tell what you planned to do next. Open Safari to find the page.", text)
+            self.assertIn("## Why open Safari?", text)
+            self.assertIn("only recent source LMemM found", text)
+            self.assertIn("can't reopen the exact page", text)
+            self.assertEqual(b["top"]["action"]["label"], "Open Safari")
+            self.assertIn("can't reopen the page itself", b["top"]["action"]["note"])
 
 
 if __name__ == "__main__":

@@ -51,6 +51,7 @@ AUTHORED, OBSERVED, INFERRED = "authored", "observed", "inferred"
 LABELS = {AUTHORED: "From your note", OBSERVED: "Seen on screen", INFERRED: "AI inference"}
 CONFIDENCE = {AUTHORED: "your words", OBSERVED: "seen, not confirmed", INFERRED: "likely, not confirmed"}
 PRIVACY = ("Built on this Mac from what LMemM already remembers. No model was asked and nothing was sent anywhere.")
+BROWSERS = ("Safari", "Brave Browser", "Google Chrome", "Chrome", "Firefox", "Arc", "Microsoft Edge")
 NO_NEXT = "I can identify the work, but I can't reliably tell what you planned to do next."
 
 
@@ -224,16 +225,34 @@ def _top(out, nxt, latest, here, replaced, items=None):
     item = next((i for i in (items or []) if i["id"] == src["item"]), latest)
     target = original_of(item)
     chat = item.get("kind") == "ai_conversation"
-    if not nxt:
-        go = f"Open {here}" if target and target["kind"] == "url" else f"Open {src.get('app') or 'it'} and look for {here}"
-        lead = f"I can identify the work ({here}), but I can't reliably tell what you planned to do next. {go} to pick up from there."
-    if target and target["kind"] == "url":
+    app = src.get("app") or "it"
+    exact = bool(target and target["kind"] == "url")
+    if exact:
         label, note = ("Open conversation" if chat else "Open original"), None
-    else:                                            # an app, not an address: it opens the app, not one chat or document
+    else:                                            # an app, not an address: it opens the app, not one chat or page
         label = f"Open {src.get('app') or 'source'}"
-        note = (f"Opens the {src.get('app')} app. LMemM didn't capture an address for this chat, so it can't open the exact one."
-                if chat else None)
-    return {"headline": lead, "action": {"label": label, "item": src["item"], "title": src["title"], "can_open": src["can_open"], "note": note},
+        note = (f"Opens the {app} app. LMemM didn't capture an address for this chat, so it can't open the exact one."
+                if chat else f"Opens {app}. LMemM didn't capture the exact address, so it can't reopen the page itself.")
+    cannot_open = "" if exact else (f" It can open {app}, but not the exact chat." if chat else f" It can open {app}, but it can't reopen the exact page.")
+    if not nxt:
+        browser = app in BROWSERS
+        go = "Open it to pick up from there." if exact else f"Open {app} to find {'the page' if browser else 'it'}."
+        lead = f"I found “{here},” but I can't tell what you planned to do next. {go}"
+        many = len(items or []) > 1
+        because = (f"“{here}” is {'the most recent' if many else 'the only recent'} source LMemM found. "
+                   + ("It can reopen it, but" if exact else f"It can open {app}, but it can't reopen the exact {'page' if browser else 'item'}, and")
+                   + " nothing remembered shows what you planned to do next.")
+    elif out.get("request"):
+        because = (f"This is your latest request in {src['title']}, and nothing you wrote afterwards says it worked or didn't. "
+                   "LMemM can't read Claude's replies, so it can't tell whether it finished." + cannot_open)
+    elif replaced:
+        because = "You replaced Resume's suggestion with your own words."
+    elif nxt["kind"] == AUTHORED:
+        because = ("It is your own open note on the work you were last in, so it ranks first. Whether it is still your plan isn't shown." + cannot_open)
+    else:
+        because = ("LMemM's reading of this work lists it as open. That is an inference, not something you wrote." + cannot_open)
+    return {"headline": lead, "because": because, "why_label": "Why " + label[0].lower() + label[1:] + "?",
+            "action": {"label": label, "item": src["item"], "title": src["title"], "can_open": src["can_open"], "note": note},
             "confirmed": bool(out.get("confirmed"))}
 
 
@@ -394,10 +413,10 @@ def _build(title, mine, now, book, extra=None, thread_items=None, authored=None,
     elif sourced < MIN_CLAIMS and not (extra and extra.get("scope")):
         out["state"] = "limited"
         have = out["used"]["notes"]
-        out["note"] = ("LMemM has limited context for this project: "
+        out["note"] = ("LMemM has limited context here: "
                        f"{page_model.plural(len(mine), 'thing')} remembered, "
                        + (f"{page_model.plural(have, 'note')} of yours" if have else "no notes of yours")
-                       + " and little readable text. The most recent thing is the best place to start.")
+                       + " and little readable text.")
         out["sections"] = [s for s in sections if s["id"] == "stand"]
     else:
         out["state"] = "rich"
@@ -557,11 +576,8 @@ def why_groups(b):
     lines = []
     if b.get("request"):
         lines.append(f"Status of your request: {b['request']['label']}. {b['request']['why']}")
-    for key in ("why", "confidence"):
-        if key == "why" and b.get("request"):
-            continue
-        if b.get(key):
-            lines.append(("Why: " if key == "why" else "Confidence: ") + b[key])
+    if b.get("confidence"):
+        lines.append("Confidence: " + b["confidence"])
     cannot = list(b.get("cant_tell") or [])
     shown = {"timeline", "asked", "stand", "seen", "goal"}
     more = [s for s in b["sections"] if s["id"] not in shown]
@@ -589,7 +605,9 @@ def as_text(b):
         lines += [f"_{b['note']}_", ""]
     if b.get("sections"):
         groups, why, cannot, more = why_groups(b)
-        lines.append("## Why this suggestion?")
+        lines.append(f"## {top['why_label'] if top else 'Why this suggestion?'}")
+        if top:
+            lines.append(top["because"])
         for title, claims in groups:
             if claims:
                 lines.append(f"**{title}**")

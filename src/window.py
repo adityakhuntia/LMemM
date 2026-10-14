@@ -1649,12 +1649,15 @@ class MainWindow(RecallPanes):
         y += kit.put_text(doc, top["headline"], x, y, w, 16, 600) + 14
         act, bx = top["action"], x
         if act["can_open"]:
-            lw = max(150, int(kit.text_width(act["label"], 13, 600)) + 36)
+            lw = max(120, int(kit.text_width(act["label"], 13, 600)) + 36)
             kit.button(doc, act["label"], bx, y, lw, 34, lambda i=act["item"]: self.open_source(i), kind="primary", size=13)
             bx += lw + 8
-        kit.button(doc, "Open in LMemM", bx, y, 140, 34, lambda i=act["item"]: self.press("thing", i), kind="quiet", size=13)
-        bx += 148
-        kit.button(doc, "Copied" if self.copied_brief == page["text"] else "Copy for an AI chat", bx, y, 170, 34, lambda t=page["text"]: self.copy_brief(t), kind="quiet", size=13)
+        for label, call in (("Show in LMemM", lambda i=act["item"]: self.press("thing", i)),
+                            ("Copy text for an AI chat" if self.copied_brief != page["text"] else "Copied",
+                             lambda t=page["text"]: self.copy_brief(t))):
+            lw = int(kit.text_width(label, 13, 500)) + 32
+            kit.button(doc, label, bx, y, lw, 34, call, kind="quiet", size=12)
+            bx += lw + 8
         y += 34 + 8
         if act.get("note"):
             y += kit.put_text(doc, act["note"], x, y, w, 12, 400, kit.mute()) + 8
@@ -1671,11 +1674,15 @@ class MainWindow(RecallPanes):
         if b["note"]:
             y += kit.note(doc, "grey", b["note"], x, y, w) + 10
         groups, why, cannot, more = resume.why_groups(b) if b["sections"] else ([], [], [], [])
-        count = sum(len(c) for _t, c in groups) + len(more)
-        label = "Hide why this suggestion" if page["details_open"] else "Why this suggestion?"
-        self._link(doc, label, x - 6, y, lambda: self.press("expand", "details"), size=13, color=kit.accent())
-        y += 30
-        if page["details_open"]:
+        opened = page["details_open"]
+
+        def row(box, inner):                                       # a quiet row that reads as pressable: chevron, label, hairline card
+            kit.put_text(box, ("⌄" if opened else "›"), 14, 8, 16, 15, 600, kit.accent(), wrap=False, height=20)
+            kit.put_text(box, top["why_label"], 36, 9, inner - 28, 13, 600, wrap=False, height=20)
+            return 18
+        y = self._card_box(doc, x, y, w, row, tap=lambda: self.press("expand", "details")) + 10
+        if opened:
+            y += kit.put_text(doc, top["because"], x, y, w, 13, 400) + 12
             for title, claims in groups:
                 if claims:
                     y = self._section(doc, title, x, y, w)

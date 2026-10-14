@@ -198,6 +198,7 @@ def run_resume_demo(opts):
     print(f"Resume project demo: made-up histories in {folder} (your real memory is not touched, no Claude calls).\n"
           "Open Remote work essay, Garage shelves, Tax 2024 or Pricing page and press Resume project.")
     config.OPEN_WINDOW_AT_START = True
+    config.DEMO = True
     with config.use_paths(folder):
         tracker.Tracker(every=opts.every, input_apps=None, input_retention_hours=opts.input_retention_hours,
                         show_widget=not opts.no_widget, trail=False, live_labels=False).run()

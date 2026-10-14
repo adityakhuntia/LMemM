@@ -83,3 +83,11 @@ choosing are command-line only so far.
 - The headline quotes your words ("You asked Claude: “…”") instead of paraphrasing them; it adds no action the evidence does not support.
 - Chat attribution: typed messages are matched to chats by the event trail; only the "running a command" screen observation is called untied when its window held several chats.
 - The Mac window was not run for this change (no AppKit in the build container). To try: `python3 lmemm.py --demo-resume`, open a project, Resume.
+
+## v1.6: the disclosure explains the recommendation
+
+- `top["because"]`: one plain reason for the action (the only/most recent source; your latest request and what LMemM cannot read; your open note), including what the action cannot open. Shown first when the row is expanded; evidence follows with sources and times.
+- The row is a bordered card with a chevron, labelled by the action ("Why open Safari?"), not bare blue text.
+- Buttons are named for their destination: Open Safari (the app, not the page), Show in LMemM, Copy text for an AI chat.
+- Demo mode (`config.DEMO`) shows a calm "Demo" banner instead of "Setup is not finished".
+- The limited note is now only the counts; the recommendation is not repeated under it.

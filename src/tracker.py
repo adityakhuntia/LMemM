@@ -835,8 +835,11 @@ class Tracker:
     def window_view(self, status):
         """The window's banner needs the memory's state too: setup not finished shows as such. (A
         damaged memory file stops LMemM before it gets here, so the window never sees that one.)"""
-        memory = window_model.MEMORY_OK if store.load_user() else window_model.MEMORY_FIRST_RUN
-        return window_model.view(status, memory, self.watch_apps)
+        memory = window_model.MEMORY_OK if (store.load_user() or config.DEMO) else window_model.MEMORY_FIRST_RUN
+        v = window_model.view(status, memory, self.watch_apps)
+        if config.DEMO and not v["banner"]:                          # made-up data: say so instead of asking for setup
+            v = dict(v, banner=window_model.demo_banner())
+        return v
 
     def page_data(self):
         """What the project page reads: the project tree (a small file) and the remembered things.

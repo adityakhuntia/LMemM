@@ -57,6 +57,11 @@ def banner(status, memory=MEMORY_OK, watch_apps=()):
     return _banner(key, tone, title, line, ACTIONS.get(key))
 
 
+def demo_banner():
+    """Shown instead of the setup banner when the window runs on made-up data (`start --demo-resume`)."""
+    return _banner("demo", "calm", "Demo", "These are made-up projects in a temporary folder. Your real memory is not touched.", None)
+
+
 def _banner(kind, tone, title, line, action):
     return {"kind": kind, "tone": tone, "title": title, "line": line,
             "button": {"title": action[0], "id": action[1]} if action else None}

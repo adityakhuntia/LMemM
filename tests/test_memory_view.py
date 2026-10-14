@@ -40,3 +40,17 @@ class PaneLayoutTests(unittest.TestCase):
         kinds = {a: k for _t, _l, items in ADMIN_GROUPS for _b, a, k in items}
         self.assertEqual(kinds['revoke_agent'], 'outline')         # what cuts something off looks heavier
         self.assertEqual(kinds['confirm_disconnect'], 'outline')
+
+class AdminGroupsFollowState(unittest.TestCase):
+    def test_installed_model_is_not_offered_again(self):
+        from memory_view import admin_groups
+        model = next(g for g in admin_groups({'model_state': 'available'}) if g[0] == 'Search model')
+        self.assertEqual(model[2], [])
+        self.assertIn('Installed', model[1])
+        model = next(g for g in admin_groups({'model_state': 'missing'}) if g[0] == 'Search model')
+        self.assertEqual([a for _b, a, _k in model[2]], ['confirm_model'])
+
+    def test_the_fold_button_has_words_not_an_arrow(self):
+        from memory_view import admin_toggle_label
+        self.assertNotIn('▴', admin_toggle_label(True) + admin_toggle_label(False))
+

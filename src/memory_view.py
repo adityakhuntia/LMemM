@@ -45,6 +45,22 @@ ADMIN_GROUPS = [
 ]
 
 
+def admin_groups(status):
+    """ADMIN_GROUPS for what is true now: once the search model is installed its group says so
+    instead of offering to install it again."""
+    groups = []
+    for title, line, items in ADMIN_GROUPS:
+        if title == "Search model" and (status or {}).get("model_state") == "available":
+            line, items = "Installed. Semantic recall is on. It lives in LMemM’s own folder.", []
+        groups.append((title, line, items))
+    return groups
+
+
+def admin_toggle_label(showing):
+    """The folded section's button: words, not an arrow character."""
+    return "Hide connections and setup" if showing else "Show connections and setup"
+
+
 def state_tone(state):
     """good, accent, warn or quiet: the colour of the dot beside the state. Never red (red is for a permission that is off)."""
     return TONES.get(state, "quiet")

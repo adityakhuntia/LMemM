@@ -4,7 +4,7 @@ from AppKit import NSBezierPath, NSColor, NSFont, NSMakeRect, NSScrollView, NSTe
 import objc
 
 import setup_kit as kit
-from memory_view import ADMIN_GROUPS, evidence_rows, pause_action, source_presentation, state_tone
+from memory_view import admin_groups, admin_toggle_label, evidence_rows, pause_action, source_presentation, state_tone
 from widget import _Fields, _Flipped, _Tap
 
 
@@ -205,11 +205,12 @@ class MemoryPane:
 
             # -- set up once, then leave alone
             showing = self.show_admin or bool(view.get('preview'))
-            kit.button(host, 'Connections and setup  ' + ('▴' if showing else '▾'), x, y, kit.text_width('Connections and setup  ▾', 13, 600) + 24,
+            label = admin_toggle_label(showing)
+            kit.button(host, label, x, y, kit.text_width(label, 13, 600) + 24,
                        32, (lambda: self.action('toggle_admin', {})), kind='ghost', size=13, weight=600)
             y += 44
             if showing:
-                for title, line, items in ADMIN_GROUPS:
+                for title, line, items in admin_groups(view.get('status')):
                     if title == 'Stop':
                         rule = kit._KitRule.alloc().initWithFrame_(NSMakeRect(x, y, w, 1))
                         host.addSubview_(rule)

@@ -63,7 +63,7 @@ FLOATING = 25                       # NSStatusWindowLevel: above normal windows
 
 CARD_W, CARD_MAX_H, PAD = 272, 360, 14
 PILL_MARGIN = (10, 6)               # hit area around the drawn capsule
-PILL_BOTTOM = 6
+PILL_BOTTOM = 12                    # clear of the Dock edge
 TRACK = 1 | 128 | 512               # mouseEnteredAndExited | activeAlways | inVisibleRect
 POPOVER_MATERIAL, BEHIND_WINDOW, ACTIVE = 6, 0, 1
 CLICK_MASK = (1 << 1) | (1 << 3)    # left and right mouse down, in any app
@@ -117,9 +117,9 @@ def _rgb(rgb, alpha=1.0):
     return NSColor.colorWithRed_green_blue_alpha_(rgb[0], rgb[1], rgb[2], alpha)
 
 
-def _orange():
-    """The pill's orange for marks. The pill is light in dark mode, so the orange is deeper there (palette.py)."""
-    return _rgb(palette.ORANGE_ON_LIGHT_PILL if _dark() else palette.ORANGE_ON_DARK_PILL)
+def _accent_mark():
+    """The accent blue for marks. The pill is light in dark mode, so the blue is deeper there (palette.py)."""
+    return _rgb(palette.ACCENT_ON_LIGHT_PILL if _dark() else palette.ACCENT_ON_DARK_PILL)
 
 
 def _text_width(text, font):
@@ -153,10 +153,34 @@ def _initial(name):
     return (name or "")[:1].upper()
 
 
+class _Veil(NSView):
+    """A soft fill under a card's content, so the page behind the blur cannot read through it."""
+
+    def drawRect_(self, rect):
+        NSColor.windowBackgroundColor().colorWithAlphaComponent_(0.72).set()
+        NSBezierPath.fillRect_(self.bounds())
+
+    def isOpaque(self):
+        return False
+
+
+def _veil(width, height):
+    return _Veil.alloc().initWithFrame_(NSMakeRect(0, 0, width, height))
+
+
+def _font(size, bold=False):
+    """Figtree, the window's typeface, so the pill's cards read as the same product; the system font if it is missing."""
+    try:
+        import setup_kit                              # imported late: setup_kit imports this module
+        return setup_kit.font(size, 600 if bold else 400)
+    except Exception:
+        return NSFont.systemFontOfSize_weight_(size, 0.4) if bold else NSFont.systemFontOfSize_(size)
+
+
 def _label(text, size=11, bold=False, color=None, frame=(0, 0, 10, 10), wrap=False, strike=False):
     """A text field. wrap=True lets it run to several lines; the frame's height is then
     set from the text. Returns (field, height)."""
-    font = NSFont.systemFontOfSize_weight_(size, 0.4) if bold else NSFont.systemFontOfSize_(size)
+    font = _font(size, bold)
     color = color or NSColor.labelColor()
     field = NSTextField.labelWithString_(text)
     if strike:
@@ -167,6 +191,9 @@ def _label(text, size=11, bold=False, color=None, frame=(0, 0, 10, 10), wrap=Fal
         field.setFont_(font)
         field.setTextColor_(color)
     field.setLineBreakMode_(0 if wrap else 4)         # wrap words / truncate tail
+    if wrap:
+        field.setMaximumNumberOfLines_(0)             # a label draws one line unless told otherwise
+        field.setUsesSingleLineMode_(False)
     x, y, w, h = frame
     if wrap:
         h = max(h, field.cell().cellSizeForBounds_(NSMakeRect(0, 0, w, 10000)).height)
@@ -380,7 +407,7 @@ def _field(text, placeholder, size, bold, frame, delegate):
     field = NSTextField.alloc().initWithFrame_(NSMakeRect(*frame))
     field.setStringValue_(text)
     field.setPlaceholderString_(placeholder)
-    field.setFont_(NSFont.systemFontOfSize_weight_(size, 0.4) if bold else NSFont.systemFontOfSize_(size))
+    field.setFont_(_font(size, bold))
     field.setBordered_(False)
     field.setDrawsBackground_(False)
     field.setFocusRingType_(1)                       # none
@@ -429,7 +456,7 @@ class _Badge(_Flipped):
 
     def drawRect_(self, rect):
         if self.tone == "accent":
-            _rgb(palette.ORANGE_TEXT_ON_LIGHT).setFill()
+            _rgb(palette.ACCENT).setFill()
         elif self.tone == "bad":
             NSColor.systemRedColor().colorWithAlphaComponent_(0.14).setFill()
         else:
@@ -451,18 +478,17 @@ class _Dashed(_Flipped):
 
 
 class _Ring(_Flipped):
-    """The round tick box: an outline, filled orange with a tick once done."""
+    """The round tick box: an outline, filled blue with a tick once done."""
 
     def initWithChecked_(self, checked):
         self = objc.super(_Ring, self).initWithFrame_(NSMakeRect(0, 0, 17, 17))
         self.checked = checked
-        self.blue = False                                  # the windows use the blue accent; the pill's card keeps its orange
         return self
 
     def drawRect_(self, rect):
         circle = NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(1, 1, 15, 15))
         if self.checked:
-            (_rgb(palette.ACCENT) if self.blue else _rgb(palette.ORANGE_TEXT_ON_LIGHT)).setFill()      # white tick on it: 4.9:1 / 5.0:1
+            _rgb(palette.ACCENT).setFill()                                  # white tick on it: 4.9:1
             circle.fill()
             tick = NSBezierPath.bezierPath()
             tick.moveToPoint_((5, 8.8))
@@ -531,13 +557,13 @@ class _PillView(NSView):
 
     @objc.python_method
     def _dot(self, x, y, lit=True):
-        (_orange() if lit else NSColor.colorWithWhite_alpha_(0.5, 0.8)).setFill()
+        (_accent_mark() if lit else NSColor.colorWithWhite_alpha_(0.5, 0.8)).setFill()
         NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(x - 4, y - 4, 8, 8)).fill()
 
     @objc.python_method
     def _tick(self, x, y):
-        """A small orange check."""
-        _orange().setStroke()
+        """A small blue check."""
+        _accent_mark().setStroke()
         path = NSBezierPath.bezierPath()
         path.moveToPoint_((x - 4, y))
         path.lineToPoint_((x - 1, y + 3.2))
@@ -556,7 +582,7 @@ class _PillView(NSView):
 
     @objc.python_method
     def _bars(self, x, y):
-        _orange().setFill()
+        _accent_mark().setFill()
         for i, base in enumerate((5, 12, 8, 13, 6)):
             h = max(3, base * (0.6 + 0.4 * math.sin(time.time() * 7 + i * 1.3)))
             NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
@@ -564,7 +590,7 @@ class _PillView(NSView):
 
     @objc.python_method
     def _text(self, text, size, bold, color, area, centre=False):
-        font = NSFont.systemFontOfSize_weight_(size, 0.4) if bold else NSFont.systemFontOfSize_(size)
+        font = _font(size, bold)
         attrs = {NSFontAttributeName: font, NSForegroundColorAttributeName: color}
         wide = _text_width(text, font)
         high = NSAttributedString.alloc().initWithString_attributes_(text, attrs).size().height
@@ -711,30 +737,30 @@ class Widget:
 
     def peek_text(self):
         if not self.count:
-            return _fit(self.sug["peek"], NSFont.systemFontOfSize_(13), PEEK_MAX - 44) if self.sug else "No notes here"
-        return _fit(self.first.replace("\n", " "), NSFont.systemFontOfSize_(13), PEEK_MAX - 44)
+            return _fit(self.sug["peek"], _font(13), PEEK_MAX - 44) if self.sug else "No notes here"
+        return _fit(self.first.replace("\n", " "), _font(13), PEEK_MAX - 44)
 
     def heard_text(self):
         text = (self.listening or "").replace("\n", " ").strip()
         if not text:
             return "Listening…"
-        return _fit(text, NSFont.systemFontOfSize_(13), LISTEN_W - 48, tail=True)
+        return _fit(text, _font(13), LISTEN_W - 48, tail=True)
 
     def _capsule(self):
         """Size of the drawn capsule for the current state."""
         state = self.mode_of_pill()
         if state == "peek":
-            return _text_width(self.peek_text(), NSFont.systemFontOfSize_(13)) + 44 + (4 if not self.count and self.sug else 0), 28
+            return _text_width(self.peek_text(), _font(13)) + 44 + (4 if not self.count and self.sug else 0), 28
         if state in MARKS:
             return 28, 28
         if state == "saved":
-            return _text_width(self.saved, NSFont.systemFontOfSize_(13)) + 48, 28
+            return _text_width(self.saved, _font(13)) + 48, 28
         if state == "listening":
             return LISTEN_W, 30                          # one width: it does not chase every word
         if state == "count":
             return 44, 22
         if state == "suggest":
-            return (_text_width(SUGGEST_WORDS, NSFont.systemFontOfSize_(13)) + 52, 28) if self.sug["first_time"] else (44, 22)
+            return (_text_width(SUGGEST_WORDS, _font(13)) + 52, 28) if self.sug["first_time"] else (44, 22)
         return 36, 5
 
     def layout(self, animate=False):
@@ -772,7 +798,7 @@ class Widget:
         else:
             icon.setContentTintColor_(NSColor.colorWithWhite_alpha_(0.09 if dark else 1.0, 1.0))
         icon.setHidden_(image is None)
-        self.pill_view.setToolTip_(tip)
+        self.pill_view.setToolTip_(tip if bad else None)    # the system draws a tooltip down-right of the pointer, onto the Dock; the card says the rest
         icon.setAccessibilityElement_(False)            # the pill reads as one button (accessibility_text)
 
     def pulse(self, heard):
@@ -954,6 +980,7 @@ class Widget:
         content.setWantsLayer_(True)
         content.layer().setCornerRadius_(18)
         content.layer().setMasksToBounds_(True)
+        content.addSubview_(_veil(CARD_W, height))
         scroll = NSScrollView.alloc().initWithFrame_(NSMakeRect(0, 0, CARD_W, height))
         scroll.setDrawsBackground_(False)
         scroll.setHasVerticalScroller_(y > CARD_MAX_H)

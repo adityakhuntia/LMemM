@@ -51,12 +51,15 @@ def period_args(period,now=None):
 
 def memory_view(state,binding,status,result):
     status=status or {};result=result or {};mode=status.get('state','Disabled')
+    model_only=mode=='Needs attention' and status.get('reason')=='Local model unavailable'
+    if model_only:mode='Ready'           # the optional search model is the only problem: working, not alarming
     messages={'Disabled':'Enable Memory for this project to retain new permitted evidence.',
               'Paused':'Capture and indexing paused. Keyword recall of retained evidence remains available.',
               'Processing':'Processing new evidence. Retained evidence remains available.',
               'Needs attention':status.get('reason') or 'Memory needs attention.'}
     message=messages.get(mode,'Retained snapshots with citations. Matching evidence may not answer your question.')
-    if status.get('model_state')=='missing' and mode!='Disabled':message+=' Keyword search is available; install the local model for semantic recall.'
+    if model_only or (status.get('model_state')=='missing' and mode!='Disabled'):
+        message=(message if not model_only else 'Memory is working.')+' Keyword search is on; install the local model for semantic recall.'
     return dict(tabs=list(TABS),periods=list(PERIODS),tab=state['tab'],query=state['query'],period=state['period'],
                 state=mode,binding=binding,status=status,message=message,loading=state['loading'],error=state['error'],
                 result=result,source=state['source'],preview=state['preview'],

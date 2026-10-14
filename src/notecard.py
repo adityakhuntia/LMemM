@@ -19,7 +19,7 @@ from AppKit import (NSBezierPath, NSColor, NSFont, NSMakeRect, NSScreen, NSScrol
 
 import palette
 import widget
-from widget import _Flipped, _label, _panel, PAD, PILL_BOTTOM, POPOVER_MATERIAL, BEHIND_WINDOW, ACTIVE
+from widget import _Flipped, _font, _label, _panel, _veil, PAD, PILL_BOTTOM, POPOVER_MATERIAL, BEHIND_WINDOW, ACTIVE
 
 CARD_W, CARD_H = 320, 150
 GAP = 46                                    # from the screen's bottom edge to the card: clear of the pill
@@ -28,8 +28,8 @@ HINT = "Return saves  ·  Esc cancels"
 
 
 def _accent(alpha=1.0):
-    """The pill's orange, deeper on the light card so the words in it can be read (palette.py)."""
-    r, g, b = palette.ORANGE_TEXT_ON_DARK if widget._dark() else palette.ORANGE_TEXT_ON_LIGHT
+    """The accent blue, lighter on the dark card so the words in it can be read (palette.py)."""
+    r, g, b = palette.ACCENT_TEXT_ON_DARK if widget._dark() else palette.ACCENT_TEXT_ON_LIGHT
     return NSColor.colorWithRed_green_blue_alpha_(r, g, b, alpha)
 
 
@@ -87,6 +87,7 @@ class NoteCard:
         content.setWantsLayer_(True)
         content.layer().setCornerRadius_(18)
         content.layer().setMasksToBounds_(True)
+        content.addSubview_(_veil(CARD_W, CARD_H))
         body = _Flipped.alloc().initWithFrame_(NSMakeRect(0, 0, CARD_W, CARD_H))
         mute = NSColor.secondaryLabelColor()
 
@@ -103,7 +104,7 @@ class NoteCard:
         scroll.setHasVerticalScroller_(False)
         self.text = NSTextView.alloc().initWithFrame_(NSMakeRect(0, 0, CARD_W - 2 * PAD, 68))
         self.text.setDrawsBackground_(False)
-        self.text.setFont_(NSFont.systemFontOfSize_(16))
+        self.text.setFont_(_font(16))
         self.text.setRichText_(False)
         self.text.setTextContainerInset_((0, 2))
         self.text.textContainer().setLineFragmentPadding_(0)
@@ -147,7 +148,7 @@ class NoteCard:
         return self.panel.isVisible()
 
     def status_is(self, listening, problem=None):
-        """Listening (orange, moving), or off: the mic is unavailable and you type instead."""
+        """Listening (blue, moving), or off: the mic is unavailable and you type instead."""
         self.bars.live = bool(listening)
         self.bars.setNeedsDisplay_(True)
         if listening:

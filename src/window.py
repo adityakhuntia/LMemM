@@ -474,7 +474,7 @@ class MainWindow:
             return
         self.shown = sig
         self.krows = {"side": [], "main": []}
-        top = self._banner(self.banner["banner"])
+        top = self._banner(self.banner and self.banner["banner"])
         main = page["main"]
         split = main["kind"] == "project" and (not main.get("empty") or self.memory_snapshot is not None)      # a project: its top stays put, Things scrolls
         head = self._head(main) if split else self._no_head()

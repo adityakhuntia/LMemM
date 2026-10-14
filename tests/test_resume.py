@@ -120,12 +120,12 @@ class Original(unittest.TestCase):
     def test_url_then_app_then_none(self):
         reg, items, book, by = ids()
         self.assertEqual(resume.original_of(items["e1"])["kind"], "url")
-        self.assertEqual(resume.original_of(items["g1"]), {"kind": "app", "value": "Safari"})
+        self.assertEqual(resume.original_of(items["g1"]), {"kind": "app", "value": "Safari", "app": "Safari", "problem": None})
         self.assertIsNone(resume.original_of({"id": "x"}))
 
     def test_only_web_addresses(self):
         item = {"id": "x", "app": "Mail", "content": {"excerpts": [{"source": {"url": "file:///etc/passwd"}}]}}
-        self.assertEqual(resume.original_of(item), {"kind": "app", "value": "Mail"})
+        self.assertEqual(resume.original_of(item), {"kind": "app", "value": "Mail", "app": "Mail", "problem": None})
 
 
 class Page(unittest.TestCase):

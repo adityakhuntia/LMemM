@@ -1,6 +1,6 @@
 """LMemM - sample project histories for trying Resume this project without waiting for real work.
 
-Four projects, one for each return moment the brief has to handle honestly:
+Seven projects, one for each return moment the brief has to handle honestly:
 
     Remote work essay   rich       your notes, a task reading, text seen, one decision quote
     Garage shelves      limited    one window, no notes, nothing readable
@@ -36,11 +36,12 @@ def _item(iid, app, title, last, seconds=600, visits=3, lines=(), quotes=(), url
     return item
 
 
-def build(now=None):
+def build(now=None, folder=None):
     now = now or datetime.now()
     reg = projects.empty()
-    essay, garage, tax, pricing = (projects.create(reg, n, now=now) for n in
-                                   ("Remote work essay", "Garage shelves", "Tax 2024", "Pricing page"))
+    essay, garage, tax, pricing, kitchen, lease, receipts = (projects.create(reg, n, now=now) for n in
+                                   ("Remote work essay", "Garage shelves", "Tax 2024", "Pricing page",
+                                    "Kitchen reno (exact page)", "Lease (local file)", "Old receipts (file gone)"))
     items = {}
 
     def add(item):
@@ -71,6 +72,18 @@ def build(now=None):
               lines=["Agreed in the thread: we ship three plans, Starter, Team and Business, and drop the free tier."],
               quotes=["We agreed to ship three plans and drop the free tier."],
               note_texts=["Who signs off on the final price list?"]))
+    # exact reopening (source_ref.py): a page with a saved address, a file that is there, a file that is gone
+    add(_item("k1", "Safari", "Kitchen cabinet options", h(hours=30), 600, 2, project=kitchen))
+    items["k1"]["source"] = {"kind": "url", "value": "https://example.org/kitchen-cabinets", "app": "Safari",
+                             "title": "Kitchen cabinet options", "seen": items["k1"]["last_seen"]}
+    add(_item("l1", "Preview", "Lease summary", h(hours=26), 600, 2, project=lease))
+    add(_item("r1", "Preview", "Receipts - April", h(hours=50), 300, 1, project=receipts))
+    if folder:
+        import os
+        items["l1"]["source"] = {"kind": "file", "value": os.path.join(str(folder), "Lease summary.txt"), "app": "Preview",
+                                 "title": "Lease summary", "seen": items["l1"]["last_seen"]}
+        items["r1"]["source"] = {"kind": "file", "value": os.path.join(str(folder), "moved-away", "Receipts - April.pdf"), "app": "Preview",
+                                 "title": "Receipts - April", "seen": items["r1"]["last_seen"]}
     book = {"demo": {"at": h(hours=19).isoformat(timespec="seconds"), "tasks": [
         {"title": "Finish the remote work essay", "goal": "Finish the essay arguing that async work protects focus time.",
          "stage": "building", "items": ["e1", "e2"], "open": "Write the onboarding counter-argument in section 3."}]}}
@@ -79,10 +92,13 @@ def build(now=None):
 
 def seed(data_dir, now=None):
     """Write the sample histories as a data folder; returns the project ids by name."""
-    reg, items, book = build(now)
     import json
     import os
     import tasks
+    reg, items, book = build(now, folder=data_dir)
+    os.makedirs(str(data_dir), exist_ok=True)
+    with open(os.path.join(str(data_dir), "Lease summary.txt"), "w") as fh:        # a real file for the local-file case
+        fh.write("Made-up lease summary for the Resume demo.\n")
     with config.use_paths(data_dir):
         os.makedirs(config.paths().memory_dir, exist_ok=True)
         store.save_memory(items)

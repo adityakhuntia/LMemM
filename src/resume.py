@@ -26,14 +26,17 @@ A line with no source is never shown. Nothing here decides a goal, a decision, a
        quoted: its speaker is unknown and its text is noisy; the brief links to the chat instead.
 """
 
+import os
 import re
 from datetime import datetime
 
+import config
 import evidence as ev
 import notes
 import page_model
 import projects
 import resume_feedback as rf
+import source_ref
 import store
 import tasks
 
@@ -69,16 +72,35 @@ def label_of(item):
     return f"{app} conversation" if kind == "ai_conversation" else f"{app} chat" if kind == "chat" else app
 
 
-def original_of(item):
-    """What 'Open original' should open: a web address LMemM saw for this thing, else its app. None if neither."""
+def original_of(item, exists=os.path.exists):
+    """What 'Open' should open, most exact first (source_ref.py R36-R39): the saved page or file; else an address seen in the
+    text LMemM kept; else only the app, with `problem` saying why there is no address (None: none was ever saved)."""
+    saved = item.get("source")
+    ok, problem = source_ref.check(saved, exists)
+    if ok:
+        return {"kind": saved["kind"], "value": saved["value"], "app": saved.get("app") or item.get("app"), "problem": None}
     for excerpt in reversed(item.get("content", {}).get("excerpts", [])):
         url = ((excerpt.get("source") or {}).get("url") or "").strip()
+        if url and not re.match(r"^[a-z][a-z0-9+.-]*://", url, re.I):
+            url = "https://" + url
+        url = source_ref.clean_url(url)
         if url:
-            if not re.match(r"^[a-z][a-z0-9+.-]*://", url, re.I):
-                url = "https://" + url
-            if url.lower().startswith(("http://", "https://")):
-                return {"kind": "url", "value": url}
-    return {"kind": "app", "value": item["app"]} if item.get("app") else None
+            return {"kind": "url", "value": url, "app": (excerpt.get("source") or {}).get("app") or item.get("app"), "problem": None}
+    return {"kind": "app", "value": item["app"], "app": item["app"], "problem": problem if isinstance(saved, dict) else None} if item.get("app") else None
+
+
+def open_command(item, exists=os.path.exists):
+    """-> {"args": [...], "exact": bool, "problem": str | None}: the macOS `open` call for this thing, or args None when
+    there is nothing to open. A web address opens in the browser it was seen in, when that is a browser."""
+    target = original_of(item, exists)
+    if not target:
+        return {"args": None, "exact": False, "problem": None}
+    if target["kind"] == "url":
+        browser = target.get("app") in config.BROWSERS
+        return {"args": ["open", "-a", target["app"], target["value"]] if browser else ["open", target["value"]], "exact": True, "problem": None}
+    if target["kind"] == "file":
+        return {"args": ["open", target["value"]], "exact": True, "problem": None}
+    return {"args": ["open", "-a", target["value"]], "exact": False, "problem": target.get("problem")}
 
 
 def source(item, at=None, now=None):
@@ -87,7 +109,8 @@ def source(item, at=None, now=None):
     when = _when(at)
     out = {"item": item["id"], "title": label_of(item), "app": item.get("app", ""), "at": at,
            "clock": when.strftime("%H:%M") if when else "", "can_open": target is not None,
-           "open_label": "Open original" if target and target["kind"] == "url" else f"Open {item.get('app', '')}"}
+           "exact": bool(target and target["kind"] in ("url", "file")), "problem": (target or {}).get("problem"),
+           "open_label": "Open source" if target and target["kind"] in ("url", "file") else f"Open {item.get('app', '')}"}
     out["ago"] = page_model.ago(at, now) if now else ""
     return out
 
@@ -195,11 +218,15 @@ def _next_from_messages(out, by_chat, item_of, scope, now, mine, thread_ids, sec
     quoted = re.sub(r"^(yup|yes|yeah|ok|okay|sure)[,.!\s]+", "", sentence, flags=re.I) or sentence
     base = f"You asked Claude: “{quoted}”."
     target = original_of(item)
-    go = "Open the conversation" if target and target["kind"] == "url" else f"Open {item.get('app') or 'it'} and find that chat"
+    if target and target["kind"] in ("url", "file"):
+        go = "Open the conversation to check."
+    else:
+        why_not = (target or {}).get("problem")
+        go = (f"LMemM can't take you to that chat: {why_not}." if why_not else "LMemM didn't save an address for that chat, so it can't take you to it.")
     out["_lead"] = base + {
-        "open": f" You then wrote that it hadn't worked. {go} to see where it stands.",
-        "likely_addressed": f" The screen showed Claude working afterwards, but I can't tell whether it finished. {go} to check.",
-    }.get(status["status"], f" I can't tell from this capture whether it finished. {go} to check.")
+        "open": f" You then wrote that it hadn't worked. {go}",
+        "likely_addressed": f" The screen showed Claude working afterwards, but I can't tell whether it finished. {go}",
+    }.get(status["status"], f" I can't tell from this capture whether it finished. {go}")
     out["request"] = {"text": sentence, "status": status["status"], "label": status["label"], "why": status["why"],
                       "source": source(item, req["at"], now), "chat": chat}
     out["why"] = (f"Your latest request in that chat was at {clock} (“{sentence}”). Its status is {status['label'].lower()}: {status['why']}")
@@ -226,22 +253,26 @@ def _top(out, nxt, latest, here, replaced, items=None):
     target = original_of(item)
     chat = item.get("kind") == "ai_conversation"
     app = src.get("app") or "it"
-    exact = bool(target and target["kind"] == "url")
+    exact = bool(target and target["kind"] in ("url", "file"))
+    problem = (target or {}).get("problem")
+    thing = "chat" if chat else "file" if (item.get("source") or {}).get("kind") == "file" else "page"
     if exact:
-        label, note = ("Open conversation" if chat else "Open original"), None
-    else:                                            # an app, not an address: it opens the app, not one chat or page
-        label = f"Open {src.get('app') or 'source'}"
-        note = (f"Opens the {app} app. LMemM didn't capture an address for this chat, so it can't open the exact one."
-                if chat else f"Opens {app}. LMemM didn't capture the exact address, so it can't reopen the page itself.")
-    cannot_open = "" if exact else (f" It can open {app}, but not the exact chat." if chat else f" It can open {app}, but it can't reopen the exact page.")
+        label, note = ("Open conversation" if chat else "Open source"), None
+        primary, also = {"label": label, "mode": "source"}, None
+    else:       # no address to reopen: lead with what LMemM saved, and offer the app only as what it is
+        gone = f"{problem[0].upper()}{problem[1:]}." if problem else "LMemM didn't save an address for it."
+        note = f"{gone} Open {app} starts the app only; it can't take you to the {thing}." if src["can_open"] else gone
+        primary = {"label": "Show in LMemM", "mode": "lmemm"}
+        also = {"label": f"Open {app}", "mode": "source"} if src["can_open"] else None
+    cannot_open = "" if exact else f" It has no address for that {thing}, so it can open {app} but not take you to it."
     if not nxt:
         browser = app in BROWSERS
-        go = "Open it to pick up from there." if exact else f"Open {app} to find {'the page' if browser else 'it'}."
-        lead = f"I found “{here},” but I can't tell what you planned to do next. {go}"
+        reason = f", and {problem}" if problem else ", and LMemM has no saved address to reopen it"
+        lead = f"I found “{here},” but I can't tell what you planned to do next{'. Open source to pick up from there.' if exact else reason + '.'}"
         many = len(items or []) > 1
         because = (f"“{here}” is {'the most recent' if many else 'the only recent'} source LMemM found. "
-                   + ("It can reopen it, but" if exact else f"It can open {app}, but it can't reopen the exact {'page' if browser else 'item'}, and")
-                   + " nothing remembered shows what you planned to do next.")
+                   + ("It can reopen it, but nothing remembered shows what you planned to do next." if exact else
+                      f"It has no address for it, so it can open {app} but not the exact {thing if (thing == 'file' or browser) else 'item'}, and nothing remembered shows what you planned to do next."))
     elif out.get("request"):
         because = (f"This is your latest request in {src['title']}, and nothing you wrote afterwards says it worked or didn't. "
                    "LMemM can't read Claude's replies, so it can't tell whether it finished." + cannot_open)
@@ -251,9 +282,10 @@ def _top(out, nxt, latest, here, replaced, items=None):
         because = ("It is your own open note on the work you were last in, so it ranks first. Whether it is still your plan isn't shown." + cannot_open)
     else:
         because = ("LMemM's reading of this work lists it as open. That is an inference, not something you wrote." + cannot_open)
-    return {"headline": lead, "because": because, "why_label": "Why " + label[0].lower() + label[1:] + "?",
-            "action": {"label": label, "item": src["item"], "title": src["title"], "can_open": src["can_open"], "note": note},
-            "confirmed": bool(out.get("confirmed"))}
+    action = {"label": primary["label"], "mode": primary["mode"], "item": src["item"], "title": src["title"],
+              "can_open": src["can_open"] or primary["mode"] == "lmemm", "note": note, "also": also and dict(also, item=src["item"])}
+    return {"headline": lead, "because": because, "why_label": ("Why " + label[0].lower() + label[1:] + "?") if exact else f"Why can't Resume open the {thing}?",
+            "action": action, "confirmed": bool(out.get("confirmed"))}
 
 
 def _build(title, mine, now, book, extra=None, thread_items=None, authored=None, feedback=None):
@@ -590,8 +622,10 @@ def as_text(b):
     lines = [f"# Where I left off: {b['title']}", ""]
     top = b.get("top")
     if top:
-        lines += [f"**{top['headline']}**", f"Action: {top['action']['label']} ({top['action']['title']})"
-                  + (f". {top['action']['note']}" if top["action"].get("note") else ""), ""]
+        act = top["action"]
+        lines += [f"**{top['headline']}**", f"Action: {act['label']} ({act['title']})"
+                  + (f". {act['note']}" if act.get("note") else "")
+                  + (f" Also: {act['also']['label']}." if act.get("also") else ""), ""]
     if b.get("project_link") == "unconfirmed":
         lines += ["_These things aren't filed in a project, so Resume kept together only what clearly belongs together._"]
         if b.get("relation"):

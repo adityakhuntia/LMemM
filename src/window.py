@@ -140,6 +140,7 @@ class MainWindow(RecallPanes):
                  text_reset=None, copy=None, resume_events=None):
         self.on_press = on_press
         self.copied_brief = None                                       # the last Resume brief copied (its button says Copied)
+        self.resume_notice = None                                      # what the last Open said, when it could not take you all the way
         self.data = data
         self.resume_events = resume_events or (lambda: None)
         self.on_tick = on_tick or (lambda ids, done: None)               # tick or reopen notes (the pill's own function)
@@ -382,6 +383,8 @@ class MainWindow(RecallPanes):
 
     def press(self, action, arg=None):
         reg, items = self.data()
+        if action != "expand":
+            self.resume_notice = None                              # what the last Open said belongs to the page it was said on
         if action in {"go", "home", "needs"}:
             self.search.setStringValue_("")                        # leaving a search clears its words
         if action not in {"more", "more_subs", "more_side", "toggle"}:
@@ -1588,16 +1591,26 @@ class MainWindow(RecallPanes):
     # ------------------------------------------------------------ resume this project
 
     def open_source(self, tid):
-        """Open the original of a thing (its web address, else its app). Only opens; changes nothing (resume.py)."""
+        """Open the exact page or file of a thing, or only its app when no address was saved (resume.open_command).
+        Only opens; changes nothing. A failure leaves a line on the page and the thing stays in LMemM."""
         reg, items = self.data()
-        target = resume.original_of(items[tid]) if tid in items else None
-        if not target:
-            return
-        args = ["open", target["value"]] if target["kind"] == "url" else ["open", "-a", target["value"]]
-        try:
-            subprocess.run(args, check=False, timeout=10)
-        except (OSError, subprocess.SubprocessError):
-            print("window: could not open", target["value"], file=sys.stderr)
+        cmd = resume.open_command(items[tid]) if tid in items else {"args": None, "exact": False, "problem": None}
+        if not cmd["args"]:
+            self.resume_notice = "There is nothing to open for this. It is still in LMemM."
+        else:
+            try:
+                done = subprocess.run(cmd["args"], check=False, timeout=10, capture_output=True)
+                if done.returncode != 0:
+                    self.resume_notice = "macOS couldn't open that. It is still in LMemM."
+                elif not cmd["exact"]:
+                    self.resume_notice = (cmd["problem"] + ". " if cmd["problem"] else "") + "Opened the app only; it can't take you to the page."
+                else:
+                    self.resume_notice = None
+            except (OSError, subprocess.SubprocessError):
+                print("window: could not open", cmd["args"][-1], file=sys.stderr)
+                self.resume_notice = "macOS couldn't open that. It is still in LMemM."
+        self.shown = None
+        self.render()
 
     def resume_fb(self, action, key=None, item=None, text=None):
         """Your word on a Resume suggestion (resume_feedback.py). Kept in its own file; memory is not touched."""
@@ -1648,19 +1661,21 @@ class MainWindow(RecallPanes):
         top, latest = b["top"], b["latest"]
         y += kit.put_text(doc, top["headline"], x, y, w, 16, 600) + 14
         act, bx = top["action"], x
-        if act["can_open"]:
-            lw = max(120, int(kit.text_width(act["label"], 13, 600)) + 36)
-            kit.button(doc, act["label"], bx, y, lw, 34, lambda i=act["item"]: self.open_source(i), kind="primary", size=13)
-            bx += lw + 8
-        for label, call in (("Show in LMemM", lambda i=act["item"]: self.press("thing", i)),
-                            ("Copy text for an AI chat" if self.copied_brief != page["text"] else "Copied",
-                             lambda t=page["text"]: self.copy_brief(t))):
-            lw = int(kit.text_width(label, 13, 500)) + 32
-            kit.button(doc, label, bx, y, lw, 34, call, kind="quiet", size=12)
+        go = (lambda i=act["item"]: self.open_source(i)) if act["mode"] == "source" else (lambda i=act["item"]: self.press("thing", i))
+        buttons = [(act["label"], go, "primary")]
+        if act.get("also"):
+            buttons.append((act["also"]["label"], lambda i=act["item"]: self.open_source(i), "quiet"))
+        if act["mode"] == "source":
+            buttons.append(("Show in LMemM", lambda i=act["item"]: self.press("thing", i), "quiet"))
+        buttons.append(("Copy text for an AI chat" if self.copied_brief != page["text"] else "Copied", lambda t=page["text"]: self.copy_brief(t), "quiet"))
+        for label, call, kind in buttons:
+            lw = max(110, int(kit.text_width(label, 13, 600 if kind == "primary" else 500)) + 32)
+            kit.button(doc, label, bx, y, lw, 34, call, kind=kind, size=13 if kind == "primary" else 12)
             bx += lw + 8
         y += 34 + 8
-        if act.get("note"):
-            y += kit.put_text(doc, act["note"], x, y, w, 12, 400, kit.mute()) + 8
+        for line in (act.get("note"), self.resume_notice):
+            if line:
+                y += kit.put_text(doc, line, x, y, w, 12, 400, kit.mute()) + 8
         key = (b.get("next") or {}).get("key")
         if key:                                                    # your word on it; the captured evidence is never changed
             src = b["next"]["source"]["item"]

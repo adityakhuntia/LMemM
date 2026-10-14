@@ -18,6 +18,7 @@ import resume
 import resume_cli
 import resume_demo
 import resume_feedback as rf
+import source_ref
 import test_resume_pr25 as pr25
 
 setUpModule, tearDownModule = pr25.setUpModule, pr25.tearDownModule
@@ -93,22 +94,23 @@ class Pr25(unittest.TestCase):
         for b in (self.scoped(), self.filed()):
             top = b["top"]
             self.assertTrue(top["headline"].startswith("You asked Claude: “lets go with the apple style. lets code this up”."))
-            # the Claude chat has no captured address, so the action opens the app and must not promise the exact chat
-            self.assertIn("I can't tell from this capture whether it finished. Open Claude and find that chat to check.", top["headline"])
-            self.assertEqual((top["action"]["label"], top["action"]["item"], top["action"]["can_open"]), ("Open Claude", pr25.CLAUDE, True))
-            self.assertIn("can't open the exact one", top["action"]["note"])
+            # the Claude chat has no saved address: say so, lead with what LMemM saved, and never imply the app finds the chat
+            self.assertIn("I can't tell from this capture whether it finished. LMemM didn't save an address for that chat, so it can't take you to it.", top["headline"])
+            self.assertEqual((top["action"]["label"], top["action"]["mode"], top["action"]["item"]), ("Show in LMemM", "lmemm", pr25.CLAUDE))
+            self.assertEqual(top["action"]["also"]["label"], "Open Claude")
+            self.assertIn("starts the app only", top["action"]["note"])
             for bit in ("mac", "push", "test it", "merged", "is still open", "unfinished"):
                 self.assertNotIn(bit, top["headline"].lower())
             text = resume.as_text(b)
-            self.assertLess(text.index(top["headline"]), text.index("## Why open"))
-            self.assertLess(text.index("Action: Open Claude"), text.index("## Why open"))
+            self.assertLess(text.index(top["headline"]), text.index("## Why"))
+            self.assertLess(text.index("Action: Show in LMemM"), text.index("## Why"))
 
     def test_a_chat_with_an_address_opens_the_conversation(self):
         items = copy.deepcopy(self.items)
         for e in items[pr25.CLAUDE]["content"]["excerpts"]:
             e["source"]["url"] = "https://claude.ai/chat/abc"
         b = resume.brief_scope(items, "PR 25", NOW, {}, None, self.trail)
-        self.assertEqual(b["top"]["action"]["label"], "Open conversation")
+        self.assertEqual((b["top"]["action"]["label"], b["top"]["action"]["mode"]), ("Open conversation", "source"))
         self.assertIsNone(b["top"]["action"]["note"])
         self.assertIn("Open the conversation to check.", b["top"]["headline"])
 
@@ -197,9 +199,9 @@ class Explained(unittest.TestCase):
     def test_pr25_explains_why_it_points_at_the_app_not_the_chat(self):
         doc = pr25.load_doc()
         b = resume.brief_scope({i["id"]: i for i in doc["items"]}, "PR 25", NOW, {}, None, doc["trail"])
-        self.assertEqual(b["top"]["why_label"], "Why open Claude?")
+        self.assertEqual(b["top"]["why_label"], "Why can't Resume open the chat?")
         self.assertIn("can't read Claude's replies", b["top"]["because"])
-        self.assertIn("not the exact chat", b["top"]["because"])
+        self.assertIn("no address for that chat", b["top"]["because"])
 
     def test_the_demo_says_it_is_a_demo_not_that_setup_is_unfinished(self):
         import window_model
@@ -207,6 +209,93 @@ class Explained(unittest.TestCase):
         self.assertEqual((banner["tone"], banner["kind"]), ("calm", "demo"))
         self.assertIn("made-up", banner["line"])
         self.assertNotIn("Setup", banner["title"] + banner["line"])
+
+
+class ExactSource(unittest.TestCase):
+    """Reopening the exact page or file (source_ref.py R36-R39, resume.open_command)."""
+
+    def demo(self, folder=None):
+        reg, items, book = resume_demo.build(NOW, folder=folder)
+        by = {p["name"]: pid for pid, p in reg["projects"].items()}
+        return reg, items, book, by
+
+    def test_1_a_safari_page_with_an_address_opens_that_exact_page(self):
+        reg, items, book, by = self.demo()
+        cmd = resume.open_command(items["k1"])
+        self.assertEqual(cmd["args"], ["open", "-a", "Safari", "https://example.org/kitchen-cabinets"])
+        self.assertTrue(cmd["exact"])
+        top = resume.brief(reg, items, by["Kitchen reno (exact page)"], NOW, book)["top"]
+        self.assertEqual((top["action"]["label"], top["action"]["mode"]), ("Open source", "source"))
+        self.assertIsNone(top["action"]["note"])
+        self.assertIn("Open source to pick up from there.", top["headline"])
+
+    def test_2_safari_with_no_address_says_it_can_open_safari_but_not_the_page(self):
+        reg, items, book, by = self.demo()
+        cmd = resume.open_command(items["g1"])
+        self.assertEqual((cmd["args"], cmd["exact"]), (["open", "-a", "Safari"], False))
+        top = resume.brief(reg, items, by["Garage shelves"], NOW, book)["top"]
+        self.assertIn("starts the app only; it can't take you to the page", top["action"]["note"])
+        self.assertEqual(top["action"]["label"], "Show in LMemM")                # the saved title stays reachable
+
+    def test_3_stale_or_invalid_references_fail_gracefully_and_keep_the_item(self):
+        reg, items, book, by = self.demo(tempfile.mkdtemp())
+        gone = resume.open_command(items["r1"])                                 # the file moved away
+        self.assertEqual((gone["exact"], gone["args"]), (False, ["open", "-a", "Preview"]))
+        self.assertIn("isn't at its saved location any more", gone["problem"])
+        b = resume.brief(reg, items, by["Old receipts (file gone)"], NOW, book)
+        self.assertIn("isn't at its saved location any more", b["top"]["headline"])
+        self.assertEqual(b["top"]["action"]["mode"], "lmemm")
+        self.assertIn("r1", items)
+        bad = {"id": "x", "app": "Safari", "source": {"kind": "url", "value": "javascript:alert(1)"}}
+        self.assertEqual(resume.open_command(bad)["exact"], False)
+        self.assertIn("no longer a safe web address", resume.original_of(bad)["problem"])
+
+    def test_4_a_local_file_opens_that_exact_file(self):
+        folder = tempfile.mkdtemp()
+        reg, items, book, by = self.demo(folder)
+        resume_demo.seed(folder, NOW)                                           # writes Lease summary.txt
+        cmd = resume.open_command(items["l1"])
+        self.assertEqual((cmd["args"], cmd["exact"]), (["open", os.path.join(folder, "Lease summary.txt")], True))
+        top = resume.brief(reg, items, by["Lease (local file)"], NOW, book)["top"]
+        self.assertEqual((top["action"]["label"], top["action"]["mode"]), ("Open source", "source"))
+
+    def test_5_skipped_private_and_excluded_sources_are_never_kept_or_exposed(self):
+        for url in ("https://accounts.google.com/signin", "https://www.mybank.com/home", "https://x.org/?access_token=abc",
+                    "https://user:pw@x.org/", "file:///etc/passwd", "http://", "https://x.org/a b"):
+            self.assertIsNone(source_ref.clean_url(url), url)
+        self.assertIsNone(source_ref.file_path("file:///Users/me/.ssh/id_rsa"))
+        self.assertIsNone(source_ref.file_path("file:///Users/me/../root/x"))
+        item = {}
+        self.assertFalse(source_ref.remember(item, {"url": "https://accounts.google.com/x", "app": "Safari", "iso": "t"}))
+        self.assertNotIn("source", item)
+        reg, items, book, by = self.demo()
+        b = resume.brief(reg, items, by["Kitchen reno (exact page)"], NOW, book, feedback=rf.record(rf.empty(), "exclude", item_id="k1"))
+        self.assertEqual(b["state"], "empty")                                   # nothing left to reopen
+        text = resume.as_text(resume.brief(reg, items, by["Kitchen reno (exact page)"], NOW, book))
+        self.assertNotIn("example.org", text)                                    # the address is never printed or copied
+        for name in ("ask", "labels", "memory_search", "brief", "recap", "suggestions", "tasks", "understand"):
+            with open(os.path.join(os.path.dirname(__file__), "..", "src", name + ".py")) as fh:
+                self.assertNotIn("source_ref", fh.read(), name)                  # nothing that talks to a model reads it
+
+    def test_6_back_from_the_item_page_returns_to_the_same_resume_page(self):
+        import page_model
+        reg, items, book, by = self.demo()
+        pid = by["Kitchen reno (exact page)"]
+        st = page_model.press(reg, page_model.new_state(), "go", pid, items)
+        st = page_model.press(reg, st, "resume", pid, items)
+        st = page_model.press(reg, st, "thing", "k1", items)                     # Show in LMemM
+        self.assertEqual(st["view"], "thing")
+        st = page_model.press(reg, st, "back", None, items)
+        self.assertEqual((st["view"], st["pid"]), ("resume", pid))
+
+    def test_capture_keeps_the_newest_address_and_does_not_erase_it_on_a_frame_without_one(self):
+        item = {}
+        source_ref.remember(item, {"url": "https://example.org/a", "app": "Safari", "tab_title": "A", "iso": "2026-10-12T09:00:00"})
+        source_ref.remember(item, {"url": "https://example.org/b", "app": "Safari", "tab_title": "B", "iso": "2026-10-12T09:05:00"})
+        source_ref.remember(item, {"url": None, "app": "Safari", "iso": "2026-10-12T09:06:00"})
+        self.assertEqual((item["source"]["value"], item["source"]["title"]), ("https://example.org/b", "B"))
+        source_ref.remember(item, {"file": "file:///Users/me/Documents/lease%20summary.pdf", "app": "Preview", "iso": "2026-10-12T09:07:00"})
+        self.assertEqual(item["source"]["value"], "/Users/me/Documents/lease summary.pdf")
 
 
 class Sparse(unittest.TestCase):
@@ -219,12 +308,13 @@ class Sparse(unittest.TestCase):
             self.assertIsNone(b["next"])
             self.assertIn("can't reliably tell what you planned to do next", b["no_next"])
             text = resume.as_text(b)
-            self.assertIn("I found “Garage shelving ideas,” but I can't tell what you planned to do next. Open Safari to find the page.", text)
-            self.assertIn("## Why open Safari?", text)
+            self.assertIn("I found “Garage shelving ideas,” but I can't tell what you planned to do next, and LMemM has no saved address to reopen it.", text)
+            self.assertNotIn("to find the page", text)                          # the app is never said to find the page
+            self.assertIn("## Why can't Resume open the page?", text)
             self.assertIn("only recent source LMemM found", text)
-            self.assertIn("can't reopen the exact page", text)
-            self.assertEqual(b["top"]["action"]["label"], "Open Safari")
-            self.assertIn("can't reopen the page itself", b["top"]["action"]["note"])
+            self.assertEqual((b["top"]["action"]["label"], b["top"]["action"]["mode"]), ("Show in LMemM", "lmemm"))
+            self.assertEqual(b["top"]["action"]["also"]["label"], "Open Safari")
+            self.assertIn("starts the app only; it can't take you to the page", b["top"]["action"]["note"])
 
 
 if __name__ == "__main__":

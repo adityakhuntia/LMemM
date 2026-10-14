@@ -91,3 +91,13 @@ choosing are command-line only so far.
 - Buttons are named for their destination: Open Safari (the app, not the page), Show in LMemM, Copy text for an AI chat.
 - Demo mode (`config.DEMO`) shows a calm "Demo" banner instead of "Setup is not finished".
 - The limited note is now only the counts; the recommendation is not repeated under it.
+
+## v1.7: open the exact source (source_ref.py, R36-R39)
+
+- Capture: `tracker.update_item` keeps `item["source"] = {kind: url|file, value, app, title, seen}` from the frame's browser address (AppleScript, already read for the skip rules) or the focused window's `AXDocument` file:// address. The newest valid address wins; a frame without one leaves the old one.
+- Kept only when plain and safe: http(s) only, no user:password, no token-like query values, no sensitive sites (config.SKIP_SITES), no private folders for files. Skipped apps, private windows and unwatched apps never reach this code.
+- Reopening: `resume.open_command` -> `open -a <browser> <url>` (the browser it was seen in) or `open <path>`. Checked again first (R39); a missing file or a malformed address becomes a plain sentence, not a guess.
+- No address: the primary button is Show in LMemM (the saved title). Open <App> is offered as what it is: it starts the app only.
+- Older items have no `source`; Resume still reads an address from their saved text excerpts.
+- Never sent to a model; never printed in the copied brief.
+- Not exact today: apps that expose neither a web address nor a document path (Claude and ChatGPT desktop apps, Slack, WhatsApp, VS Code windows, Terminal, Mail messages). Chat apps would need a deep link the app doesn't publish through accessibility.

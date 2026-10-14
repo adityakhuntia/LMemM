@@ -55,6 +55,7 @@ import resolver
 import retention
 import rules
 import settings_model
+import source_ref
 import store
 import suggestions
 import thing_actions
@@ -654,6 +655,7 @@ class Tracker:
                 shot.release()
                 self.trigger("tab_change")
                 return None
+        doc_sig = ax.read(f["pid"], f["app"])
         meta = {
             "ts": ts, "iso": datetime.now().isoformat(timespec="seconds"),
             "app": f["app"], "bundle_id": f["bundle_id"], "window": f["window"],
@@ -661,7 +663,8 @@ class Tracker:
             "screen": {"w": int(size.width), "h": int(size.height)}, "display": display,
             "image": ts + ".jpg",       # the thumbnail's name, if this frame ends up kept
             "trigger": trigger, "pinned": pinned, "session": self.session,
-            "place": ax.key(f["app"], ax.read(f["pid"], f["app"])),
+            "place": ax.key(f["app"], doc_sig),
+            "file": (doc_sig or {}).get("doc") if ((doc_sig or {}).get("doc") or "").lower().startswith("file://") else None,
             "inputs": inputs, "pointer": pointer,
             "window_region": visible_window_region(f["bounds"], macos.display_bounds(display)),
             "capture_start_offset_ns": capture_start_ns - self.origin_ns,
@@ -1536,6 +1539,7 @@ class Tracker:
                 self.drop_frame(item["screenshot"])
                 item["screenshot"] = meta["image"]
                 frame_used = True
+        source_ref.remember(item, meta)                    # where it lives, to reopen it exactly (source_ref.py)
         if pinned:
             item["pinned"] = True
         return item, frame_used

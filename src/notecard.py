@@ -28,8 +28,8 @@ HINT = "Return saves  ·  Esc cancels"
 
 
 def _accent(alpha=1.0):
-    """The pill's orange, deeper on the light card so the words in it can be read (palette.py)."""
-    r, g, b = palette.ORANGE_TEXT_ON_DARK if widget._dark() else palette.ORANGE_TEXT_ON_LIGHT
+    """The accent blue, lighter on the dark card so the words in it can be read (palette.py)."""
+    r, g, b = palette.ACCENT_TEXT_ON_DARK if widget._dark() else palette.ACCENT_TEXT_ON_LIGHT
     return NSColor.colorWithRed_green_blue_alpha_(r, g, b, alpha)
 
 
@@ -148,7 +148,7 @@ class NoteCard:
         return self.panel.isVisible()
 
     def status_is(self, listening, problem=None):
-        """Listening (orange, moving), or off: the mic is unavailable and you type instead."""
+        """Listening (blue, moving), or off: the mic is unavailable and you type instead."""
         self.bars.live = bool(listening)
         self.bars.setNeedsDisplay_(True)
         if listening:

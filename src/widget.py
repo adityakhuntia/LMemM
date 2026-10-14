@@ -117,9 +117,9 @@ def _rgb(rgb, alpha=1.0):
     return NSColor.colorWithRed_green_blue_alpha_(rgb[0], rgb[1], rgb[2], alpha)
 
 
-def _orange():
-    """The pill's orange for marks. The pill is light in dark mode, so the orange is deeper there (palette.py)."""
-    return _rgb(palette.ORANGE_ON_LIGHT_PILL if _dark() else palette.ORANGE_ON_DARK_PILL)
+def _accent_mark():
+    """The accent blue for marks. The pill is light in dark mode, so the blue is deeper there (palette.py)."""
+    return _rgb(palette.ACCENT_ON_LIGHT_PILL if _dark() else palette.ACCENT_ON_DARK_PILL)
 
 
 def _text_width(text, font):
@@ -447,7 +447,7 @@ class _Badge(_Flipped):
 
     def drawRect_(self, rect):
         if self.tone == "accent":
-            _rgb(palette.ORANGE_TEXT_ON_LIGHT).setFill()
+            _rgb(palette.ACCENT).setFill()
         elif self.tone == "bad":
             NSColor.systemRedColor().colorWithAlphaComponent_(0.14).setFill()
         else:
@@ -469,18 +469,17 @@ class _Dashed(_Flipped):
 
 
 class _Ring(_Flipped):
-    """The round tick box: an outline, filled orange with a tick once done."""
+    """The round tick box: an outline, filled blue with a tick once done."""
 
     def initWithChecked_(self, checked):
         self = objc.super(_Ring, self).initWithFrame_(NSMakeRect(0, 0, 17, 17))
         self.checked = checked
-        self.blue = False                                  # the windows use the blue accent; the pill's card keeps its orange
         return self
 
     def drawRect_(self, rect):
         circle = NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(1, 1, 15, 15))
         if self.checked:
-            (_rgb(palette.ACCENT) if self.blue else _rgb(palette.ORANGE_TEXT_ON_LIGHT)).setFill()      # white tick on it: 4.9:1 / 5.0:1
+            _rgb(palette.ACCENT).setFill()                                  # white tick on it: 4.9:1
             circle.fill()
             tick = NSBezierPath.bezierPath()
             tick.moveToPoint_((5, 8.8))
@@ -549,13 +548,13 @@ class _PillView(NSView):
 
     @objc.python_method
     def _dot(self, x, y, lit=True):
-        (_orange() if lit else NSColor.colorWithWhite_alpha_(0.5, 0.8)).setFill()
+        (_accent_mark() if lit else NSColor.colorWithWhite_alpha_(0.5, 0.8)).setFill()
         NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(x - 4, y - 4, 8, 8)).fill()
 
     @objc.python_method
     def _tick(self, x, y):
-        """A small orange check."""
-        _orange().setStroke()
+        """A small blue check."""
+        _accent_mark().setStroke()
         path = NSBezierPath.bezierPath()
         path.moveToPoint_((x - 4, y))
         path.lineToPoint_((x - 1, y + 3.2))
@@ -574,7 +573,7 @@ class _PillView(NSView):
 
     @objc.python_method
     def _bars(self, x, y):
-        _orange().setFill()
+        _accent_mark().setFill()
         for i, base in enumerate((5, 12, 8, 13, 6)):
             h = max(3, base * (0.6 + 0.4 * math.sin(time.time() * 7 + i * 1.3)))
             NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(

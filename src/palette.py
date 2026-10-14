@@ -10,13 +10,10 @@ PILL_DARK = (0.09, 0.09, 0.09)         # ... and in light mode
 CARD_LIGHT = (0.98, 0.98, 0.97)        # the window's card colour
 CARD_DARK = (0.133, 0.133, 0.145)
 
-ORANGE_ON_DARK_PILL = (0.91, 0.455, 0.165)     # light mode: the pill is dark
-ORANGE_ON_LIGHT_PILL = (0.80, 0.36, 0.04)      # dark mode: the same orange, deeper so it still reads on white
+ACCENT_ON_DARK_PILL = (0.40, 0.60, 1.0)        # light mode: the pill is dark
+ACCENT_ON_LIGHT_PILL = (0.17, 0.40, 0.92)      # dark mode: the pill is light
 RED_ON_DARK_PILL = (1.0, 0.54, 0.44)
 RED_ON_LIGHT_PILL = (0.74, 0.22, 0.14)
-
-ORANGE_TEXT_ON_LIGHT = (0.75, 0.30, 0.02)     # orange words on the light card ("Listening")
-ORANGE_TEXT_ON_DARK = ORANGE_ON_DARK_PILL     # ... and on the dark card
 
 # green, orange and red words on the light card (the system colours are 2.1, 2.1 and 3.4 : 1 there); dark mode keeps the system ones
 GREEN_TEXT_ON_LIGHT = (0.10, 0.52, 0.22)

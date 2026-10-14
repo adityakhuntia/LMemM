@@ -16,6 +16,7 @@ PRESS_SECONDS = 0.10               # a pressed control
 POP_SECONDS = 0.14                 # the pill's card, from a click
 MODAL_SECONDS = 0.20               # a dialog
 STEP_SECONDS = 0.22                # a setup screen
+EXIT_SECONDS = 0.09               # leaving is quicker than arriving
 CELEBRATE_SECONDS = 0.25           # the "All caught up" badge
 POP_SCALE = 0.97                   # a small card starts here, never at zero
 MODAL_SCALE = 0.96
@@ -115,3 +116,17 @@ def eased(seconds):
         context.setTimingFunction_(_timing())
     except Exception:
         pass
+
+
+def fade_out(panel, done, seconds=EXIT_SECONDS):
+    """Fade a panel out, then call done(). The window is put back to full alpha for its next showing, so a
+    window opened again mid-fade can tell by `done` not running (the caller guards with a token)."""
+    try:
+        from AppKit import NSAnimationContext
+        NSAnimationContext.beginGrouping()
+        eased(seconds)
+        NSAnimationContext.currentContext().setCompletionHandler_(done)
+        panel.animator().setAlphaValue_(0.0)
+        NSAnimationContext.endGrouping()
+    except Exception:
+        done()

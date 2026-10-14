@@ -991,11 +991,11 @@ class MainWindow:
                 from AppKit import NSOpenPanel
                 panel=NSOpenPanel.openPanel();panel.setCanChooseDirectories_(True);panel.setCanChooseFiles_(False);panel.setAllowsMultipleSelection_(False)
                 panel.setMessage_('Enable Memory for one workspace. Retain only new approved visible excerpts and project notes.')
-                from AppKit import NSApplication
-                NSApplication.sharedApplication().activateIgnoringOtherApps_(True)       # LMemM is a background app: bring the picker to the front
-                panel.setLevel_(3);panel.makeKeyAndOrderFront_(None)
-                if panel.runModal()!=1:return
-                action='enroll';payload={'root':str(panel.URL().path())}
+                panel.setPrompt_('Enable Memory')
+                def chosen(result):                          # a sheet on this window: it cannot open out of sight, and the app never blocks
+                    if result==1:self._memory_dispatch('enroll',{'root':str(panel.URL().path())})
+                self.window.makeKeyAndOrderFront_(None)
+                panel.beginSheetModalForWindow_completionHandler_(self.window,chosen);return
             elif action in {'confirm_model','confirm_agent','confirm_disconnect'}:
                 from AppKit import NSAlert
                 titles={'confirm_model':'Install local semantic search?', 'confirm_agent':'Allow Codex to read this project’s memory?', 'confirm_disconnect':'Disconnect project Memory?'}
@@ -1003,8 +1003,11 @@ class MainWindow:
                          'confirm_agent':'Codex can search retained project excerpts and intentional notes, read cited context, and resolve sources. Invoking these tools sends that text to the agent and its configured provider. Capture permission is separate. You can revoke access here.',
                          'confirm_disconnect':'Stop source capture and revoke all agent grants containing this project. Retained data remains local; it becomes inaccessible until explicitly re-enabled.'}
                 alert=NSAlert.alloc().init();alert.setMessageText_(titles[action]);alert.setInformativeText_(details[action]);alert.addButtonWithTitle_('Continue');alert.addButtonWithTitle_('Cancel')
-                if alert.runModal()!=1000:return
-                action={'confirm_model':'install_model','confirm_agent':'connect_agent','confirm_disconnect':'disconnect'}[action];payload={'approved':True}
+                target={'confirm_model':'install_model','confirm_agent':'connect_agent','confirm_disconnect':'disconnect'}[action]
+                def answered(result):
+                    if result==1000:self._memory_dispatch(target,{'approved':True})
+                self.window.makeKeyAndOrderFront_(None)
+                alert.beginSheetModalForWindow_completionHandler_(self.window,answered);return
             elif action=='toggle_admin':
                 self.memory_pane.show_admin=not self.memory_pane.show_admin
                 self.shown=None;self.render();return
@@ -1020,8 +1023,14 @@ class MainWindow:
                 import config,os
                 path=os.path.join(config.paths().semantic_dir,'bridge','grant.json')
                 paste=NSPasteboard.generalPasteboard();paste.clearContents();paste.setString_forType_(path,'public.utf8-plain-text')
-                alert=NSAlert.alloc().init();alert.setMessageText_('Reconnect VS Code source sharing');alert.setInformativeText_('In VS Code, run “LMemM: Connect Project Memory” from the Command Palette and paste the copied grant path. Approve the local workspace. This grants capture only, not agent access.');alert.runModal();return
-            self.on_memory(action,payload)
+                alert=NSAlert.alloc().init();alert.setMessageText_('Reconnect VS Code source sharing');alert.setInformativeText_('In VS Code, run “LMemM: Connect Project Memory” from the Command Palette and paste the copied grant path. Approve the local workspace. This grants capture only, not agent access.');alert.beginSheetModalForWindow_completionHandler_(self.window,None);return
+        except (ValueError,OSError) as error:
+            if self.memory_snapshot:self.memory_snapshot['error']=str(error)
+            self.shown=None;self.render();return
+        self._memory_dispatch(action,payload)
+
+    def _memory_dispatch(self,action,payload):
+        try:self.on_memory(action,payload)
         except (ValueError,OSError) as error:
             if self.memory_snapshot:self.memory_snapshot['error']=str(error)
         self.shown=None;self.render()

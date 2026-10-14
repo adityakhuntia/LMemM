@@ -797,13 +797,22 @@ class Widget:
             self.celebrate_now = False      # opening it later shows the calm state, never the celebration
             self.data = self.provider()
             self.render()
+            self.card_leaving = getattr(self, "card_leaving", 0) + 1     # cancels a fade-out still running
             self.card.setAlphaValue_(1.0)
             self.card.orderFrontRegardless()
             if animate:
                 motion.pop(self.card.contentView(), origin="bottom")     # grows from the pill, 140 ms
         else:
             self.flow.close_card()          # the Undo window ends with the card
-            self.card.orderOut_(None)
+            self.card_leaving = token = getattr(self, "card_leaving", 0) + 1
+            def gone():
+                if self.card_leaving == token and not self.card_open:      # opened again mid-fade: leave it alone
+                    self.card.orderOut_(None)
+                    self.card.setAlphaValue_(1.0)
+            if animate and not motion.reduced():
+                motion.fade_out(self.card, gone)
+            else:
+                gone()
         self.layout()
 
     def _clicked_elsewhere(self, event):

@@ -12,3 +12,5 @@ bin/
 
 .*.control.json
 .*.status.json
+dist/
+build/

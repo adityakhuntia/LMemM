@@ -15,3 +15,28 @@ class ViewTests(unittest.TestCase):
         self.assertEqual(rows[1]['provenance'],'Your note')
         detail=source_presentation(dict(text='excerpt',locator='/a',at='now',origin_type='observed_screen_text',truncated=True))
         self.assertTrue(detail['truncated']);self.assertEqual(detail['provenance'],'Observed content')
+
+
+class PaneLayoutTests(unittest.TestCase):
+    """The Memory tab keeps what people use on top and folds the setup (audit: a dozen identical buttons)."""
+
+    def test_state_dot_is_never_red(self):
+        from memory_view import state_tone
+        self.assertEqual([state_tone(s) for s in ('Ready', 'Processing', 'Needs attention', 'Paused', 'Disabled')],
+                         ['good', 'accent', 'warn', 'quiet', 'quiet'])
+
+    def test_one_pause_control_that_applies(self):
+        from memory_view import pause_action
+        self.assertEqual(pause_action('Paused'), ('Resume Memory', 'resume'))
+        self.assertEqual(pause_action('Ready'), ('Pause Memory', 'pause'))
+        self.assertIsNone(pause_action('Disabled'))
+
+    def test_setup_groups_keep_every_action_and_stop_comes_last(self):
+        from memory_view import ADMIN_GROUPS
+        actions = [a for _t, _l, items in ADMIN_GROUPS for _b, a, _k in items]
+        self.assertEqual(sorted(actions), sorted(['confirm_model', 'install_extension', 'reconnect_extension', 'preview',
+                                                  'confirm_agent', 'revoke_agent', 'confirm_disconnect']))
+        self.assertEqual(ADMIN_GROUPS[-1][0], 'Stop')
+        kinds = {a: k for _t, _l, items in ADMIN_GROUPS for _b, a, k in items}
+        self.assertEqual(kinds['revoke_agent'], 'outline')         # what cuts something off looks heavier
+        self.assertEqual(kinds['confirm_disconnect'], 'outline')

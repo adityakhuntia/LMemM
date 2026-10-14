@@ -51,7 +51,9 @@ from AppKit import (NSApplication, NSBackingStoreBuffered, NSBezierPath, NSColor
                     NSPanel, NSScreen, NSScrollView, NSStrikethroughStyleAttributeName, NSTextField,
                     NSTrackingArea, NSView, NSVisualEffectView, NSAttributedString)
 
+import motion
 import notes
+import palette
 import rules
 
 BORDERLESS, NONACTIVATING = 0, 1 << 7
@@ -99,6 +101,15 @@ def _dark():
     match = app.effectiveAppearance().bestMatchFromAppearancesWithNames_(
         ["NSAppearanceNameAqua", "NSAppearanceNameDarkAqua"])
     return match == "NSAppearanceNameDarkAqua"
+
+
+def _rgb(rgb, alpha=1.0):
+    return NSColor.colorWithRed_green_blue_alpha_(rgb[0], rgb[1], rgb[2], alpha)
+
+
+def _orange():
+    """The pill's orange for marks. The pill is light in dark mode, so the orange is deeper there (palette.py)."""
+    return _rgb(palette.ORANGE_ON_LIGHT_PILL if _dark() else palette.ORANGE_ON_DARK_PILL)
 
 
 def _text_width(text, font):
@@ -153,12 +164,136 @@ class _Flipped(NSView):
         return True
 
 
-class _Tap(_Flipped):
+class _Control(_Flipped):
+    """Anything a person can press: a row, a button, a chip. One place for what every control owes them
+    (audit: no hover, no pressed state, fired on mouse-down, invisible to VoiceOver):
+
+        hover      a soft wash while the pointer is over it
+        press      a deeper wash while it is held; letting go outside cancels, like every Mac button
+        commit     the action runs on mouse-up, inside
+        keyboard   a `focusable` control takes Tab, shows the focus ring, and Space or Return presses it
+        VoiceOver  a button (or a checkbox when `checked` is set) named by `ax_label` or the words inside it
+
+    callback=None makes a control inert: a soft box, a card, a backdrop. It still takes the click, so
+    nothing underneath gets it, but it never highlights or announces itself."""
+
+    def initWithFrame_callback_(self, frame, callback):
+        self = objc.super(_Control, self).initWithFrame_(frame)
+        self.callback = callback
+        self.hovered = self.pressed = False
+        self.focusable = False
+        self.ax_label = None
+        self.checked = None                            # None: a button. True/False: a checkbox, ticked or not
+        self.radius = 10
+        self.washes = True                             # False for a backdrop that must not light up under the pointer
+        self.addTrackingArea_(NSTrackingArea.alloc().initWithRect_options_owner_userInfo_(
+            self.bounds(), TRACK, self, None))
+        return self
+
+    @objc.python_method
+    def live(self):
+        return self.callback is not None
+
+    @objc.python_method
+    def paint_state(self):
+        """The hover and pressed wash. Called at the end of a control's own drawing."""
+        alpha = 0.10 if self.pressed else 0.05 if self.hovered else 0.0
+        if alpha and self.live() and self.washes:
+            NSColor.labelColor().colorWithAlphaComponent_(alpha).setFill()
+            NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(self.bounds(), self.radius, self.radius).fill()
+
+    @objc.python_method
+    def _inside(self, event):
+        return NSPointInRect(self.convertPoint_fromView_(event.locationInWindow(), None), self.bounds())
+
+    def mouseEntered_(self, event):
+        if self.live() and not self.hovered:
+            self.hovered = True
+            self.setNeedsDisplay_(True)
+
+    def mouseExited_(self, event):
+        if self.hovered:
+            self.hovered = False
+            self.setNeedsDisplay_(True)
+
+    def mouseDown_(self, event):
+        if not self.live():
+            return
+        if self.window() is not None:
+            self.window().makeFirstResponder_(None)    # a text box lets go, so the arrow keys work on the page
+        self.pressed = True
+        self.setNeedsDisplay_(True)
+
+    def mouseDragged_(self, event):
+        if self.live() and self.pressed != self._inside(event):
+            self.pressed = not self.pressed
+            self.setNeedsDisplay_(True)
+
+    def mouseUp_(self, event):
+        was, self.pressed = self.pressed, False
+        self.setNeedsDisplay_(True)
+        if was and self.live() and self._inside(event):
+            self.callback()
+
+    def acceptsFirstMouse_(self, event):
+        return True
+
+    # keyboard
+    def acceptsFirstResponder(self):
+        return bool(self.focusable and self.live())
+
+    def keyDown_(self, event):
+        if self.focusable and self.live() and int(event.keyCode()) in (49, 36, 76):       # Space, Return, Enter
+            self.callback()
+            return
+        objc.super(_Control, self).keyDown_(event)
+
+    def drawFocusRingMask(self):
+        NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(self.bounds(), self.radius, self.radius).fill()
+
+    def focusRingMaskBounds(self):
+        return self.bounds()
+
+    # VoiceOver: a control reads as a button named by the words drawn inside it.
+    def isAccessibilityElement(self):
+        return self.live()
+
+    def accessibilityRole(self):
+        return "AXButton" if self.checked is None else "AXCheckBox"
+
+    def accessibilityLabel(self):
+        if self.ax_label:
+            return self.ax_label
+        words = []
+
+        def collect(view):
+            for sub in view.subviews():
+                text = getattr(sub, "text", None)
+                if text is None:
+                    try:
+                        text = str(sub.stringValue())
+                    except Exception:
+                        text = None
+                if text:
+                    words.append(str(text))
+                collect(sub)
+        collect(self)
+        return ", ".join(words) or "button"
+
+    def accessibilityValue(self):
+        return None if self.checked is None else (1 if self.checked else 0)
+
+    def accessibilityPerformPress(self):
+        if self.live():
+            self.callback()
+        return True
+
+
+class _Tap(_Control):
     """A clickable area (a note row, "more", "Add a note…"). Optionally a soft rounded fill."""
 
     def initWithFrame_callback_(self, frame, callback):
-        self = objc.super(_Tap, self).initWithFrame_(frame)
-        self.callback = callback
+        self = objc.super(_Tap, self).initWithFrame_callback_(frame, callback)
         self.fill = False
         self.tint = None                               # a solid colour, for a primary button
         return self
@@ -170,34 +305,7 @@ class _Tap(_Flipped):
         elif self.fill:
             NSColor.labelColor().colorWithAlphaComponent_(0.07).setFill()
             NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(self.bounds(), 10, 10).fill()
-
-    def mouseDown_(self, event):
-        if self.window() is not None:
-            self.window().makeFirstResponder_(None)             # a text box lets go, so the arrow keys work on the page
-        self.callback()
-
-    def acceptsFirstMouse_(self, event):
-        return True
-
-    # VoiceOver: a tap area reads as a button named by the words drawn inside it.
-    def isAccessibilityElement(self):
-        return True
-
-    def accessibilityRole(self):
-        return "AXButton"
-
-    def accessibilityLabel(self):
-        words = []
-        for sub in self.subviews():
-            try:
-                words.append(str(sub.stringValue()))
-            except Exception:
-                pass
-        return getattr(self, "label", None) or ", ".join(w for w in words if w) or "button"
-
-    def accessibilityPerformPress(self):
-        self.callback()
-        return True
+        self.paint_state()
 
 
 class _Fields(NSObject):
@@ -379,13 +487,13 @@ class _PillView(NSView):
 
     @objc.python_method
     def _dot(self, x, y, lit=True):
-        (NSColor.systemOrangeColor() if lit else NSColor.colorWithWhite_alpha_(0.5, 0.8)).setFill()
+        (_orange() if lit else NSColor.colorWithWhite_alpha_(0.5, 0.8)).setFill()
         NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(x - 4, y - 4, 8, 8)).fill()
 
     @objc.python_method
     def _tick(self, x, y):
         """A small orange check."""
-        NSColor.systemOrangeColor().setStroke()
+        _orange().setStroke()
         path = NSBezierPath.bezierPath()
         path.moveToPoint_((x - 4, y))
         path.lineToPoint_((x - 1, y + 3.2))
@@ -404,7 +512,7 @@ class _PillView(NSView):
 
     @objc.python_method
     def _bars(self, x, y):
-        NSColor.systemOrangeColor().setFill()
+        _orange().setFill()
         for i, base in enumerate((5, 12, 8, 13, 6)):
             h = max(3, base * (0.6 + 0.4 * math.sin(time.time() * 7 + i * 1.3)))
             NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
@@ -419,6 +527,20 @@ class _PillView(NSView):
         x = area.origin.x + ((area.size.width - wide) / 2 if centre else 0)
         text_y = area.origin.y + (area.size.height - high) / 2
         NSAttributedString.alloc().initWithString_attributes_(text, attrs).drawAtPoint_((x, text_y))
+
+    # VoiceOver: the pill is one button; its state was only a tooltip.
+    def isAccessibilityElement(self):
+        return True
+
+    def accessibilityRole(self):
+        return "AXButton"
+
+    def accessibilityLabel(self):
+        return self.widget.accessibility_text()
+
+    def accessibilityPerformPress(self):
+        self.widget.toggle_card()
+        return True
 
     def mouseEntered_(self, event):
         if not self.hover:
@@ -525,6 +647,21 @@ class Widget:
     def _open_left(self):
         return len(self.data["left"]) if self.data else 0
 
+    def accessibility_text(self):
+        """What VoiceOver says for the pill: the same words the tooltip and the card use."""
+        state = self.mode_of_pill()
+        if state in MARKS:
+            return "Paused while you’re away" if state == "paused" and self.status.get("paused") == "away" else MARKS[state][2]
+        if state == "listening":
+            return "Listening. " + self.heard_text()
+        if state == "saved":
+            return self.saved or "Saved"
+        if self.count:
+            return f"LMemM, {self.count} open note{'s' * (self.count != 1)}"
+        if state == "suggest":
+            return "LMemM, group these things into a project?"
+        return "LMemM"
+
     def peek_text(self):
         if not self.count:
             return self.sug["peek"] if self.sug else "No notes here"
@@ -585,12 +722,12 @@ class Widget:
         icon.setFrame_(NSMakeRect(PILL_MARGIN[0] + (cw - 16) / 2, PILL_MARGIN[1] + (ch - 16) / 2, 16, 16))
         dark = _dark()                              # the pill is light in dark mode, dark in light mode
         if bad:
-            icon.setContentTintColor_(NSColor.colorWithRed_green_blue_alpha_(0.84, 0.34, 0.24, 1.0) if dark
-                                      else NSColor.colorWithRed_green_blue_alpha_(1.0, 0.54, 0.44, 1.0))
+            icon.setContentTintColor_(_rgb(palette.RED_ON_LIGHT_PILL if dark else palette.RED_ON_DARK_PILL))
         else:
             icon.setContentTintColor_(NSColor.colorWithWhite_alpha_(0.09 if dark else 1.0, 1.0))
         icon.setHidden_(image is None)
         self.pill_view.setToolTip_(tip)
+        icon.setAccessibilityElement_(False)            # the pill reads as one button (accessibility_text)
 
     def pulse(self, heard):
         """Called on every tick of the tracker's loop: moves the waveform and follows the
@@ -647,7 +784,8 @@ class Widget:
         if self.card_open:
             self.toggle_card()
 
-    def toggle_card(self):
+    def toggle_card(self, animate=True):
+        """Open or close the card. animate=False when a shortcut opened it: nothing a key does is animated."""
         if rules.pill_click_action(self.busy()) == "ignore" and not self.card_open:
             return                          # R1: the note card owns the screen
         self.card_open = not self.card_open
@@ -659,9 +797,10 @@ class Widget:
             self.celebrate_now = False      # opening it later shows the calm state, never the celebration
             self.data = self.provider()
             self.render()
+            self.card.setAlphaValue_(1.0)
             self.card.orderFrontRegardless()
-            self.card.setAlphaValue_(0.0)
-            self.card.animator().setAlphaValue_(1.0)
+            if animate:
+                motion.pop(self.card.contentView(), origin="bottom")     # grows from the pill, 140 ms
         else:
             self.flow.close_card()          # the Undo window ends with the card
             self.card.orderOut_(None)
@@ -789,8 +928,8 @@ class Widget:
         body.addSubview_(field)
         y += 19
         if back:                                    # "‹ Q3 plan": one step back to this thing
-            tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(PAD - 4, y, CARD_W - 2 * PAD + 8, 16), back[1])
-            small, _ = _label(f"‹ {back[0]}", 12, color=NSColor.secondaryLabelColor(), frame=(4, 0, CARD_W - 2 * PAD, 16))
+            tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(PAD - 4, y - 4, CARD_W - 2 * PAD + 8, 24), back[1])
+            small, _ = _label(f"‹ {back[0]}", 12, color=NSColor.secondaryLabelColor(), frame=(4, 4, CARD_W - 2 * PAD, 16))
             tap.addSubview_(small)
             body.addSubview_(tap)
         else:
@@ -806,31 +945,33 @@ class Widget:
         folding = self.flow.phase(row["id"], time.time()) == "fold"
         tap = _Tap.alloc().initWithFrame_callback_(
             NSMakeRect(6, y, CARD_W - 12, height),
-            (lambda: None) if folding else (lambda nid=row["id"], done=row["done"]: self.ticked(nid, not done)))
+            None if folding else (lambda nid=row["id"], done=row["done"]: self.ticked(nid, not done)))
         if folding:
             tap.setAlphaValue_(FOLD_ALPHA)
         ring = _Ring.alloc().initWithChecked_(row["done"])
         ring.setFrame_(NSMakeRect(PAD - 6 + 2, 8, 17, 17))
         field.setFrame_(NSMakeRect(PAD - 6 + 2 + 17 + 11, 7, text_w - 4, h))
+        tap.checked = bool(row["done"])
+        tap.ax_label = row["text"]
         tap.addSubview_(ring)
         tap.addSubview_(field)
         body.addSubview_(tap)
         return y + height
 
     def _link(self, body, y, left, right, callback):
-        tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(6, y, CARD_W - 12, 24), callback)
+        tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(6, y, CARD_W - 12, 28), callback)
         mute = NSColor.secondaryLabelColor()
-        tap.addSubview_(_label(left, 12, color=mute, frame=(PAD - 6, 4, CARD_W - 80, 16))[0])
-        tap.addSubview_(_label(right, 13, color=mute, frame=(CARD_W - 12 - PAD - 4, 3, 14, 16))[0])
+        tap.addSubview_(_label(left, 12, color=mute, frame=(PAD - 6, 6, CARD_W - 80, 16))[0])
+        tap.addSubview_(_label(right, 13, color=mute, frame=(CARD_W - 12 - PAD - 4, 5, 14, 16))[0])
         body.addSubview_(tap)
-        return y + 26
+        return y + 28
 
     def _add_row(self, body, y):
         tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(8, y, CARD_W - 16, 34), self._add)
         tap.fill = True
         mute = NSColor.secondaryLabelColor()
         tap.addSubview_(_label(ADD_LABEL, 13, color=mute, frame=(12, 8, 150, 18))[0])
-        key = _label(self.hotkey, 11, color=NSColor.tertiaryLabelColor(), frame=(CARD_W - 16 - 12 - 50, 9, 50, 16))[0]
+        key = _label(self.hotkey, 11, color=NSColor.secondaryLabelColor(), frame=(CARD_W - 16 - 12 - 50, 9, 50, 16))[0]
         key.setAlignment_(2)                         # right
         tap.addSubview_(key)
         body.addSubview_(tap)
@@ -852,7 +993,7 @@ class Widget:
         if celebrate:
             badge.setAlphaValue_(0.0)
             NSAnimationContext.beginGrouping()
-            NSAnimationContext.currentContext().setDuration_(0.6)
+            motion.eased(motion.CELEBRATE_SECONDS)
             badge.animator().setAlphaValue_(1.0)
             NSAnimationContext.endGrouping()
         y += 56
@@ -866,9 +1007,9 @@ class Widget:
         return y + h + 10
 
     def show_paused(self):
-        """⌃⌥N while paused: open the card that says so (rules.py R9)."""
+        """⌃⌥N while paused: open the card that says so (rules.py R9). From the keyboard: no animation."""
         if not self.card_open:
-            self.toggle_card()
+            self.toggle_card(animate=False)
 
     def show_unwatched(self):
         """⌃⌥N in an app you did not choose: open the card that says so (rules.py R11)."""
@@ -885,7 +1026,7 @@ class Widget:
             holder.setContentTintColor_(mute)
             tap.addSubview_(holder)
         tap.addSubview_(_label("Done", 12, color=mute, frame=(PAD - 6 + 22, 6, 100, 16))[0])
-        number = _label(str(count), 12, color=NSColor.tertiaryLabelColor(), frame=(CARD_W - 12 - PAD - 40, 6, 32, 16))[0]
+        number = _label(str(count), 12, color=NSColor.secondaryLabelColor(), frame=(CARD_W - 12 - PAD - 40, 6, 32, 16))[0]
         number.setAlignment_(2)
         tap.addSubview_(number)
         tap.addSubview_(_label("›", 13, color=mute, frame=(CARD_W - 12 - PAD - 4, 5, 14, 16))[0])
@@ -900,8 +1041,8 @@ class Widget:
         text, undoable = shown
         body.addSubview_(_label(text, 12, color=NSColor.secondaryLabelColor(), frame=(PAD, y + 4, 140, 16))[0])
         if undoable:
-            undo = _Tap.alloc().initWithFrame_callback_(NSMakeRect(CARD_W - PAD - 60, y, 60, 24), self._undo)
-            word = _label("Undo", 12, bold=True, color=NSColor.controlAccentColor(), frame=(0, 4, 60, 16))[0]
+            undo = _Tap.alloc().initWithFrame_callback_(NSMakeRect(CARD_W - PAD - 64, y - 2, 64, 28), self._undo)
+            word = _label("Undo", 12, bold=True, color=NSColor.controlAccentColor(), frame=(0, 6, 64, 16))[0]
             word.setAlignment_(2)
             undo.addSubview_(word)
             body.addSubview_(undo)
@@ -916,7 +1057,7 @@ class Widget:
                                     frame=(PAD, y, CARD_W - 2 * PAD, 18))[0])
             y += 26
         for label, rows in view["groups"]:
-            body.addSubview_(_label(label.upper(), 10, bold=True, color=NSColor.tertiaryLabelColor(),
+            body.addSubview_(_label(label.upper(), 11, bold=True, color=NSColor.secondaryLabelColor(),
                                     frame=(PAD, y + 4, CARD_W - 2 * PAD, 14))[0])
             y += 22
             for row in rows:
@@ -926,10 +1067,12 @@ class Widget:
                 height = h + 14 + 16
                 tap = _Tap.alloc().initWithFrame_callback_(NSMakeRect(6, y, CARD_W - 12, height),
                                                            lambda nid=row["id"]: self.ticked(nid, False))
+                tap.checked = True
+                tap.ax_label = row["text"]
                 ring = _Ring.alloc().initWithChecked_(True)
                 ring.setFrame_(NSMakeRect(PAD - 6 + 2, 8, 17, 17))
                 field.setFrame_(NSMakeRect(PAD - 6 + 2 + 17 + 11, 7, text_w - 4, h))
-                when = _label(row["when"], 11, color=NSColor.tertiaryLabelColor(),
+                when = _label(row["when"], 11, color=NSColor.secondaryLabelColor(),
                               frame=(PAD - 6 + 2 + 17 + 11, 7 + h + 1, text_w, 14))[0]
                 for v in (ring, field, when):
                     tap.addSubview_(v)
@@ -954,8 +1097,8 @@ class Widget:
 
     def _pause_menu(self, body, y):
         """Pause for: three choices, each showing when it ends."""
-        back = _Tap.alloc().initWithFrame_callback_(NSMakeRect(PAD - 4, y - 4, 120, 16), lambda: self._go("here"))
-        back.addSubview_(_label("‹ Back", 12, color=NSColor.secondaryLabelColor(), frame=(4, 0, 110, 16))[0])
+        back = _Tap.alloc().initWithFrame_callback_(NSMakeRect(PAD - 4, y - 8, 120, 24), lambda: self._go("here"))
+        back.addSubview_(_label("‹ Back", 12, color=NSColor.secondaryLabelColor(), frame=(4, 4, 110, 16))[0])
         body.addSubview_(back)
         y += 22
         body.addSubview_(_label("Pause for", 16, bold=True, frame=(PAD, y, CARD_W - 2 * PAD, 20))[0])
@@ -1128,7 +1271,7 @@ class Widget:
             body.addSubview_(name)
         y += 58
         if len(sug["things"]) > len(shown):
-            body.addSubview_(_label(f"and {len(sug['things']) - len(shown)} more", 11, color=NSColor.tertiaryLabelColor(),
+            body.addSubview_(_label(f"and {len(sug['things']) - len(shown)} more", 11, color=NSColor.secondaryLabelColor(),
                                     frame=(PAD, y - 4, CARD_W - 2 * PAD, 14))[0])
             y += 14
         if sug["reason"]:
@@ -1147,8 +1290,8 @@ class Widget:
     def _first_project(self, body, y, view):
         """The picker before you have any project: what one is, and a name to give it."""
         thing = view["title"].replace("Add ", "", 1).replace(" to a project", "")
-        back = _Tap.alloc().initWithFrame_callback_(NSMakeRect(PAD - 4, y - 4, 120, 16), lambda: self._go("here"))
-        back.addSubview_(_label("‹ Back", 12, color=NSColor.secondaryLabelColor(), frame=(4, 0, 110, 16))[0])
+        back = _Tap.alloc().initWithFrame_callback_(NSMakeRect(PAD - 4, y - 8, 120, 24), lambda: self._go("here"))
+        back.addSubview_(_label("‹ Back", 12, color=NSColor.secondaryLabelColor(), frame=(4, 4, 110, 16))[0])
         body.addSubview_(back)
         y += 20
         head, _ = _label("Start a project", 16, bold=True, frame=(PAD, y, CARD_W - 2 * PAD, 20))
@@ -1169,7 +1312,7 @@ class Widget:
                                frame=(58, 31, CARD_W - 2 * PAD - 70, 16))[0])
         body.addSubview_(box)
         y += 72
-        field = _Tap.alloc().initWithFrame_callback_(NSMakeRect(8, y, CARD_W - 16, 34), lambda: None)
+        field = _Tap.alloc().initWithFrame_callback_(NSMakeRect(8, y, CARD_W - 16, 34), None)
         field.fill = True
         self.search = _field(self.query, "Name it, like Pricing", 13, False, (12, 8, CARD_W - 16 - 24, 18), self.fields)
         field.addSubview_(self.search)
@@ -1190,7 +1333,7 @@ class Widget:
             return self._first_project(body, y, view)
         y = self._header(body, y, "Add to a project", "", back=(view["title"].replace("Add ", "", 1).replace(" to a project", ""),
                                                                 lambda: self._go("here")))
-        box = _Tap.alloc().initWithFrame_callback_(NSMakeRect(8, y - 6, CARD_W - 16, 34), lambda: None)
+        box = _Tap.alloc().initWithFrame_callback_(NSMakeRect(8, y - 6, CARD_W - 16, 34), None)
         box.fill = True
         self.search = _field(self.query, SEARCH_PLACEHOLDER, 13, False, (12, 8, CARD_W - 16 - 24, 18), self.fields)
         box.addSubview_(self.search)
@@ -1248,7 +1391,7 @@ class Widget:
     def _project(self, body, view, y):
         y = self._header(body, y, view["title"], view["caption"], back=(view["back"], lambda: self._go("here")))
         for thing, rows in view["groups"]:
-            field, _ = _label(thing.upper(), 10, bold=True, color=NSColor.tertiaryLabelColor(),
+            field, _ = _label(thing.upper(), 11, bold=True, color=NSColor.secondaryLabelColor(),
                               frame=(PAD, y + 4, CARD_W - 2 * PAD, 14))
             body.addSubview_(field)
             y += 22

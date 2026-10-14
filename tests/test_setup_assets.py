@@ -20,6 +20,14 @@ class SetupAssets(unittest.TestCase):
         self.assertGreater(b, r + 0.4)                    # clearly blue
         self.assertGreater(b, g)
 
+    def test_the_kit_accent_is_the_palette_accent(self):
+        import sys
+        sys.path.insert(0, os.path.join(ROOT, "src"))
+        import palette
+        tree = ast.parse(open(os.path.join(ROOT, "src", "setup_kit.py")).read())
+        accent = next(n for n in tree.body if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "ACCENT")
+        self.assertEqual(tuple(ast.literal_eval(accent.value)), palette.ACCENT)
+
     def test_alignment_values_match_the_existing_widget_code(self):
         """widget.py (running on a Mac) uses setAlignment_(1) for centre; the kit must agree, or every
         line of text lands on the wrong side."""

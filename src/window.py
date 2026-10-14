@@ -18,6 +18,7 @@ from AppKit import (NSApplication, NSBezierPath, NSColor, NSImageView, NSMakePoi
 
 import apps
 import menu_model
+import motion
 import notes
 import keynav
 import page_model
@@ -112,7 +113,7 @@ class _Bar(_Flipped):
     """A thin accent bar beside a quoted decision."""
 
     def drawRect_(self, rect):
-        kit.accent().setFill()
+        kit.accent_text().setFill()
         NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(self.bounds(), 1.5, 1.5).fill()
 
 
@@ -483,7 +484,7 @@ class MainWindow:
             self.cur = {"zone": self.cur["zone"], "id": None}
         self._fill(self.side_scroll, SIDE_W, lambda doc: self._side(doc, page["side"]))
         if self.memory_snapshot and self.memory_snapshot['tab']=='Memory':
-            from memory_view import MemoryPane
+            from memory_pane import MemoryPane
             if self.memory_pane is None:self.memory_pane=MemoryPane(self._memory_action)
             self.memory_pane.render(self.memory_snapshot,self.W-SIDE_W,self.col_x,self.main_w)
             self.main_scroll.setDocumentView_(self.memory_pane.host)
@@ -510,19 +511,22 @@ class MainWindow:
         undo = self.undo
         if self.done and now < self.done["until"]:
             toast, undo = (self.done["message"], bool(self.done.get("undo"))), self.undo_project
+        arriving = toast is not None and self.toast_host.isHidden()
         self.toast_host.setHidden_(toast is None)
         if toast is None:
             return
         text, undoable = toast
         width = min(kit.text_width(text, 13, 500) + (74 if undoable else 36), self.main_w)
         self.toast_host.setFrame_(NSMakeRect(SIDE_W + (self.W - SIDE_W - width) / 2, self.H - bar - 54, width, 36))
-        pill = self._tap(self.toast_host, 0, 0, width, 36, lambda: None)
+        pill = self._tap(self.toast_host, 0, 0, width, 36, None)
         pill.tint = NSColor.colorWithWhite_alpha_(0.12, 0.94)
         kit.put_text(pill, text, 18, 0, width - 36, 13, 500, NSColor.whiteColor(), wrap=False, height=36, middle=True)
         if undoable:
             link = self._tap(pill, width - 62, 0, 56, 36, undo)
             kit.put_text(link, "Undo", 0, 0, 56, 13, 600, NSColor.colorWithRed_green_blue_alpha_(0.55, 0.75, 1.0, 1.0),
                          align=kit.CENTER, wrap=False, height=36, middle=True)
+        if arriving:
+            motion.pop(self.toast_host, origin="center")
 
     BANNER_SYMBOLS = {"paused:manual": "pause.circle.fill", "paused:away": "moon.zzz.fill", "screen_off": "exclamationmark.circle.fill",
                       "mic_off": "mic.slash.fill", "restart": "arrow.clockwise.circle.fill", "private": "lock.fill",
@@ -701,13 +705,16 @@ class MainWindow:
             if sub is not self.dlg_field:
                 sub.removeFromSuperview()
         d = self.dialog
+        arriving = d is not None and self.overlay.isHidden()           # a dialog that was not on screen a moment ago
         self.overlay.setHidden_(d is None)
         self.dlg_field.setHidden_(True)
         if d is None:
             return
-        self._tap(self.overlay, 0, 0, self.W, self.H, self.close_dialog).tint = NSColor.colorWithWhite_alpha_(0.0, 0.32)
+        scrim = self._tap(self.overlay, 0, 0, self.W, self.H, self.close_dialog)
+        scrim.tint = NSColor.colorWithWhite_alpha_(0.0, 0.32)
+        scrim.washes = False                                         # a backdrop does not light up under the pointer
         cw, cx, cy = 460, (self.W - 460) / 2, 120
-        card = self._tap(self.overlay, cx, cy, cw, 100, lambda: None)
+        card = self._tap(self.overlay, cx, cy, cw, 100, None)
         card.tint = kit.card_background()
         reg = self._reg()
         y = 24
@@ -810,6 +817,9 @@ class MainWindow:
             action = lambda: self.project_action(d["action"], pid=d["pid"], target=d["target"])
             y = self._dialog_buttons(card, cw, y, "Cancel", plan["button"], action if plan["button"] else None)
         card.setFrame_(NSMakeRect(cx, cy, cw, y + 22))
+        if arriving:                                                 # occasional, so it earns a short arrival: fade + 0.96 scale
+            motion.fade_in(scrim)
+            motion.pop(card, origin="center", seconds=motion.MODAL_SECONDS, scale=motion.MODAL_SCALE)
         if not self.dlg_field.isHidden():                          # the field was added first: bring it above the backdrop and card
             self.dlg_field.removeFromSuperview()
             self.overlay.addSubview_(self.dlg_field)
@@ -992,6 +1002,9 @@ class MainWindow:
                 alert=NSAlert.alloc().init();alert.setMessageText_(titles[action]);alert.setInformativeText_(details[action]);alert.addButtonWithTitle_('Continue');alert.addButtonWithTitle_('Cancel')
                 if alert.runModal()!=1000:return
                 action={'confirm_model':'install_model','confirm_agent':'connect_agent','confirm_disconnect':'disconnect'}[action];payload={'approved':True}
+            elif action=='toggle_admin':
+                self.memory_pane.show_admin=not self.memory_pane.show_admin
+                self.shown=None;self.render();return
             elif action=='copy_preview':
                 from AppKit import NSPasteboard
                 import json
@@ -1058,7 +1071,7 @@ class MainWindow:
             if c["id"] and not last:
                 cx += self._link(doc, c["name"], cx, y - 12, (lambda p=c["id"]: self.press("go", p)), size=12)
             else:
-                cx += self._link(doc, c["name"], cx, y - 12, lambda: None, size=12, color=kit.ink() if last else kit.mute())
+                cx += self._link(doc, c["name"], cx, y - 12, None, size=12, color=kit.ink() if last else kit.mute())
         return y + 18
 
     def _section(self, doc, text, x, y, w):
@@ -1242,7 +1255,7 @@ class MainWindow:
 
     def _row(self, doc, x, y, w, title, line, build=None, height=60):
         """A soft row: a title, a quiet line under it, and whatever `build(row, width)` puts at the right."""
-        row = self._tap(doc, x, y, w, height, lambda: None, fill=True)
+        row = self._tap(doc, x, y, w, height, None, fill=True)
         kit.put_text(row, title, 16, 10, w - 200, 14, 600, wrap=False, height=20)
         if line:
             kit.put_text(row, line, 16, 32, w - 200, 12, 400, kit.mute(), wrap=False, height=16)
@@ -1265,7 +1278,7 @@ class MainWindow:
 
     def _app_list(self, doc, chosen, x, y, w, remove):
         for e in chosen:
-            row = self._tap(doc, x, y, w, 48, lambda: None, fill=True)
+            row = self._tap(doc, x, y, w, 48, None, fill=True)
             self._app_icon(row, e["name"], 14, 9, 30)
             kit.put_text(row, e["name"], 56, 0, w - 56 - 110, 14, 500, wrap=False, height=48, middle=True)
             kit.button(row, "Remove", w - 14 - 84, 8, 84, 32, (lambda i=e["id"]: self.setting(remove, i)), kind="quiet", size=13, weight=600)
@@ -1284,7 +1297,7 @@ class MainWindow:
         for r in access["rows"]:
             off = r["state"] != "granted"
             red = off and r["key"] != "ax"                        # red is for a permission that is off (accessibility is optional)
-            row = self._tap(doc, x, y, w, 64, lambda: None, fill=True)
+            row = self._tap(doc, x, y, w, 64, None, fill=True)
             kit.tile(row, ("exclamationmark.circle.fill", "circle") if off else ("checkmark.circle.fill", "checkmark.circle"),
                      NSColor.systemRedColor() if red else kit.mute(), 14, 17, 30)
             kit.put_text(row, r["title"] + (f"  ·  {r['tag']}" if r["tag"] else ""), 58, 11, w - 58 - 230, 14, 600, wrap=False, height=20)
@@ -1299,7 +1312,7 @@ class MainWindow:
     def _set_privacy(self, doc, privacy, x, y, w):
         y = self._section(doc, "LMemM never reads", x, y, w)
         for text in privacy["always"]:
-            row = self._tap(doc, x, y, w, 40, lambda: None, fill=True)
+            row = self._tap(doc, x, y, w, 40, None, fill=True)
             kit.tile(row, ("lock.fill", "lock"), kit.mute(), 12, 7, 26)
             kit.put_text(row, text, 52, 0, w - 64, 13, 500, wrap=False, height=40, middle=True)
             y += 46
@@ -1328,8 +1341,6 @@ class MainWindow:
             y=self._section(doc,general['memory']['title'],x,y+16,w)
             y+=kit.put_text(doc,general['memory']['line'],x,y,w,13,400,kit.mute())+12
             kit.button(doc,'Choose project…',x,y,160,32,lambda:self.press('home'),kind='outline',size=13,weight=600)
-            kit.button(doc,'Pause Memory',x+174,y,150,32,lambda:self._memory_action('pause'),kind='quiet',size=13,weight=500)
-            kit.button(doc,'Resume Memory',x+338,y,150,32,lambda:self._memory_action('resume'),kind='quiet',size=13,weight=500)
             y+=52
         return self._row(doc, x, y, w, "Setup", "Go through the first-run questions again. Your memory and notes stay.",
                          lambda row, rw: kit.button(row, "Reopen setup…", rw - 14 - 130, 14, 130, 32, lambda: self.on_press("setup"), kind="outline", size=13, weight=600))
@@ -1392,7 +1403,7 @@ class MainWindow:
         y += 62
         if self.memory_snapshot:
             for i,tab in enumerate(self.memory_snapshot['tabs']):
-                kit.button(host,tab,x+i*124,y,116,32,lambda t=tab:self._memory_action('tab',{'tab':t}),kind='outline' if self.memory_snapshot['tab']==tab else 'quiet',size=14,weight=600)
+                kit.button(host,tab,x+i*124,y,116,32,lambda t=tab:self._memory_action('tab',{'tab':t}),kind='primary' if self.memory_snapshot['tab']==tab else 'quiet',size=14,weight=600)
             y+=48
             if self.memory_snapshot['tab']=='Memory' or page.get('empty'):return y
         self._label(host, "PICK UP WHERE YOU LEFT OFF", x, y, w)
@@ -1405,7 +1416,7 @@ class MainWindow:
             y += 88 + 18
         else:
             caught = page["caught_up"]
-            tap = self._tap(host, x, y, w, 52, lambda: None, fill=True)
+            tap = self._tap(host, x, y, w, 52, None, fill=True)
             kit.tile(tap, ("checkmark.circle.fill", "checkmark.circle"), kit.mute(), 12, 11, 30)
             kit.put_text(tap, caught["title"], 52, 8, w - 64, 14, 600, wrap=False, height=20)
             kit.put_text(tap, caught["line"], 52, 28, w - 64, 12, 400, kit.mute(), wrap=False, height=16)
@@ -1435,7 +1446,7 @@ class MainWindow:
     def _select_bar(self, parent, page, x, y, w):
         """While selecting: how many, and what to do with them. Returns the height."""
         n = len(self.sel)
-        tap = self._tap(parent, x, y, w, 44, lambda: None, fill=True)
+        tap = self._tap(parent, x, y, w, 44, None, fill=True)
         text = f"{n} selected" if n else "Tap things to select them"
         kit.put_text(tap, text, 14, 0, 200, 13, 600, None if n else kit.mute(), wrap=False, height=44, middle=True)
         right = w - 8
@@ -1505,7 +1516,7 @@ class MainWindow:
 
     def _card_box(self, parent, x, y, w, build, tap=None):
         """A soft box. `build(box, inner_width)` draws inside it from (14, 12) and returns the inner height."""
-        box = self._tap(parent, x, y, w, 10, tap or (lambda: None), fill=True)
+        box = self._tap(parent, x, y, w, 10, tap, fill=True)
         inner = build(box, w - 28)
         box.setFrame_(NSMakeRect(x, y, w, inner + 24))
         return y + inner + 24
@@ -1535,7 +1546,7 @@ class MainWindow:
             gap = 10
             tw = (w - gap * (len(page["stats"]) - 1)) / len(page["stats"])
             for i, (k, v) in enumerate(page["stats"]):
-                tile = self._tap(doc, x + i * (tw + gap), y, tw, 62, lambda: None, fill=True)
+                tile = self._tap(doc, x + i * (tw + gap), y, tw, 62, None, fill=True)
                 kit.put_text(tile, k.upper(), 14, 11, tw - 28, 10, 600, kit.mute(), wrap=False, height=14)
                 kit.put_text(tile, v, 14, 28, tw - 28, 17, 700, wrap=False, height=26)
             y += 62 + 22
@@ -1549,9 +1560,10 @@ class MainWindow:
             y = self._section(doc, f"Finished · {len(page['done'])}", x, y + 10, w)
             for n in page["done"]:
                 row = self._tap(doc, x, y, w, 30, (lambda i=n["id"]: self.tick_note(i, False)))
+                row.ax_label = "Reopen: " + n["text"]
                 kit.put_text(row, "✓", 0, 0, 20, 13, 600, kit.mute(), wrap=False, height=30, middle=True)
                 kit.put_text(row, n["text"], 26, 0, w - 26 - 70, 13, 400, kit.mute(), wrap=False, height=30, middle=True)
-                kit.put_text(row, "Reopen", w - 64, 0, 64, 12, 500, kit.accent(), align=RIGHT, wrap=False, height=30, middle=True)
+                kit.put_text(row, "Reopen", w - 64, 0, 64, 12, 500, kit.accent_text(), align=RIGHT, wrap=False, height=30, middle=True)
                 y += 30
         if page["latest"]:
             y = self._section(doc, "What LMemM noticed", x, y + 10, w)
@@ -1572,6 +1584,7 @@ class MainWindow:
     def _note_body(self, box, inner, n):
         """A note: the tick on the left (a tap flips it), the words, when. A ticked note is crossed out."""
         tap = self._tap(box, 0, 0, 40, 44, (lambda i=n["id"], d=n["done"]: self.tick_note(i, not d)))
+        tap.checked, tap.ax_label = bool(n["done"]), n["text"]
         ring = _Ring.alloc().initWithChecked_(n["done"])
         ring.setFrame_(NSMakeRect(14, 13, 17, 17))
         tap.addSubview_(ring)
@@ -1603,7 +1616,7 @@ class MainWindow:
             kit.put_text(box, e["when"], 14 + inner - 96, 12, 96, 12, 400, kit.mute(), align=RIGHT, wrap=False, height=20)
             top = 30
             for quote in e["decisions"]:
-                h = kit.put_text(box, "“" + quote + "”", 28, 12 + top, inner - 14, 13, 600, kit.accent())
+                h = kit.put_text(box, "“" + quote + "”", 28, 12 + top, inner - 14, 13, 600, kit.accent_text())
                 bar = _Bar.alloc().initWithFrame_(NSMakeRect(14, 12 + top + 2, 3, max(h - 4, 14)))
                 box.addSubview_(bar)
                 top += h + 10
@@ -1611,7 +1624,7 @@ class MainWindow:
                 top += kit.put_text(box, line, 14, 12 + top, inner, 13, 400) + 7
             if e["more"] or e["open"]:
                 label = f"Show {e['more']} more lines" if e["more"] else "Show less"
-                self._link(box, label, 8, 12 + top - 2, (lambda i=e["id"]: self.press("expand", i)), size=12, color=kit.accent())
+                self._link(box, label, 8, 12 + top - 2, (lambda i=e["id"]: self.press("expand", i)), size=12, color=kit.accent_text())
                 top += 24
             return top - 7
         return self._card_box(doc, x, y, w, body)

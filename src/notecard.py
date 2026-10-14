@@ -17,6 +17,7 @@ from Foundation import NSObject
 from AppKit import (NSBezierPath, NSColor, NSFont, NSMakeRect, NSScreen, NSScrollView, NSTextView,
                     NSVisualEffectView)
 
+import palette
 import widget
 from widget import _Flipped, _label, _panel, PAD, PILL_BOTTOM, POPOVER_MATERIAL, BEHIND_WINDOW, ACTIVE
 
@@ -24,7 +25,12 @@ CARD_W, CARD_H = 320, 150
 GAP = 46                                    # from the screen's bottom edge to the card: clear of the pill
 PLACEHOLDER = "Say what to remember…"
 HINT = "Return saves  ·  Esc cancels"
-ACCENT = (0.91, 0.455, 0.165)               # the pill's orange
+
+
+def _accent(alpha=1.0):
+    """The pill's orange, deeper on the light card so the words in it can be read (palette.py)."""
+    r, g, b = palette.ORANGE_TEXT_ON_DARK if widget._dark() else palette.ORANGE_TEXT_ON_LIGHT
+    return NSColor.colorWithRed_green_blue_alpha_(r, g, b, alpha)
 
 
 class _Bars(_Flipped):
@@ -37,7 +43,7 @@ class _Bars(_Flipped):
 
     def drawRect_(self, rect):
         if self.live:
-            NSColor.colorWithRed_green_blue_alpha_(*ACCENT, 1.0).setFill()
+            _accent().setFill()
         else:
             NSColor.tertiaryLabelColor().setFill()
         mid = self.bounds().size.height / 2
@@ -104,7 +110,7 @@ class NoteCard:
         self.text.setVerticallyResizable_(True)
         self.text.setHorizontallyResizable_(False)
         self.text.textContainer().setWidthTracksTextView_(True)
-        self.text.setInsertionPointColor_(NSColor.colorWithRed_green_blue_alpha_(*ACCENT, 1.0))
+        self.text.setInsertionPointColor_(_accent())
         self.typing = _Typing.alloc().initWithCard_(self)
         self.text.setDelegate_(self.typing)
         scroll.setDocumentView_(self.text)
@@ -113,7 +119,7 @@ class NoteCard:
                                      frame=(PAD, 42, CARD_W - 2 * PAD, 20))
         body.addSubview_(self.placeholder)
 
-        self.hint, _ = _label(HINT, 11, color=NSColor.tertiaryLabelColor(), frame=(PAD, CARD_H - 28, CARD_W - 2 * PAD, 14))
+        self.hint, _ = _label(HINT, 11, color=NSColor.secondaryLabelColor(), frame=(PAD, CARD_H - 28, CARD_W - 2 * PAD, 14))
         body.addSubview_(self.hint)
         content.addSubview_(body)
         self.panel.setContentView_(content)
@@ -128,9 +134,8 @@ class NoteCard:
         scr = NSScreen.mainScreen().visibleFrame()
         self.panel.setFrame_display_(NSMakeRect(scr.origin.x + (scr.size.width - CARD_W) / 2,
                                                 scr.origin.y + GAP, CARD_W, CARD_H), True)
-        self.panel.setAlphaValue_(0.0)
+        self.panel.setAlphaValue_(1.0)                       # ⌃⌥N is a keyboard shortcut used all day: it appears at once
         self.panel.makeKeyAndOrderFront_(None)
-        self.panel.animator().setAlphaValue_(1.0)
         self.panel.makeFirstResponder_(self.text)
 
     def hide(self):
@@ -147,7 +152,7 @@ class NoteCard:
         self.bars.setNeedsDisplay_(True)
         if listening:
             self.status.setStringValue_("Listening")
-            self.status.setTextColor_(NSColor.colorWithRed_green_blue_alpha_(*ACCENT, 1.0))
+            self.status.setTextColor_(_accent())
             self.hint.setStringValue_(HINT)
         else:
             self.status.setStringValue_("Mic is off")

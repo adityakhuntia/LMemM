@@ -17,6 +17,7 @@ import apps
 import config
 import dictation
 import macos
+import motion
 import onboarding
 import permissions
 import setup_kit as kit
@@ -59,6 +60,7 @@ class SetupWindow:
         self.panel = dictation.NotePanel()
         self.icons = {}
         self.name_field = self.primary_tap = self.hint = None
+        self.last_index = None                                     # the screen last drawn (for the push between screens)
 
         style = 1 | 2 | (1 << 15)                                  # titled, closable, content under the title bar
         self.window = _SetupWindow.alloc().initWithContentRect_styleMask_backing_defer_(
@@ -137,7 +139,7 @@ class SetupWindow:
         view = self.setup.view()
         if self.primary_tap is not None:
             self.primary_tap.setAlphaValue_(1.0 if view["primary"]["enabled"] else 0.35)
-            self.primary_tap.callback = self._primary if view["primary"]["enabled"] else (lambda: None)
+            self.primary_tap.callback = self._primary if view["primary"]["enabled"] else None
 
     def open_rehearsal(self):
         if self.panel.open or self.setup.step != "try":
@@ -153,10 +155,13 @@ class SetupWindow:
     # ------------------------------------------------------------ drawing
 
     def render(self):
+        view = self.setup.view()
+        if self.last_index is not None and view["index"] != self.last_index:
+            motion.step(self.root, forward=view["index"] > self.last_index)     # a new screen arrives from the side it belongs to
+        self.last_index = view["index"]
         for sub in list(self.root.subviews()):
             sub.removeFromSuperview()
         self.name_field = self.primary_tap = self.hint = None
-        view = self.setup.view()
         self.signature = self._signature()
         root = self.root
         dots = kit._KitDots.alloc().initWithIndex_(view["index"])
@@ -336,7 +341,7 @@ class SetupWindow:
         if row["key"] == "screen":
             some = bool(view["watch_apps"])
             ty += 8
-            holder = kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(text_x, ty, 188, 28), lambda: None)
+            holder = kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(text_x, ty, 188, 28), None)
             holder.fill, holder.radius = kit.faint(0.07), 9
             body.addSubview_(holder)
             for label, active, cb, x, w in (("All apps", not some, lambda: self._do(self.setup.set_apps, []), 2, 78),
@@ -380,7 +385,7 @@ class SetupWindow:
         y += kit.put_text(sheet, "Where should LMemM look?", X, y, CW, 25, 700, align=CENTER) + 8
         y += kit.put_text(sheet, "Apps installed on this Mac. LMemM looks only at the ones you pick and stays off in every other app.",
                           X + 10, y, CW - 20, 14, 400, kit.mute(), CENTER) + 16
-        box = kit._KitBox.alloc().initWithFocus_(False)
+        box = kit._KitBox.alloc().initWithFocus_(True)               # the search field has the cursor from the start
         box.setFrame_(NSMakeRect(X, y, CW, 38))
         sheet.addSubview_(box)
         search = _field(state["query"], "Search apps", 14, False, (X + 14, y + 9, CW - 28, 20),

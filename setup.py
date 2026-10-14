@@ -14,6 +14,7 @@ OPTIONS = {
         "CFBundleIdentifier": "com.adityakhuntia.lmemm",
         "CFBundleShortVersionString": "0.1.0",
         "LSUIElement": True,
+        "LSEnvironment": {"PYTHONUTF8": "1", "LANG": "en_US.UTF-8"},   # an app has no shell locale: files would read as ASCII
         "NSHighResolutionCapable": True,
         "NSMicrophoneUsageDescription": "LMemM listens when you press the note shortcut.",
         "NSSpeechRecognitionUsageDescription": "LMemM turns your spoken note into text on this Mac.",

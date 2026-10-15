@@ -52,14 +52,36 @@ class _Panel(NSPanel):
             self.on_change()
 
 
-class _Click(objc.lookUpClass("NSObject")):
-    def initWithFn_(self, fn):
-        self = objc.super(_Click, self).init()
-        self.fn = fn
+class _Actions(objc.lookUpClass("NSObject")):
+    """One target for every button. Buttons carry a tag; the tag picks the action. The target is
+    held by the HandoffPanel for its whole life (a button's target is a weak reference)."""
+
+    def init(self):
+        self = objc.super(_Actions, self).init()
+        self.table = {}
+        self.after = None
         return self
 
-    def go_(self, _sender):
-        self.fn()
+    @objc.python_method
+    def reset(self):
+        self.table = {}
+
+    @objc.python_method
+    def add(self, fn):
+        tag = len(self.table) + 1
+        self.table[tag] = fn
+        return tag
+
+    @objc.IBAction
+    def pressed_(self, sender):
+        fn = self.table.get(int(sender.tag()))
+        try:
+            if fn:
+                fn()
+        except Exception as e:                    # a bad action must be visible, not silent
+            print(f"  ! handoff button: {type(e).__name__}: {e}", flush=True)
+        if self.after:
+            self.after()
 
 
 class HandoffPanel:
@@ -68,8 +90,9 @@ class HandoffPanel:
         self.panel = _Panel.alloc().initWithModel_(self.model)
         self.panel.on_change = self.draw
         self.panel.sync = self._sync
-        self._keep = []
         self._dirty = threading.Event()
+        self._actions = _Actions.alloc().init()
+        self._actions.after = self._dirty.set          # redraw on the next tick, never inside the click
 
     # ---------------------------------------------------------------- lifecycle
 
@@ -111,10 +134,9 @@ class HandoffPanel:
         if primary:
             b.setBezelColor_(NSColor.colorWithSRGBRed_green_blue_alpha_(*palette.ACCENT, 1.0))
             b.setKeyEquivalent_("\r")
-        click = _Click.alloc().initWithFn_(lambda: (self._sync(), fn(), self.draw()))
-        self._keep.append(click)
-        b.setTarget_(click)
-        b.setAction_("go:")
+        b.setTag_(self._actions.add(lambda: (self._sync(), fn())))
+        b.setTarget_(self._actions)
+        b.setAction_("pressed:")
         parent.addSubview_(b)
 
     def _sync(self):
@@ -127,7 +149,7 @@ class HandoffPanel:
         if v["kind"] == "closed":
             self.panel.orderOut_(None)
             return
-        self._keep = []
+        self._actions.reset()
         root = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, W, 10))
         rows = []          # (kind, payload) laid out top to bottom, then flipped to AppKit coordinates
         k = v["kind"]

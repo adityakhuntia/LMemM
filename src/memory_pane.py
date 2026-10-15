@@ -148,6 +148,7 @@ class MemoryPane:
     def _preview(self,view,x,w,y,kit,panel):
         """The Codex card: what Codex would see (Preview), or the one step left after Connect. Returns the y below it."""
         import json
+        from AppKit import NSMakeRect
         preview=view['preview'];connection=preview.get('connection')
         if connection:                                   # after Connect: words, never the access file
             codex=connection.get('codex') or {};state=codex.get('state');command=connection.get('command','')
@@ -189,8 +190,8 @@ class MemoryPane:
             panel(x,top,w,dh+88,ACC)
             kit.put_text(host,title,x+16,top+14,w-32,15,700,wrap=False,height=20)
             kit.put_text(host,detail,x+16,top+38,w-32,13,400,kit.mute(),height=dh)
-            kit.button(host,go,x+16,top+dh+50,110,30,lambda:self.action('confirm_yes'),kind='outline' if self.confirm=='confirm_disconnect' else 'primary',size=13,weight=600)
-            kit.button(host,'Cancel',x+134,top+dh+50,90,30,lambda:self.action('confirm_no'),kind='quiet',size=13,weight=600);y=top+dh+88+14
+            gw=kit.text_width(go,13,600)+34;kit.button(host,go,x+16,top+dh+50,gw,30,lambda:self.action('confirm_yes'),kind='outline' if self.confirm=='confirm_disconnect' else 'primary',size=13,weight=600)
+            kit.button(host,'Cancel',x+24+gw,top+dh+50,90,30,lambda:self.action('confirm_no'),kind='quiet',size=13,weight=600);y=top+dh+88+14
         mode=view['state']
         if mode=='Needs attention':
             st=view.get('status',{});detail=view.get('message') or ''
@@ -237,12 +238,12 @@ class MemoryPane:
         if kind=='connect_extension':text,color=notice[0],(kit.status_text('orange') if notice[1] else None)
         if busy and kind=='install_extension':text='Installing in VS Code…'
         connected=view.get('status',{}).get('source_connected')
-        stuck=bool(notice and kind=='connect_extension' and notice[1] and 'Accessibility' in notice[0])
+        blind=view.get('accessibility') is False                   # LMemM cannot see VS Code's window until macOS allows it
         if connected:
             row(['chevron.left.forwardslash.chevron.right','curlybraces'],ACC,'VS Code','Sharing the text you view in the editor.',[],status='Connected')
         elif installed and not busy:
-            if not notice or kind not in ('connect_extension','install_extension'):text='Connecting restarts VS Code so it loads the extension. Your windows reopen.'
-            row(['chevron.left.forwardslash.chevron.right','curlybraces'],ACC,'VS Code',text,([('Open Accessibility','open_accessibility','outline')] if stuck else [])+[('Connect','reconnect_extension','primary')],status='Installed',sub_color=color)
+            if not notice or kind not in ('connect_extension','install_extension'):text='macOS must let LMemM see VS Code first. Press Allow, switch LMemM on, then come back.' if blind else 'Connecting restarts VS Code so it loads the extension. Your windows reopen.'
+            row(['chevron.left.forwardslash.chevron.right','curlybraces'],ACC,'VS Code',text,[('Allow Accessibility','allow_accessibility','primary')] if blind else [('Connect','reconnect_extension','primary')],status='Installed',sub_color=color)
         else:
             row(['chevron.left.forwardslash.chevron.right','curlybraces'],ACC,'VS Code',text,[('Working…' if busy else 'Install extension','install_extension','quiet' if busy else 'primary',not busy)],sub_color=color)
         status=view.get('status',{});ready=status.get('model_state')=='available';state=status.get('model_install')

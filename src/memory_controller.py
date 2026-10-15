@@ -26,7 +26,7 @@ class MemoryController:
     def __init__(self,client,items,save):
         self.client=client;self.items=items;self.save=save;self.state=new_memory_state()
         self.bindings=[];self.status={};self.pending={};self.serial=0;self.last_poll=0;self.ui_project=None
-        self.agents={};self.codex=None;self.busy=None;self.notice=None;self.notice_at=0;self.notice_version=0;self.seen_notice=0;self.vscode_restart=False
+        self.agents={};self.codex=None;self.ax_trusted=True;self.busy=None;self.notice=None;self.notice_at=0;self.notice_version=0;self.seen_notice=0;self.vscode_restart=False
     @property
     def agent(self):
         return next((a for a in self.agents.values() if self.binding and self.binding['project_id'] in a['project_ids'] and a.get('client_id','Codex')=='Codex'),None)
@@ -77,6 +77,12 @@ class MemoryController:
             except ValueError as error:self.set_notice(str(error),True,'connect_extension')
             except Exception:self.set_notice('Could not open VS Code. The path is copied: in VS Code run “LMemM: Connect Project Memory” and paste it.',True,'connect_extension')
         threading.Thread(target=work,daemon=True).start()
+    @staticmethod
+    def _accessibility():
+        try:
+            import permissions
+            return bool(permissions.accessibility_trusted())
+        except Exception:return True                 # unknown is not "off": never block on a guess
     def _touch(self):self.notice_version+=1
     def add_to_codex(self,config_path):
         # Runs Codex's own `mcp add`: it edits Codex's settings, so it only runs after the person pressed
@@ -105,7 +111,7 @@ class MemoryController:
         threading.Thread(target=work,daemon=True).start()
     def view(self):
         view=memory_view(self.state,self.binding,self.status if self.binding else {'state':'Disabled'},self.state['result'])
-        view['notice']=self.notice
+        view['notice']=self.notice;view['accessibility']=self.ax_trusted
         if self.codex and (view.get('preview') or {}).get('connection'):view['preview']['connection']['codex']=self.codex
         if self.busy:view['busy']=self.busy
         try:
@@ -160,6 +166,8 @@ class MemoryController:
             self.send(method,params,'read',self.state['request'])
     def poll(self,events=None):
         changed=False
+        trusted=self._accessibility()
+        if trusted!=self.ax_trusted:self.ax_trusted=trusted;changed=True        # the person just switched it on in System Settings
         for event in self.client().poll() if events is None else events:
             if event.get('type')=='ready':
                 self.busy=None;self.last_poll=0;self.agents={};self.pending={};self.state=memory_reduce(self.state,'cancel',{});changed=True;continue

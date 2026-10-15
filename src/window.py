@@ -1031,9 +1031,9 @@ class MainWindow:
                 pane=self._pane();chosen=pane.confirm;pane.confirm=None
                 if not chosen:return
                 action={'confirm_model':'install_model','confirm_agent':'connect_agent','confirm_disconnect':'disconnect'}[chosen];payload={'approved':True}
-            elif action=='open_accessibility':
-                import subprocess
-                subprocess.Popen(['open','x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'])
+            elif action=='allow_accessibility':
+                import permissions
+                permissions.MacSystem().open_settings('ax')        # lists LMemM there, then opens the page
                 return
             elif action=='copy_codex_command':
                 from AppKit import NSPasteboard

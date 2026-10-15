@@ -17,40 +17,91 @@ class ViewTests(unittest.TestCase):
         self.assertTrue(detail['truncated']);self.assertEqual(detail['provenance'],'Observed content')
 
 
-class PaneLayoutTests(unittest.TestCase):
-    """The Memory tab keeps what people use on top and folds the setup (audit: a dozen identical buttons)."""
+class FriendlyTextTests(unittest.TestCase):
+    def test_dates_read_as_today_yesterday_or_day_month(self):
+        from datetime import datetime, timezone
+        from memory_view import friendly
+        now = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
+        tz = now.astimezone().tzinfo
+        def local(day, hour):
+            return datetime(2026, 10, day, hour, 5, tzinfo=tz).astimezone(timezone.utc).isoformat()
+        self.assertEqual(friendly(local(12, 9), now).split(",")[0], "Today")
+        self.assertEqual(friendly(local(11, 9), now).split(",")[0], "Yesterday")
+        self.assertTrue(friendly(local(3, 9), now).startswith("3 Oct, "))
+        self.assertEqual(friendly("not a date", now), "not a date")
 
-    def test_state_dot_is_never_red(self):
-        from memory_view import state_tone
-        self.assertEqual([state_tone(s) for s in ('Ready', 'Processing', 'Needs attention', 'Paused', 'Disabled')],
-                         ['good', 'accent', 'warn', 'quiet', 'quiet'])
+    def test_long_file_names_are_cut_in_the_middle(self):
+        from memory_view import short_name
+        name = short_name("/Users/a/.lmemm-project-notes/native-3131876c15f4e10d0127af062170c0a1.md")
+        self.assertLessEqual(len(name), 26)
+        self.assertIn("…", name)
+        self.assertTrue(name.endswith("c0a1.md"))
+        self.assertEqual(short_name("/x/short.md"), "short.md")
 
-    def test_one_pause_control_that_applies(self):
-        from memory_view import pause_action
-        self.assertEqual(pause_action('Paused'), ('Resume Memory', 'resume'))
-        self.assertEqual(pause_action('Ready'), ('Pause Memory', 'pause'))
-        self.assertIsNone(pause_action('Disabled'))
 
-    def test_setup_groups_keep_every_action_and_stop_comes_last(self):
-        from memory_view import ADMIN_GROUPS
-        actions = [a for _t, _l, items in ADMIN_GROUPS for _b, a, _k in items]
-        self.assertEqual(sorted(actions), sorted(['confirm_model', 'install_extension', 'reconnect_extension', 'preview',
-                                                  'confirm_agent', 'revoke_agent', 'confirm_disconnect']))
-        self.assertEqual(ADMIN_GROUPS[-1][0], 'Stop')
-        kinds = {a: k for _t, _l, items in ADMIN_GROUPS for _b, a, k in items}
-        self.assertEqual(kinds['revoke_agent'], 'outline')         # what cuts something off looks heavier
-        self.assertEqual(kinds['confirm_disconnect'], 'outline')
+class SearchNoteTests(unittest.TestCase):
+    def rows(self, *texts):
+        return [dict(section="Search results", text=t) for t in texts]
 
-class AdminGroupsFollowState(unittest.TestCase):
-    def test_installed_model_is_not_offered_again(self):
-        from memory_view import admin_groups
-        model = next(g for g in admin_groups({'model_state': 'available'}) if g[0] == 'Search model')
-        self.assertEqual(model[2], [])
-        self.assertIn('Installed', model[1])
-        model = next(g for g in admin_groups({'model_state': 'missing'}) if g[0] == 'Search model')
-        self.assertEqual([a for _b, a, _k in model[2]], ['confirm_model'])
+    def test_a_fitting_result_gets_no_note(self):
+        from memory_view import search_note
+        self.assertIsNone(search_note("clean context export", self.rows("a clean context export for an AI")))
 
-    def test_the_fold_button_has_words_not_an_arrow(self):
-        from memory_view import admin_toggle_label
-        self.assertNotIn('▴', admin_toggle_label(True) + admin_toggle_label(False))
+    def test_common_words_alone_are_not_a_match(self):
+        from memory_view import search_note
+        note = search_note("a clean context export: what an AI should be handed", self.rows("def trail(): what a thing"))
+        self.assertIn("No match", note)
+        self.assertIn("probably not", note)
 
+    def test_nothing_found_says_so_and_why(self):
+        from memory_view import search_note
+        self.assertIn("No matches for", search_note("kubernetes ingress", []))
+        self.assertIsNone(search_note("the a of", []))
+
+
+class PaneColourTests(unittest.TestCase):
+    """One blue accent; green, orange and grey only as state; never red (red is for a permission that is off)."""
+
+    def test_state_colours_use_the_accent_and_never_red(self):
+        import palette
+        from memory_pane import ACC, SECTIONS, STATE_COLORS
+        self.assertEqual(ACC, palette.ACCENT)
+        self.assertEqual(STATE_COLORS['Processing'], palette.ACCENT)
+        for colour in list(STATE_COLORS.values()) + [c for _t, _s, c in SECTIONS.values()]:
+            self.assertFalse(colour[0] > 0.8 and colour[1] < 0.4, 'red-looking colour %r' % (colour,))
+
+    def test_every_confirmation_has_a_title_an_explanation_and_a_button(self):
+        from memory_view import CONFIRMS
+        self.assertEqual(sorted(CONFIRMS), ['confirm_agent', 'confirm_disconnect', 'confirm_model'])
+        for title, detail, go in CONFIRMS.values():
+            self.assertTrue(title and detail and go)
+
+
+class GroupEvidenceTests(unittest.TestCase):
+    def rows(self):
+        from memory_view import evidence_rows
+        code = dict(origin_type='trusted_artifact_snapshot', locator='/p/src/trail_store.py')
+        return evidence_rows({'primary': [
+            dict(text='\n\n\ndef iso(dt):\n    return 1\n\n\n\nclass A:\n    pass', at='2026-10-15T10:00:00+00:00', citation_id='c1', **code),
+            dict(text='other part', at='2026-10-15T10:05:00+00:00', citation_id='c2', **code),
+            dict(text='We decided to use SQLite', at='2026-10-14T10:00:00+00:00', citation_id='c3', origin_type='user_note', locator='/p/.lmemm-project-notes/native-1.md')]})
+
+    def test_one_card_per_file_with_a_count_and_the_latest_time(self):
+        from memory_view import group_evidence
+        out = group_evidence(self.rows())
+        self.assertEqual(len(out), 2)
+        self.assertEqual((out[0]['title'], out[0]['count'], out[0]['at']), ('trail_store.py', 2, '2026-10-15T10:05:00+00:00'))
+        self.assertEqual(out[0]['citation_id'], 'c1')                  # the best match is the one shown
+
+    def test_notes_are_never_grouped_or_retitled(self):
+        from memory_view import group_evidence
+        note = group_evidence(self.rows())[1]
+        self.assertIsNone(note['title'])
+        self.assertEqual(note['text'], 'We decided to use SQLite')
+
+    def test_excerpt_drops_leading_blank_lines_folds_gaps_and_caps_length(self):
+        from memory_view import excerpt
+        self.assertEqual(excerpt('\n\n\ndef a():\n    pass\n\n\n\nclass B:'), 'def a():\n    pass\n\nclass B:')
+        long = '\n'.join('line %d' % i for i in range(20))
+        self.assertTrue(excerpt(long).endswith('\n…'))
+        self.assertEqual(len(excerpt('x' * 500).rstrip('…')), 109)

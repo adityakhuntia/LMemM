@@ -259,7 +259,7 @@ class _KitButton(_Control):
 
 
 def button(parent, label, x, y, w, h, callback, kind="primary", size=16, weight=600, enabled=True):
-    """kind: primary (blue, white text), quiet (soft grey), ghost (just text), outline (bordered)."""
+    """kind: primary (blue, white text), quiet (soft grey), ghost (just text), outline (bordered), link (blue words)."""
     tap = _KitButton.alloc().initWithFrame_callback_(NSMakeRect(x, y, w, h), callback if enabled else None)
     color = ink()
     if kind == "primary":
@@ -270,6 +270,8 @@ def button(parent, label, x, y, w, h, callback, kind="primary", size=16, weight=
         tap.border = line()
     elif kind == "ghost":
         color = mute()
+    elif kind == "link":                              # just blue words (the lighter blue on the dark card)
+        color = accent_text()
     if label:
         text = _KitText.alloc().initWithText_size_weight_color_align_wrap_middle_(label, size, weight, color, CENTER, False, True)
         text.setFrame_(NSMakeRect(0, 0, w, h))

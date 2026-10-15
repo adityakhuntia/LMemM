@@ -100,10 +100,16 @@ def search_project(store,backend,ctx,query):
     with store.lock:
         current_grant(store,ctx,query.project_id)
         scores={};by_chunk={}
+        words=[w.lower() for w in re.findall(r'\w+',query.text) if len(w)>2]
+        phrase=query.text.strip().lower()
         for ranking in (keywords,vectors):
             for rank,item in enumerate(ranking,1):
                 scores[item.chunk_id]=scores.get(item.chunk_id,0)+1/(60+rank)
                 by_chunk[item.chunk_id]=item
+        for chunk_id,item in by_chunk.items():
+            # Asking for a file by name should put that file first, whatever its text says (a name is the strongest signal there is).
+            name=Path(item.locator).name.lower() if item.locator else ''
+            if name and (phrase==name or phrase and len(phrase)>3 and phrase in name or any(w==Path(name).stem for w in words)):scores[chunk_id]+=1
         ordered=sorted(by_chunk.values(),key=lambda h:(scores[h.chunk_id],h.at,h.chunk_id),reverse=True)
         primary=[];texts=set()
         for item in ordered:

@@ -49,8 +49,12 @@ class Bridge:
         self.directory=Path(directory)
         self.roots=tuple(Path(r).resolve(strict=True) for r in roots)
         if not self.roots or any(not r.is_dir() for r in self.roots): raise ValueError('Workspace roots required')
-        self.clock=clock; self.clients={}; self.last={}; self.revision=0; self.active=True
+        self.last_reject=None; self.clock=clock; self.clients={}; self.last={}; self.revision=0; self.active=True
         self.session=secrets.token_hex(16); self.token=secrets.token_hex(32)
+    def _no(self,why):
+        """Refuse, and remember why in words a person can act on. It names no file and holds no text."""
+        self.last_reject=why
+        return None
     def open_session(self):
         if self.directory.is_symlink(): raise ValueError('Symlink bridge')
         self.directory.mkdir(mode=0o700,parents=True,exist_ok=True)
@@ -94,6 +98,7 @@ class Bridge:
                 if m['kind']=='heartbeat' and m.get('focused') is False:
                     self.last.pop(client,None);return None
             if focus is None:return None
+            if m['kind'] in ('snapshot','note') and not getattr(focus,'element',True):return self._no('VS Code does not say which element has focus, so LMemM will not read text.')      # a window is known, its focused element is not: never read text
             if m['kind']=='connect':
                 if not re.search(r'(?<![a-f0-9])'+re.escape('LMemM '+client)+r'(?![a-f0-9])',focus.title): return None
                 if old and (old['window']!=focus.window or old['pid']!=focus.pid): return None
@@ -101,19 +106,19 @@ class Bridge:
                 self.clients[client]=dict(seq=seq,at=at,window=focus.window,pid=focus.pid,focused=True)
                 write_private_json(self.directory/'acks'/(client+'.json'),dict(session=self.session,window=focus.window,seq=seq))
                 return None
-            if not old or m.get('window')!=old['window'] or focus.window!=old['window'] or focus.pid!=old['pid']: return None
+            if not old or m.get('window')!=old['window'] or focus.window!=old['window'] or focus.pid!=old['pid']: return self._no('The VS Code window is not the one LMemM verified. Press Connect again.')
             old.update(seq=seq,at=at,focused=m.get('focused') is True)
             if not old['focused']: self.last.pop(client,None); return None
-            if sum(c['focused'] and self.clock()-c['at']<=2 and c['window']==focus.window for c in self.clients.values())!=1: return None
+            if sum(c['focused'] and self.clock()-c['at']<=2 and c['window']==focus.window for c in self.clients.values())!=1: return self._no('More than one VS Code connection is active. Reload VS Code and connect once.')
             if m['kind']=='heartbeat': return None
             if m['kind'] not in ('snapshot','note'): return None
             raw=Path(unquote(urlsplit(m['document']).path))
             root=local_path(m['workspace']); doc=local_path(m['document'])
-            if raw != doc: return None
-            if root not in self.roots or not doc.is_file(): return None
+            if raw != doc: return self._no('This file is reached through a link, which LMemM does not follow.')
+            if root not in self.roots or not doc.is_file(): return self._no('This file is outside the folder you gave Memory.')
             relative=doc.relative_to(root)
-            if any(part.startswith('.') or part.lower() in EXCLUDED for part in relative.parts): return None
-            if doc.suffix.lower() in ('.pem','.key','.p12','.pfx'): return None
+            if any(part.startswith('.') or part.lower() in EXCLUDED for part in relative.parts): return self._no('This file is in a folder LMemM never reads (hidden, node_modules, build, dist and similar).')
+            if doc.suffix.lower() in ('.pem','.key','.p12','.pfx'): return self._no('Key files are never read.')
             spans=m['spans']
             if not isinstance(spans,list) or not 1<=len(spans)<=4: return None
             for s in spans:
@@ -125,8 +130,9 @@ class Bridge:
                 if not isinstance(note_id,str) or not re.fullmatch('[a-f0-9]{32}',note_id):return None
                 if type(source_at) not in (int,float) or not 0<=self.clock()-source_at<=2:return None
             digest=hashlib.sha256(json.dumps([str(doc),spans,m['kind'],note_id],sort_keys=True).encode()).hexdigest()
-            if self.last.get(client)==digest: return None
+            if self.last.get(client)==digest: return None      # the same text again: nothing new to keep
             self.last[client]=digest
+            self.last_reject=None
             sid=identifier('source',self.session+client+(note_id if note_id else str(seq)))
             return SourceEnvelope(sid,datetime.fromtimestamp(source_at,timezone.utc).isoformat(),self.session,
                  'com.microsoft.VSCode',str(doc),str(root),True,

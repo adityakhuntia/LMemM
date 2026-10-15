@@ -62,11 +62,7 @@ function poll(){
   if(success)status.text='LMemM: experimental visible-source sharing';
  }catch(error){if(connection)failNote(connection,'Bridge unavailable; submit again.');clear();status.text='LMemM: bridge unavailable';}
 }
-function activate(context){
- status=vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right);context.subscriptions.push(status);
- context.subscriptions.push(vscode.commands.registerCommand('lmemm.connect',async()=>{
-  const grantPath=await vscode.window.showInputBox({prompt:'Path to the running LMemM grant.json. Only approved visible local files are shared.'});
-  if(!grantPath)return;
+function connect(grantPath){
   try{
    stop();const directory=path.dirname(grantPath);const s=fs.lstatSync(directory);
    if(!s.isDirectory()||s.isSymbolicLink()||s.uid!==process.getuid()||(s.mode&0o777)!==0o700)throw Error('Bridge directory must be private');
@@ -77,7 +73,20 @@ function activate(context){
    challenge.webview.html='<p>LMemM is verifying this native window. This tab closes once verified.</p>';
    status.show();poll();timer=setInterval(poll,1000);
   }catch(e){vscode.window.showErrorMessage('LMemM: '+e.message);stop();}
+}
+function activate(context){
+ status=vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right);context.subscriptions.push(status);
+ context.subscriptions.push(vscode.commands.registerCommand('lmemm.connect',async()=>{
+  const grantPath=await vscode.window.showInputBox({prompt:'Path to the running LMemM grant.json. Only approved visible local files are shared.'});
+  if(!grantPath)return;
+  connect(grantPath);
  }));
+ // LMemM's Connect button opens vscode://lmemm.lmemm-source/connect?grant=<path>; VS Code asks the person to allow it first.
+ context.subscriptions.push(vscode.window.registerUriHandler({handleUri(uri){
+  if(uri.path!=='/connect')return;
+  const grantPath=new URLSearchParams(uri.query).get('grant');
+  if(grantPath)connect(grantPath);
+ }}));
  context.subscriptions.push(vscode.commands.registerCommand('lmemm.pause',()=>{paused=true;if(connection){confirmNote(connection);failNote(connection,'Source sharing paused.');}clear();poll();}));
  context.subscriptions.push(vscode.commands.registerCommand('lmemm.stop',stop));
  context.subscriptions.push(vscode.commands.registerCommand('lmemm.note',async()=>{

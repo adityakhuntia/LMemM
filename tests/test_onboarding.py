@@ -149,7 +149,7 @@ class PermissionStateTests(unittest.TestCase):
         self.assertEqual(ob.row_line("screen", ob.OFF, [CHROME, CODE]), "Only Chrome, VS Code. Off everywhere else.")
         self.assertEqual(ob.row_line("screen", ob.GRANTED, [CHROME, CODE, {"id": "x", "name": "Notes"}]),
                          "Only Chrome, VS Code +1. Off everywhere else.")
-        self.assertIn("slower", ob.row_line("ax", ob.OFF))
+        self.assertIn("VS Code", ob.row_line("ax", ob.OFF))
 
 
 class StateTests(unittest.TestCase):
@@ -334,7 +334,7 @@ class AccessTests(Base):
         s = self.to(self.setup(), "access")
         rows = s.view()["rows"]
         self.assertEqual([r["key"] for r in rows], ["voice", "ax", "screen"])
-        self.assertEqual([r["tag"] for r in rows], [None, "Optional", "Needed"])
+        self.assertEqual([r["tag"] for r in rows], [None, "Recommended", "Needed"])
         self.assertEqual([r["button"] for r in rows], ["Allow", "Open System Settings", "Open System Settings"])
 
     def test_rows_follow_macos_live(self):                                   # S3

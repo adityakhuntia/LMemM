@@ -114,7 +114,7 @@ def row_action(perm, state):
 
 ROW_TEXT = {
     "voice": ("Voice notes", None, "Turns what you say into notes."),
-    "ax": ("Accessibility", "Optional", "Keeps the pill fast. Without it, it’s slower."),
+    "ax": ("Accessibility", "Recommended", "Lets VS Code share what you view with project Memory, and keeps the pill fast."),
     "screen": ("Screen Recording", "Needed", "Knows which window you’re in."),
 }
 BUTTON = {"allow": "Allow", "settings": "Open System Settings", "restart": "Restart LMemM"}
@@ -402,7 +402,7 @@ class Setup:
             if state["watch_apps"]:
                 v["notes"].append({"tone": "info", "text": f"LMemM watches only {', '.join(a['name'] for a in state['watch_apps'])}. Everywhere else it is off."})
             if self.perm("ax") != GRANTED:
-                v["notes"].append({"tone": "info", "text": "Accessibility is off, so the pill may follow you a little slower than usual."})
+                v["notes"].append({"tone": "info", "text": "Accessibility is off, so the pill may follow you a little slower, and VS Code cannot share what you view with project Memory."})
             if screen == RESTART:
                 v["notes"].append({"tone": "warn", "text": "Screen Recording is waiting for a restart. The pill will show a red mark until then."})
                 v["primary"] = self._btn("Restart LMemM", "restart")

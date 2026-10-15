@@ -1,14 +1,31 @@
-"""Native evidence pane using the existing Figtree drawing kit.
+"""LMemM - what the Memory tab says: the words, rows and dates it shows. Plain Python, no UI, so it is tested on any
+machine. The drawing is in memory_pane.py."""
+import re
+from datetime import datetime, timezone
 
-Layout (audit: the pane was one column of a dozen identical buttons and a raw JSON dump): what the person
-came to do is on top, what they set up once is folded away.
+def friendly(at,now=None):
+    """'2026-10-12T08:38:03+00:00' as 'Today, 08:38', 'Yesterday, 14:02' or '9 Oct, 10:00' in local time."""
+    try:
+        when=datetime.fromisoformat(str(at).replace('Z','+00:00'))
+        if when.tzinfo is None:when=when.replace(tzinfo=timezone.utc)
+        when=when.astimezone();now=(now or datetime.now(timezone.utc)).astimezone()
+    except (ValueError,TypeError):return str(at or '')
+    days=(now.date()-when.date()).days;clock=when.strftime('%H:%M')
+    if days==0:return 'Today, '+clock
+    if days==1:return 'Yesterday, '+clock
+    return '%d %s, %s'%(when.day,when.strftime('%b'),clock)
 
-    status      one line: a dot, the state, and the two actions that apply right now (Pause / Resume, Refresh)
-    search      the workspace, the search box, the period, then the evidence as cards
-    notes       add a project note
-    setup       "Connections and setup", folded: the model, VS Code, Codex, each as a small group;
-                stopping and disconnecting sit last, apart from the rest
-"""
+def short_name(locator,limit=26):
+    """The file name of a source, cut in the middle when long."""
+    name=str(locator or '').replace('\\','/').rstrip('/').rsplit('/',1)[-1]
+    if len(name)<=limit:return name
+    keep=(limit-1)//2;return name[:keep]+'…'+name[-keep:]
+
+PERIOD_LABELS={'Last 2 days':'2 days','Last 7 days':'7 days','All retained':'All'}
+STATE_LABELS={'Ready':'Remembering','Processing':'Processing','Paused':'Paused · nothing new is kept','Needs attention':'Needs attention'}
+CONFIRMS={'confirm_model':('Install meaning search?','Downloads about 46 MB (the MiniLM model) to LMemM’s own folder on this Mac. Needs Ollama installed. No notes or text are sent anywhere.','Install'),
+          'confirm_agent':('Let Codex read this project’s memory?','Codex can search saved notes and sources and read the cited text. Using these tools sends that text to Codex and its provider. LMemM also adds itself to Codex’s settings on this Mac. You can turn it off at any time.','Allow and add to Codex'),
+          'confirm_disconnect':('Disconnect Memory for this project?','Stops capture and revokes agent access. Saved notes stay on this Mac but can’t be searched until you enable Memory again.','Disconnect')}
 
 def provenance(row):
     return 'Your note' if row.get('origin_type')=='user_note' else 'Observed content' if row.get('origin_type') else 'Supported by cited sources'
@@ -22,52 +39,51 @@ def evidence_rows(result):
                 provenance=provenance(row),truncated=row.get('truncated',False)))
     return rows
 
+def excerpt(text,lines=6,width=110):
+    """A few readable lines of a captured chunk: no blank lines at the top, runs of blank lines folded, long lines cut."""
+    kept,blank=[],False
+    for line in str(text).replace('\t','    ').splitlines():
+        if not line.strip():
+            blank=bool(kept)
+            continue
+        if blank:kept.append('');blank=False
+        kept.append(line.rstrip() if len(line.rstrip())<=width else line.rstrip()[:width-1]+'…')
+    cut=len([l for l in kept if l is not None])>lines
+    shown=kept[:lines]
+    while shown and not shown[-1]:shown.pop()
+    return '\n'.join(shown)+('\n…' if cut else '')
+
+def group_evidence(rows):
+    """One row per file for observed text: scrolling a file keeps many near-copies, and a list of them says nothing.
+    The first (best) row is shown, with how many there were and when the latest was kept. Notes are never grouped."""
+    out,seen=[],{}
+    for row in rows:
+        if row['provenance']!='Observed content' or not row['locator']:
+            out.append(dict(row,title=None,count=1));continue
+        key=(row['section'],row['locator'])
+        if key in seen:
+            first=seen[key];first['count']+=1
+            if row['at']>first['at']:first['at']=row['at']
+            continue
+        first=dict(row,title=short_name(row['locator']),count=1,text=excerpt(row['text']))
+        seen[key]=first;out.append(first)
+    return out
+
 def source_presentation(source):
     return dict(text=source['text'],locator=source['locator'],at=source['at'],open_enabled=source.get('can_open_file',False),
                 provenance=provenance(source),truncated=source.get('truncated',False),
                 open_explanation='This is the retained snapshot. Open file shows the file as it exists today.')
 
+FILLER=frozenset('a an and are as at be by for from has have how in is it its of on or that the this to was what when where which who why with'.split())
+KEPT='Memory only keeps the notes you write and the text VS Code showed while it was connected, so it may never have seen this.'
 
-TONES = {"Ready": "good", "Processing": "accent", "Needs attention": "warn"}      # anything else is a quiet grey
-
-# Connections and setup, in the order a person meets them: (title, line, [(button, action, kind)]).
-# "outline" is the heavier look, kept for the things that cut something off.
-ADMIN_GROUPS = [
-    ("Search model", "Semantic recall uses a small local model (about 46 MB) kept in LMemM’s own folder. It is installed only when you say so.",
-     [("Install local model…", "confirm_model", "quiet")]),
-    ("VS Code", "Memory reads text you view in VS Code through its extension.",
-     [("Install VS Code source extension…", "install_extension", "quiet"), ("Reconnect source sharing…", "reconnect_extension", "quiet")]),
-    ("Codex", "Codex can read this project’s memory only after you connect it. Previewing sends nothing.",
-     [("Preview context for Codex", "preview", "quiet"), ("Connect Codex…", "confirm_agent", "quiet"),
-      ("Revoke Codex access", "revoke_agent", "outline")]),
-    ("Stop", "Disconnecting stops capture and revokes every agent grant. What was retained stays on this Mac.",
-     [("Disconnect project Memory…", "confirm_disconnect", "outline")]),
-]
-
-
-def admin_groups(status):
-    """ADMIN_GROUPS for what is true now: once the search model is installed its group says so
-    instead of offering to install it again."""
-    groups = []
-    for title, line, items in ADMIN_GROUPS:
-        if title == "Search model" and (status or {}).get("model_state") == "available":
-            line, items = "Installed. Semantic recall is on. It lives in LMemM’s own folder.", []
-        groups.append((title, line, items))
-    return groups
-
-
-def admin_toggle_label(showing):
-    """The folded section's button: words, not an arrow character."""
-    return "Hide connections and setup" if showing else "Show connections and setup"
-
-
-def state_tone(state):
-    """good, accent, warn or quiet: the colour of the dot beside the state. Never red (red is for a permission that is off)."""
-    return TONES.get(state, "quiet")
-
-
-def pause_action(state):
-    """(button label, action) for the one pause control that applies, or None while Memory is off."""
-    if state == "Disabled":
-        return None
-    return ("Resume Memory", "resume") if state == "Paused" else ("Pause Memory", "pause")
+def search_note(query,rows):
+    """None when the results fit the question; otherwise an honest sentence. Search ORs the words, so a few common words can
+    pull in unrelated cards: when no result holds at least half of the question's real words, say so instead of implying a match."""
+    words=[w for w in dict.fromkeys(re.findall(r'\w+',str(query).lower())) if w not in FILLER and len(w)>2]
+    if not words:return None
+    primary=[r for r in rows if r['section']=='Search results']
+    need=max(1,(len(words)+1)//2)
+    if any(sum(w in r['text'].lower() for w in words)>=need for r in primary):return None
+    if not primary:return 'No matches for “%s”. %s'%(str(query).strip(),KEPT)
+    return 'No match for “%s”. Below is what Memory has seen that shares a few common words, so it is probably not what you are looking for. %s'%(str(query).strip(),KEPT)

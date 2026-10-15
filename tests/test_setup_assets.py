@@ -20,6 +20,14 @@ class SetupAssets(unittest.TestCase):
         self.assertGreater(b, r + 0.4)                    # clearly blue
         self.assertGreater(b, g)
 
+    def test_the_kit_accent_is_the_palette_accent(self):
+        import sys
+        sys.path.insert(0, os.path.join(ROOT, "src"))
+        import palette
+        tree = ast.parse(open(os.path.join(ROOT, "src", "setup_kit.py")).read())
+        accent = next(n for n in tree.body if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "ACCENT")
+        self.assertEqual(tuple(ast.literal_eval(accent.value)), palette.ACCENT)
+
     def test_alignment_values_match_the_existing_widget_code(self):
         """widget.py (running on a Mac) uses setAlignment_(1) for centre; the kit must agree, or every
         line of text lands on the wrong side."""
@@ -42,6 +50,13 @@ class SetupAssets(unittest.TestCase):
         ui = open(os.path.join(ROOT, "src", "onboarding_ui.py")).read()
         self.assertNotIn("_label(", ui)                   # NSTextField labels sit high in a button
         self.assertNotIn("systemOrange", ui.replace("NSColor.systemOrangeColor() if state == onboarding.RESTART", ""))
+
+    def test_setup_window_resizes_and_never_lets_the_body_cover_the_button(self):
+        ui = open(os.path.join(ROOT, "src", "onboarding_ui.py")).read()
+        self.assertIn("1 | 2 | 8", ui)                    # resizable
+        self.assertIn("setContentMinSize_", ui)
+        self.assertIn("windowDidResize_", ui)
+        self.assertIn("NSScrollView.alloc().initWithFrame_(NSMakeRect(X, TOP, CW, room))", ui)   # a tall body scrolls above the foot
 
 
 if __name__ == "__main__":

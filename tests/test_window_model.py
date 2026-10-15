@@ -76,6 +76,9 @@ class BannerTests(unittest.TestCase):
             b = wm.banner(s, memory)["button"]
             self.assertIn(b["id"], known | {"resume", "setup"}, b)
 
+    def test_the_signature_of_no_view_yet_does_not_crash(self):
+        self.assertEqual(wm.signature(None), wm.signature(None))
+
     def test_the_signature_changes_only_when_the_window_would(self):
         a = wm.signature(wm.view(FINE))
         self.assertEqual(a, wm.signature(wm.view(FINE)))

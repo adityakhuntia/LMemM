@@ -42,8 +42,9 @@ SIZE = types.SimpleNamespace(width=1080, height=720)
 fake_widget._Flipped.frame = lambda self: types.SimpleNamespace(size=SIZE)
 sys.modules["widget"] = fake_widget
 kit = types.ModuleType("setup_kit")
-for n in ("put_text","tile","button","text_width","text_height","ink","mute","accent","card_background","faint","line","icon","first_symbol","note","chip","chip_width","font"):
+for n in ("put_text","tile","button","text_width","text_height","ink","mute","accent","accent_text","status_text","card_background","faint","line","icon","first_symbol","note","chip","chip_width","font"):
     setattr(kit, n, mock.MagicMock(return_value=20))
+kit._KitRule = type("_KitRule", (Base,), {"initWithFrame_": lambda self, *a: self})
 kit.LEFT, kit.RIGHT, kit.CENTER = 0, 2, 1
 kit.text_width = lambda *a, **k: 50
 kit.text_height = lambda *a, **k: 20
@@ -233,6 +234,10 @@ if w.memory_pane.settings:FAILED.append('choosing the Memory tab left Settings o
 w._memory_action('open_settings');w._memory_action('close_settings')
 step('Memory back from settings',render)
 w._memory_action('source',{'citation_id':'c1'})
+# A dialog arrives with its short pop, and every control answers VoiceOver's press.
+w.open_name('new'); step('dialog arriving',lambda:None); w.close_dialog()
+for tap in [v for v in w.side_foot.subviews() if hasattr(v,'accessibilityPerformPress')][:1]:
+    if tap.accessibilityRole()!='AXButton':FAILED.append('side foot control is not a button for VoiceOver')
 if ('source',{'citation_id':'c1'}) not in memory_calls:FAILED.append('Memory citation callback not forwarded')
 broken=dict(snapshot,error='Project memory unavailable')
 w.memory_view=lambda pid,v=broken:v

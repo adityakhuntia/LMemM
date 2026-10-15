@@ -114,7 +114,7 @@ def rows_for(status, now, hotkey="⌃⌥N"):
     rows += [{"id": "settings", "title": "Settings…"},
              {"id": "access", "title": "Check access…", **({"detail": f"{off} off"} if off else {})},
              {"id": "setup", "title": "Reopen setup…"}, DIVIDER,
-             {"id": "delete", "title": "Delete all my data…"}, QUIT]
+             {"id": "delete", "title": "Delete all my data…"}, DIVIDER, QUIT]
     return rows
 
 

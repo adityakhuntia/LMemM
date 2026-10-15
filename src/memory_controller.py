@@ -6,7 +6,7 @@ class MemoryController:
     def __init__(self,client,items,save):
         self.client=client;self.items=items;self.save=save;self.state=new_memory_state()
         self.bindings=[];self.status={};self.pending={};self.serial=0;self.last_poll=0;self.ui_project=None
-        self.agents={};self.notice=None;self.notice_version=0;self.seen_notice=0;self.vscode_restart=False
+        self.agents={};self.busy=None;self.notice=None;self.notice_version=0;self.seen_notice=0;self.vscode_restart=False
     @property
     def agent(self):
         return next((a for a in self.agents.values() if self.binding and self.binding['project_id'] in a['project_ids'] and a.get('client_id','Codex')=='Codex'),None)
@@ -60,6 +60,7 @@ class MemoryController:
     def view(self):
         view=memory_view(self.state,self.binding,self.status if self.binding else {'state':'Disabled'},self.state['result'])
         view['notice']=self.notice
+        if self.busy:view['busy']=self.busy
         try:
             from semantic_memory.model_setup import extension_installed
             view['extension_installed']=extension_installed()
@@ -67,7 +68,7 @@ class MemoryController:
         return view
     def action(self,action,payload=None):
         payload=payload or {}
-        if action=='enroll':self.send('enroll',{'ui_project_id':self.ui_project,'root':payload['root']},'enroll');return
+        if action=='enroll':self.busy='Enabling Memory…';self.send('enroll',{'ui_project_id':self.ui_project,'root':payload['root']},'enroll');return
         if action=='install_extension':self.install_extension();return
         if action=='reconnect_extension':self.connect_extension();return
         if action=='install_model':self.set_notice('Starting…',False,'install_model')
@@ -113,12 +114,14 @@ class MemoryController:
         changed=False
         for event in self.client().poll() if events is None else events:
             if event.get('type')=='ready':
-                self.last_poll=0;self.agents={};self.pending={};self.state=memory_reduce(self.state,'cancel',{});changed=True;continue
+                self.busy=None;self.last_poll=0;self.agents={};self.pending={};self.state=memory_reduce(self.state,'cancel',{});changed=True;continue
             if event.get('type')=='error':
+                self.busy=None
                 self.state=memory_reduce(self.state,'cancel',{});self.state['error']=event['error'];changed=True;continue
             entry=self.pending.pop(event.get('id'),None)
             if not entry:continue
             kind,token=entry;changed=True
+            if kind=='enroll':self.busy=None
             if kind=='read':self.state=memory_reduce(self.state,'response',dict(request=token,result=event.get('result'),error=event.get('error')))
             elif event.get('error'):
                 if kind=='install_model':self.set_notice('Could not start the model install. Refresh Memory and try again.',True,kind)

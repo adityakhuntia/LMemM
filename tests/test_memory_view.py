@@ -37,3 +37,21 @@ class FriendlyTextTests(unittest.TestCase):
         self.assertIn("…", name)
         self.assertTrue(name.endswith("c0a1.md"))
         self.assertEqual(short_name("/x/short.md"), "short.md")
+
+
+class PaneColourTests(unittest.TestCase):
+    """One blue accent; green, orange and grey only as state; never red (red is for a permission that is off)."""
+
+    def test_state_colours_use_the_accent_and_never_red(self):
+        import palette
+        from memory_pane import ACC, SECTIONS, STATE_COLORS
+        self.assertEqual(ACC, palette.ACCENT)
+        self.assertEqual(STATE_COLORS['Processing'], palette.ACCENT)
+        for colour in list(STATE_COLORS.values()) + [c for _t, _s, c in SECTIONS.values()]:
+            self.assertFalse(colour[0] > 0.8 and colour[1] < 0.4, 'red-looking colour %r' % (colour,))
+
+    def test_every_confirmation_has_a_title_an_explanation_and_a_button(self):
+        from memory_view import CONFIRMS
+        self.assertEqual(sorted(CONFIRMS), ['confirm_agent', 'confirm_disconnect', 'confirm_model'])
+        for title, detail, go in CONFIRMS.values():
+            self.assertTrue(title and detail and go)

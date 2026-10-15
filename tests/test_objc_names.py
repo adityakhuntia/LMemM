@@ -30,7 +30,7 @@ class ObjcMethodNames(unittest.TestCase):
     its name's colons. `def restyle(self, fill, border)` crashes at import on a Mac ("expects 0
     arguments"), so any method that takes arguments must be named with underscores (`restyle_border_`)."""
 
-    OBJC_BASES = {"NSView", "NSObject", "NSWindow", "NSPanel", "NSTextField", "_Flipped", "_Tap", "_KeyPanel"}
+    OBJC_BASES = {"NSView", "NSObject", "NSWindow", "NSPanel", "NSTextField", "_Flipped", "_Control", "_Tap", "_KeyPanel"}
 
     def test_methods_with_arguments_have_underscored_names(self):
         problems = []

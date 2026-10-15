@@ -9,6 +9,7 @@ Honest capabilities:
     said what, so the result is always `partial` with speaker `unknown`.
 """
 
+import os
 import time
 from urllib.parse import urlparse
 
@@ -83,27 +84,64 @@ class AssistantSource(ad.SourceAdapter):
     def extract(self, info, cancelled=lambda: False):
         import ApplicationServices as AS
         import macos
-        import trail_ax
         if not AS.AXIsProcessTrusted():
             return Conversation(self.id, self.name, status=DENIED, reason="Accessibility access is off for LMemM.")
         f = macos.front()
         if not f:
             return Conversation(self.id, self.name, status=FAILED, reason="No window in front.")
-        app = AS.AXUIElementCreateApplication(f["pid"])
-        err, win = AS.AXUIElementCopyAttributeValue(app, "AXFocusedWindow", None)
-        if err or win is None:
-            return Conversation(self.id, self.name, status=EMPTY, reason="The window could not be read.")
-        snap = trail_ax.collect(trail_ax.LiveNode(win), None, None, max_nodes=1500, max_ms=800)
-        texts = [t for t in snap.texts if t.strip()]
+        pid = f["pid"]
+        if pid == os.getpid() and info.bundle_id:         # our own panel is in front: read the app we were called from
+            from AppKit import NSRunningApplication
+            apps = NSRunningApplication.runningApplicationsWithBundleIdentifier_(info.bundle_id)
+            pid = apps[0].processIdentifier() if apps else pid
+        snap, diag = read_visible(pid, cancelled)
         if cancelled():
             return Conversation(self.id, self.name, status=FAILED, reason="Cancelled.")
-        if not texts:
+        if snap is None or not snap.texts:
             return Conversation(self.id, self.name, status=EMPTY,
-                                reason="The app exposed no readable text.")
-        msg = Message(UNKNOWN, "\n".join(texts), time.strftime("%Y-%m-%dT%H:%M:%S"))
+                                reason=f"The app exposed no readable text ({diag}).")
+        msg = Message(UNKNOWN, "\n".join(snap.texts), time.strftime("%Y-%m-%dT%H:%M:%S"))
         return Conversation(self.id, self.name, title=snap.page_title or snap.title or info.window,
                             status=PARTIAL, messages=[msg],
                             reason="only the visible part was read and speakers aren't identified")
+
+
+def read_visible(pid, cancelled=lambda: False, wait=2.5):
+    """(Snapshot or None, one-line diagnostic). Chromium and Electron apps (Claude, ChatGPT, Cursor,
+    every browser) build their accessibility tree only when asked, and take a moment to do it, so
+    switch it on and poll until text appears or `wait` seconds pass. The flag is put back after."""
+    import ApplicationServices as AS
+    import trail_ax
+    el = AS.AXUIElementCreateApplication(pid)
+
+    def get(name):
+        err, v = AS.AXUIElementCopyAttributeValue(el, name, None)
+        return v if err == 0 else None
+    was = get("AXManualAccessibility")
+    turned_on = was is not True and AS.AXUIElementSetAttributeValue(el, "AXManualAccessibility", True) == 0
+    snap, tries, note = None, 0, ""
+    try:
+        deadline = time.monotonic() + wait
+        while True:
+            tries += 1
+            win = get("AXFocusedWindow") or get("AXMainWindow")
+            if win is None:
+                wins = get("AXWindows")
+                win = wins[0] if wins else None
+            if win is None:
+                note = "no window in the accessibility tree"
+            else:
+                snap = trail_ax.collect(trail_ax.LiveNode(win), None, None, max_nodes=2500, max_ms=900)
+                note = f"{snap.nodes} elements read" + (", cut short" if snap.truncated else "")
+                if snap.texts:
+                    break
+            if cancelled() or time.monotonic() >= deadline:
+                break
+            time.sleep(0.25)
+    finally:
+        if turned_on:
+            AS.AXUIElementSetAttributeValue(el, "AXManualAccessibility", False)
+    return snap, f"{note}; {tries} tries" + ("; accessibility had to be switched on" if turned_on else "")
 
 
 class AppDestination(ad.DestinationAdapter):

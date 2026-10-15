@@ -8,7 +8,13 @@ def codex_binary():
     if os.environ.get('LMEMM_NO_CODEX'):return None                  # tests must never touch a real Codex
     home=os.path.expanduser('~')
     extra=['/opt/homebrew/bin','/usr/local/bin',home+'/.local/bin',home+'/.npm-global/bin',home+'/.bun/bin']
-    return shutil.which('codex',path=os.pathsep.join([os.environ.get('PATH','')]+extra))
+    found=shutil.which('codex',path=os.pathsep.join([os.environ.get('PATH','')]+extra))
+    if found:return found
+    for app in ('/Applications/Codex.app',home+'/Applications/Codex.app'):          # the desktop app carries its own copy
+        for inside in ('Contents/Resources/codex','Contents/Resources/bin/codex','Contents/MacOS/codex','Contents/Resources/app/bin/codex'):
+            path=os.path.join(app,inside)
+            if os.path.isfile(path) and os.access(path,os.X_OK):return path
+    return None
 
 def codex_args(config_path):
     """The program and arguments that add LMemM's memory to Codex."""

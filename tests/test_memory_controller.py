@@ -1,4 +1,6 @@
+import os
 import unittest
+os.environ['LMEMM_NO_CODEX']='1'
 from memory_controller import MemoryController
 class Client:
     def __init__(self):self.calls=[];self.events=[]
@@ -14,6 +16,12 @@ class ConnectResultTests(unittest.TestCase):
         self.assertTrue(connection['command'].startswith('codex mcp add lmemm_memory -- '))
         self.assertIn("'/my dir/g.json'",connection['command'])        # a path with a space stays one argument
         self.assertNotIn('capability',connection)
+        import time
+        for _ in range(50):
+            if m.view()['preview']['connection'].get('codex',{}).get('state')!='adding':break
+            time.sleep(.02)
+        self.assertEqual(m.view()['preview']['connection']['codex']['state'],'failed')   # no Codex here: the card falls back to the line to paste
+        self.assertIn('not found',m.view()['preview']['connection']['codex']['message'])
         m.action('close_preview');self.assertIsNone(m.view()['preview'])
     def test_a_connect_that_never_verifies_says_what_to_check(self):
         import time

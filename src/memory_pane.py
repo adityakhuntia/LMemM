@@ -149,18 +149,27 @@ class MemoryPane:
         """The Codex card: what Codex would see (Preview), or the one step left after Connect. Returns the y below it."""
         import json
         preview=view['preview'];connection=preview.get('connection')
-        if connection:                                   # after Connect: words and one command, not the access file
-            title='Codex can now read this project';command=connection.get('command','')
-            body='One step left. Paste this line in Terminal to add LMemM to Codex. It stays on this Mac.'
-            bh=kit.text_height(body,13,400,w-32);ch=kit.text_height(command,12,400,w-56)
-            panel(x,y,w,bh+ch+120,ACC)
+        if connection:                                   # after Connect: words, never the access file
+            codex=connection.get('codex') or {};state=codex.get('state');command=connection.get('command','')
+            if state=='adding':
+                title,body,show_command='Adding LMemM to Codex…','This takes a few seconds.',False
+            elif state=='added':
+                title,body,show_command='Codex is connected','LMemM is added to Codex. If Codex is already open, restart it to see it.',False
+            else:
+                title,show_command='Codex can now read this project',True
+                body=(codex.get('message') or 'LMemM could not add itself to Codex.')+' Paste this line in Terminal to finish. It stays on this Mac.'
+            bh=kit.text_height(body,13,400,w-32);ch=kit.text_height(command,12,400,w-56) if show_command else 0
+            panel(x,y,w,bh+ch+(120 if show_command else 84),ACC)
             kit.put_text(self.host,title,x+16,y+14,w-32,15,700,wrap=False,height=20)
             kit.put_text(self.host,body,x+16,y+40,w-32,13,400,kit.mute(),height=bh)
-            top=y+bh+52;box=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(x+16,top,w-32,ch+16),None);box.fill=kit.faint(0.07);box.radius=8;self.host.addSubview_(box)
-            kit.put_text(self.host,command,x+28,top+8,w-56,12,400,height=ch)
-            by=top+ch+28
-            kit.button(self.host,'Copy command',x+16,by,130,30,lambda:self.action('copy_codex_command'),kind='primary',size=13,weight=600)
-            kit.button(self.host,'Done',x+154,by,80,30,lambda:self.action('close_preview'),kind='quiet',size=13,weight=600)
+            by=y+bh+54
+            if show_command:
+                top=by-2;box=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(x+16,top,w-32,ch+16),None);box.fill=kit.faint(0.07);box.radius=8;self.host.addSubview_(box)
+                kit.put_text(self.host,command,x+28,top+8,w-56,12,400,height=ch);by=top+ch+26
+                kit.button(self.host,'Copy command',x+16,by,130,30,lambda:self.action('copy_codex_command'),kind='primary',size=13,weight=600)
+                kit.button(self.host,'Done',x+154,by,80,30,lambda:self.action('close_preview'),kind='quiet',size=13,weight=600)
+            elif state=='added':
+                kit.button(self.host,'Done',x+16,by,80,30,lambda:self.action('close_preview'),kind='primary',size=13,weight=600)
             return by+30+16
         title='Proposed context for Codex · no access granted' if preview.get('proposed') else 'Exact context preview for Codex'
         body=json.dumps(preview,ensure_ascii=False,indent=2);th=kit.text_height(body,12,400,w-32)

@@ -2,18 +2,31 @@
 import time
 from memory_model import new_memory_state,memory_reduce,memory_view,period_args
 
-def codex_command(config_path):
-    """The one line that adds LMemM's memory to Codex. Shown after Connect Codex, so nobody has to read a config file."""
-    import shlex,sys
+def codex_binary():
+    """The `codex` program, found the way a person's shell would (an app launched from the Dock has a short PATH)."""
+    import os,shutil
+    if os.environ.get('LMEMM_NO_CODEX'):return None                  # tests must never touch a real Codex
+    home=os.path.expanduser('~')
+    extra=['/opt/homebrew/bin','/usr/local/bin',home+'/.local/bin',home+'/.npm-global/bin',home+'/.bun/bin']
+    return shutil.which('codex',path=os.pathsep.join([os.environ.get('PATH','')]+extra))
+
+def codex_args(config_path):
+    """The program and arguments that add LMemM's memory to Codex."""
+    import sys
     from pathlib import Path
     adapter=Path(__file__).resolve().parent.parent/'scripts'/'project_memory_mcp.py'
-    return ' '.join(['codex mcp add lmemm_memory --',shlex.quote(sys.executable),shlex.quote(str(adapter)),'--config',shlex.quote(str(config_path))])
+    return ['mcp','add','lmemm_memory','--',sys.executable,str(adapter),'--config',str(config_path)]
+
+def codex_command(config_path):
+    """The same thing as one line to paste in Terminal: the fallback when LMemM cannot add itself."""
+    import shlex
+    return ' '.join(['codex']+[shlex.quote(a) if a!='--' else a for a in codex_args(config_path)])
 
 class MemoryController:
     def __init__(self,client,items,save):
         self.client=client;self.items=items;self.save=save;self.state=new_memory_state()
         self.bindings=[];self.status={};self.pending={};self.serial=0;self.last_poll=0;self.ui_project=None
-        self.agents={};self.busy=None;self.notice=None;self.notice_at=0;self.notice_version=0;self.seen_notice=0;self.vscode_restart=False
+        self.agents={};self.codex=None;self.busy=None;self.notice=None;self.notice_at=0;self.notice_version=0;self.seen_notice=0;self.vscode_restart=False
     @property
     def agent(self):
         return next((a for a in self.agents.values() if self.binding and self.binding['project_id'] in a['project_ids'] and a.get('client_id','Codex')=='Codex'),None)
@@ -64,9 +77,36 @@ class MemoryController:
             except ValueError as error:self.set_notice(str(error),True,'connect_extension')
             except Exception:self.set_notice('Could not open VS Code. The path is copied: in VS Code run “LMemM: Connect Project Memory” and paste it.',True,'connect_extension')
         threading.Thread(target=work,daemon=True).start()
+    def _touch(self):self.notice_version+=1
+    def add_to_codex(self,config_path):
+        # Runs Codex's own `mcp add`: it edits Codex's settings, so it only runs after the person pressed
+        # "Allow and add to Codex". If it cannot, the card shows the same line to paste instead.
+        import subprocess,threading
+        self.codex={'state':'adding'};self._touch()
+        def work():
+            try:
+                binary=codex_binary()
+                if not binary:raise FileNotFoundError('Codex was not found on this Mac')
+                subprocess.run([binary,'mcp','remove','lmemm_memory'],capture_output=True,timeout=30)      # an older grant's entry
+                done=subprocess.run([binary]+codex_args(config_path),capture_output=True,text=True,timeout=30)
+                if done.returncode!=0:raise RuntimeError((done.stderr or done.stdout or 'Codex refused').strip().splitlines()[-1][:160])
+                self.codex={'state':'added'}
+            except FileNotFoundError:self.codex={'state':'failed','message':'Codex was not found on this Mac.'}
+            except Exception as error:self.codex={'state':'failed','message':str(error) or 'Codex did not accept it.'}
+            self._touch()
+        threading.Thread(target=work,daemon=True).start()
+    def remove_from_codex(self):
+        import subprocess,threading
+        def work():
+            try:
+                binary=codex_binary()
+                if binary:subprocess.run([binary,'mcp','remove','lmemm_memory'],capture_output=True,timeout=30)
+            except Exception:pass
+        threading.Thread(target=work,daemon=True).start()
     def view(self):
         view=memory_view(self.state,self.binding,self.status if self.binding else {'state':'Disabled'},self.state['result'])
         view['notice']=self.notice
+        if self.codex and (view.get('preview') or {}).get('connection'):view['preview']['connection']['codex']=self.codex
         if self.busy:view['busy']=self.busy
         try:
             from semantic_memory.model_setup import extension_installed
@@ -102,7 +142,7 @@ class MemoryController:
         if action=='revoke_agent':
             for grant_id,connection in list(self.agents.items()):
                 if self.binding and self.binding['project_id'] in connection['project_ids'] and connection.get('client_id','Codex')=='Codex':
-                    self.send('revoke_agent',{'grant_id':grant_id},'revoke_agent');self.agents.pop(grant_id,None)
+                    self.send('revoke_agent',{'grant_id':grant_id},'revoke_agent');self.agents.pop(grant_id,None);self.remove_from_codex();self.codex=None
             return
         self.state=memory_reduce(self.state,action,payload)
         if action=='tab' and payload['tab']=='Memory':self.last_poll=0;self.action('submit',{})
@@ -150,7 +190,7 @@ class MemoryController:
             elif kind=='agent':
                 connection={k:v for k,v in event['result'].items() if k!='capability'}
                 self.agents[connection['grant_id']]=connection
-                if self.binding and self.binding['project_id'] in connection['project_ids']:self.state['preview']={'connection':dict(connection,command=codex_command(connection['config_path']))}
+                if self.binding and self.binding['project_id'] in connection['project_ids']:self.state['preview']={'connection':dict(connection,command=codex_command(connection['config_path']))};self.add_to_codex(connection['config_path'])
             elif kind=='open':
                 detail=event['result']
                 if self.binding and token['project_id']==self.ui_project and detail.get('can_open_file'):

@@ -144,6 +144,35 @@ def read_visible(pid, cancelled=lambda: False, wait=2.5):
     return snap, f"{note}; {tries} tries" + ("; accessibility had to be switched on" if turned_on else "")
 
 
+def dump_tree(pid, limit=400, wait=2.0):
+    """Debug: every node's role and text-ish attributes, breadth first, for `handoff probe`.
+    Returns (role histogram, lines). Reads names and values only on the app in front; prints to the
+    developer's own terminal and stores nothing."""
+    import ApplicationServices as AS
+    import trail_ax
+    el = AS.AXUIElementCreateApplication(pid)
+    AS.AXUIElementSetAttributeValue(el, "AXManualAccessibility", True)
+    time.sleep(wait)
+    err, win = AS.AXUIElementCopyAttributeValue(el, "AXFocusedWindow", None)
+    if err or win is None:
+        err, win = AS.AXUIElementCopyAttributeValue(el, "AXMainWindow", None)
+    if err or win is None:
+        return {}, ["no window"]
+    hist, lines, queue = {}, [], [(trail_ax.LiveNode(win), 0)]
+    while queue and len(lines) < limit:
+        node, depth = queue.pop(0)
+        a = node.attrs()
+        role = str(a.get("AXRole"))
+        hist[role] = hist.get(role, 0) + 1
+        bits = [f"{k[2:]}={str(a[k])[:60]!r}" for k in ("AXSubrole", "AXTitle", "AXDescription", "AXValue", "AXURL") if a.get(k)]
+        if bits or role in ("AXStaticText", "AXWebArea", "AXTextArea"):
+            lines.append("  " * min(depth, 8) + role + " " + " ".join(bits))
+        for kid in node.children()[:80]:
+            queue.append((kid, depth + 1))
+    AS.AXUIElementSetAttributeValue(el, "AXManualAccessibility", False)
+    return hist, lines
+
+
 class AppDestination(ad.DestinationAdapter):
     """Open or focus an assistant (its app if installed, else its website), then the package is
     on the clipboard for the user to paste."""

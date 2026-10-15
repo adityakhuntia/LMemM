@@ -2,7 +2,7 @@
 
     handoff demo                      run the whole flow on a built-in synthetic conversation (any OS)
     handoff make FILE [--to NAME]     build the package from a transcript file ("You:" / "Assistant:" turns)
-    handoff probe [SECONDS]           after SECONDS (default 4) read the app in front and print what it exposes
+    handoff probe [SECONDS] [--tree]         after SECONDS (default 4) read the app in front and print what it exposes
     handoff panel [--key ctrl+opt+h]  the real hotkey and panel (macOS only, unverified)
 """
 
@@ -46,7 +46,7 @@ def make(path, dest):
     return 0
 
 
-def probe(delay):
+def probe(delay, tree=False):
     """Switch to the app you want to test; after `delay` seconds print what Accessibility gives us."""
     import time
     from . import mac
@@ -55,7 +55,13 @@ def probe(delay):
     info = mac.front_info()
     print("front:", info)
     import macos
-    snap, diag = mac.read_visible(macos.front()["pid"])
+    pid = macos.front()["pid"]
+    if tree:
+        hist, lines = mac.dump_tree(pid)
+        print("roles:", dict(sorted(hist.items(), key=lambda kv: -kv[1])))
+        print("\n".join(lines))
+        return 0
+    snap, diag = mac.read_visible(pid)
     print("diagnostic:", diag)
     if snap:
         print(f"title={snap.title!r} url={snap.url!r} texts={len(snap.texts)}")
@@ -71,7 +77,7 @@ def main(argv):
         dest = argv[argv.index("--to") + 1] if "--to" in argv else "the next assistant"
         return make(argv[1], dest)
     if argv[0] == "probe":
-        return probe(float(argv[1]) if len(argv) > 1 else 4.0)
+        return probe(float(argv[1]) if len(argv) > 1 and argv[1][0].isdigit() else 4.0, "--tree" in argv)
     if argv[0] == "panel":
         from . import hotkey, panel
         return panel.run(argv[argv.index("--key") + 1] if "--key" in argv else hotkey.DEFAULT)

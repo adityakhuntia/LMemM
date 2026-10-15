@@ -30,11 +30,34 @@ def codex_command(config_path):
     import shlex
     return ' '.join(['codex']+[shlex.quote(a) if a!='--' else a for a in codex_args(config_path)])
 
+def codex_question(project_id,question,now=None):
+    """The words sent to Codex: use only LMemM's tools, and explain, do not just quote."""
+    from datetime import datetime,timedelta,timezone
+    now=now or datetime.now(timezone.utc);fmt='%Y-%m-%dT%H:%M:%SZ'
+    question=(question or '').strip() or 'What was I working on? What is still open, and what did I decide?'
+    return ('Use only the lmemm_memory tools. Call get_project_context for project_id %s with start %s and end %s'
+            ' (and search_project_memory if the question names something specific). '
+            'Then answer this question for the person who works on this project: %s\n'
+            'Explain what the code or notes are for and why they matter, in plain language. Do not paste code. '
+            'Name the files you mean. Keep it under 150 words, and say so if the memory does not contain the answer.')%(
+            project_id,(now-timedelta(days=30)).strftime(fmt),(now+timedelta(days=1)).strftime(fmt),question)
+
+def codex_answer(stdout):
+    """The last message Codex wrote, from its --json output; None when there was none."""
+    import json
+    answer=None
+    for line in str(stdout).splitlines():
+        try:event=json.loads(line)
+        except ValueError:continue
+        item=event.get('item') or {}
+        if event.get('type')=='item.completed' and item.get('type')=='agent_message' and item.get('text'):answer=item['text']
+    return answer
+
 class MemoryController:
     def __init__(self,client,items,save):
         self.client=client;self.items=items;self.save=save;self.state=new_memory_state()
         self.bindings=[];self.status={};self.pending={};self.serial=0;self.last_poll=0;self.ui_project=None
-        self.agents={};self.codex=None;self.ax_trusted=True;self.busy=None;self.notice=None;self.notice_at=0;self.notice_version=0;self.seen_notice=0;self.vscode_restart=False
+        self.agents={};self.codex=None;self.ask=None;self.ax_trusted=True;self.busy=None;self.notice=None;self.notice_at=0;self.notice_version=0;self.seen_notice=0;self.vscode_restart=False
     @property
     def agent(self):
         return next((a for a in self.agents.values() if self.binding and self.binding['project_id'] in a['project_ids'] and a.get('client_id','Codex')=='Codex'),None)
@@ -91,6 +114,28 @@ class MemoryController:
             import permissions
             return bool(permissions.accessibility_trusted())
         except Exception:return True                 # unknown is not "off": never block on a guess
+    def ask_codex(self,question):
+        # Runs Codex in the background with the question. The text it reads goes to Codex and its provider, which is
+        # what the person agreed to when they connected it.
+        import subprocess,tempfile,threading
+        if not (self.binding and self.agent):return
+        prompt=codex_question(self.binding['project_id'],question)
+        self.ask={'state':'asking','question':(question or '').strip()};self._touch()
+        def work():
+            try:
+                binary=codex_binary()
+                if not binary:raise FileNotFoundError
+                with tempfile.TemporaryDirectory() as folder:
+                    done=subprocess.run([binary,'exec','--ephemeral','--sandbox','read-only','--skip-git-repo-check','-C',folder,'--json',prompt],
+                                        capture_output=True,text=True,timeout=180)
+                answer=codex_answer(done.stdout)
+                if not answer:raise RuntimeError('Codex did not answer. Check that it is signed in.')
+                self.ask={'state':'done','question':self.ask['question'] if self.ask else '','text':answer}
+            except FileNotFoundError:self.ask={'state':'failed','question':'','message':'Codex was not found on this Mac.'}
+            except subprocess.TimeoutExpired:self.ask={'state':'failed','question':'','message':'Codex took too long. Try again.'}
+            except Exception as error:self.ask={'state':'failed','question':'','message':str(error) or 'Codex could not answer.'}
+            self._touch()
+        threading.Thread(target=work,daemon=True).start()
     def _touch(self):self.notice_version+=1
     def add_to_codex(self,config_path):
         # Runs Codex's own `mcp add`: it edits Codex's settings, so it only runs after the person pressed
@@ -119,7 +164,7 @@ class MemoryController:
         threading.Thread(target=work,daemon=True).start()
     def view(self):
         view=memory_view(self.state,self.binding,self.status if self.binding else {'state':'Disabled'},self.state['result'])
-        view['notice']=self.notice;view['accessibility']=self.ax_trusted;view['codex_connected']=bool(self.binding and self.agent)
+        view['notice']=self.notice;view['accessibility']=self.ax_trusted;view['codex_connected']=bool(self.binding and self.agent);view['ask']=self.ask
         if self.codex and (view.get('preview') or {}).get('connection'):view['preview']['connection']['codex']=self.codex
         if self.busy:view['busy']=self.busy
         try:
@@ -150,6 +195,8 @@ class MemoryController:
             return
         if action=='close_source':self.state['source']=None;return
         if action=='close_preview':self.state['preview']=None;return
+        if action=='ask_codex':self.ask_codex(payload.get('text'));return
+        if action=='close_ask':self.ask=None;return
         if action=='connect_agent':
             if not self.binding:raise ValueError('Enable Memory first')
             self.send('connect_agent',dict(client_id='Codex',project_ids=[self.binding['project_id']],app_ids=['com.microsoft.VSCode'],disclosure_approved=payload.get('approved') is True),'agent');return

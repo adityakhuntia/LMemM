@@ -121,7 +121,21 @@ class MemoryPane:
             y+=54
             for i,period in enumerate(view['periods']):
                 kit.button(host,PERIOD_LABELS.get(period,period),x+i*70,y,64,26,lambda p=period:self.action('time_filter',{'period':p}),kind='outline' if period==view['period'] else 'quiet',size=12,weight=600)
+            if view.get('codex_connected'):
+                aw=kit.chip_width('Ask Codex','sparkles');kit.chip(host,'Ask Codex','sparkles',x+w-aw,y-3,False,lambda:self.action('ask_codex',{'text':str(self.query.stringValue())}))
             y+=44
+            ask=view.get('ask')
+            if ask:
+                if ask['state']=='asking':title,body='Asking Codex…','Reading this project’s notes and files. This takes a few seconds.'
+                elif ask['state']=='done':title,body='Codex’s answer'+(' to “'+ask['question']+'”' if ask.get('question') else ''),ask['text']
+                else:title,body="Codex couldn't answer",ask.get('message','')
+                bh=kit.text_height(body,14,400,w-32);top=y
+                panel(x,top,w,bh+(96 if ask['state']!='asking' else 68),ACC)
+                kit.put_text(host,title,x+16,top+14,w-32,15,700,wrap=False,height=20)
+                kit.put_text(host,body,x+16,top+42,w-32,14,400,height=bh)
+                if ask['state']=='done':kit.put_text(host,'Written by Codex from your notes and files. The cards below are the sources.',x+16,top+bh+50,w-32,11,400,kit.mute(),wrap=False,height=16)
+                if ask['state']!='asking':kit.button(host,'Close',x+16,top+bh+(68 if ask['state']=='done' else 54),80,26,lambda:self.action('close_ask'),kind='quiet',size=12,weight=600)
+                y=top+bh+(96 if ask['state']!='asking' else 68)+14
             if view['loading']:para('Loading permitted evidence…')
             if view['empty']:para(view['empty'],14,500)
             previous=None;source=view.get('source')

@@ -32,6 +32,30 @@ class ConnectResultTests(unittest.TestCase):
         m.set_notice('Opened VS Code. Choose Allow there to finish.',False,'connect_extension');m.notice_at=time.monotonic()-30
         m.status={'focus_blocker':'VS Code is not the front app.'}
         m.poll([]);self.assertTrue(m.notice[1]);self.assertIn('not the front app',m.notice[0])
+class AskCodexTests(unittest.TestCase):
+    def test_the_question_asks_for_meaning_and_names_the_project(self):
+        from memory_controller import codex_question
+        text=codex_question('project-x','What is trail_store for?')
+        self.assertIn('project_id project-x',text);self.assertIn('What is trail_store for?',text);self.assertIn('Do not paste code',text)
+        self.assertIn('What was I working on?',codex_question('project-x',''))        # an empty box asks the default question
+
+    def test_the_answer_is_the_last_message_codex_wrote(self):
+        from memory_controller import codex_answer
+        out='\n'.join(['not json','{"type":"item.completed","item":{"type":"mcp_tool_call"}}','{"type":"item.completed","item":{"type":"agent_message","text":"first"}}','{"type":"item.completed","item":{"type":"agent_message","text":"final"}}'])
+        self.assertEqual(codex_answer(out),'final');self.assertIsNone(codex_answer('nothing'))
+
+    def test_asking_needs_codex_connected_and_reports_when_it_is_missing(self):
+        import time
+        c=Client();m=MemoryController(lambda:c,lambda:{},lambda:None)
+        m.bindings=[dict(ui_project_id='a',project_id='pa',active=True,workspace_root='/a')];m.select('a')
+        m.action('ask_codex',{'text':'hi'});self.assertIsNone(m.view()['ask'])          # not connected: nothing runs
+        m.agents={'g':dict(grant_id='g',project_ids=['pa'],config_path='/p')}
+        m.action('ask_codex',{'text':'hi'})
+        for _ in range(50):
+            if m.view()['ask']['state']!='asking':break
+            time.sleep(.02)
+        self.assertEqual(m.view()['ask']['state'],'failed');self.assertIn('not found',m.view()['ask']['message'])
+        m.action('close_ask');self.assertIsNone(m.view()['ask'])
 class ControllerTests(unittest.TestCase):
     def test_submit_only_and_response_project_fence(self):
         c=Client();m=MemoryController(lambda:c,lambda:{},lambda:None)

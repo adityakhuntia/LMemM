@@ -26,7 +26,7 @@ class MemoryPane:
     def __init__(self,on_action):
         from AppKit import NSTextField,NSMakeRect
         from widget import _Fields,_Flipped
-        self.project=None;self.settings=False;self.confirm=None;self.status_open=False
+        self.project=None;self.shown_state=None;self.settings=False;self.confirm=None;self.status_open=False
         self.action=on_action;self.host=_Flipped.alloc().initWithFrame_(NSMakeRect(0,0,800,600))
         self.query_typing=_Fields.alloc().initWithChange_submit_cancel_(lambda text:self.action('query',{'text':text}),lambda text:self.action('submit',{'enter':True}),lambda:self.action('query',{'text':''}))
         self.query=NSTextField.alloc().initWithFrame_(NSMakeRect(0,0,100,30));self.query.setDelegate_(self.query_typing)
@@ -166,7 +166,18 @@ class MemoryPane:
         if view.get('preview') and binding and not self.settings:self.bottom=self._preview(view,x,w,y,kit,panel)
         end=(self.bottom if self.bottom is not None else y)+40
         self.host.setFrame_(NSMakeRect(0,0,width,max(end,500)))
+        ask=view.get('ask') or {}
+        shown=(self.settings,self.confirm,bool(view.get('preview')),ask.get('state'),bool(view.get('notice')))
+        if self.shown_state is not None and shown!=self.shown_state:self._fade_in()      # a state changed: ease it in, never snap
+        self.shown_state=shown
         return end
+    def _fade_in(self,seconds=0.15):
+        """A short fade, no movement. Skipped when macOS Reduce Motion is on."""
+        from AppKit import NSAnimationContext,NSWorkspace
+        if NSWorkspace.sharedWorkspace().accessibilityDisplayShouldReduceMotion():return
+        self.host.setWantsLayer_(True);self.host.setAlphaValue_(0.0)
+        NSAnimationContext.beginGrouping();NSAnimationContext.currentContext().setDuration_(seconds)
+        self.host.animator().setAlphaValue_(1.0);NSAnimationContext.endGrouping()
     def _preview(self,view,x,w,y,kit,panel):
         """The Codex card: what Codex would see (Preview), or the one step left after Connect. Returns the y below it."""
         import json

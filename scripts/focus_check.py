@@ -1,4 +1,4 @@
-"""Why does LMemM not verify the VS Code window? Run this, switch to VS Code within 5 seconds, and read the steps.
+"""Why does LMemM not verify the VS Code window? Run this, switch to VS Code within 10 seconds, and read the steps.
 
     .venv/bin/python scripts/focus_check.py
 
@@ -19,8 +19,8 @@ def main():
     import ApplicationServices as AX
     from input_monitor import secure_input_enabled
     say('this program may see windows', AX.AXIsProcessTrusted())
-    print('Switch to VS Code now. Click inside a file.')
-    for n in range(5, 0, -1):
+    print('Switch to VS Code now (open it first). Click inside a file.')
+    for n in range(10, 0, -1):
         print(n, end=' ', flush=True)
         time.sleep(1)
     print()

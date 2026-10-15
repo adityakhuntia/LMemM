@@ -8,6 +8,7 @@ class Focus:
     bounds: tuple
     bundle: str = 'com.microsoft.VSCode'
     title: str = field(default='',compare=False)
+    element: bool = field(default=True,compare=False)      # False: the window is known but not the focused element (a webview tab); fine to verify a challenge title, never to read text
 
 def match_window(pid, bounds, windows):
     if bounds is None or len(bounds) != 4:
@@ -39,19 +40,19 @@ def focus_probe(excluded_pids=()):
         error, focused=AX.AXUIElementCopyAttributeValue(AX.AXUIElementCreateSystemWide(),'AXFocusedUIElement',None)
         if error in (-25204,-25205,-25212):
             error,focused=AX.AXUIElementCopyAttributeValue(AX.AXUIElementCreateApplication(pid),'AXFocusedUIElement',None)
-        if error or focused is None:
+        known=not (error or focused is None)
+        if not known and pid not in _asked:
             # VS Code is built on Chromium, which builds its accessibility tree only after an assistive app asks for it
             # (AXManualAccessibility). Ask once per VS Code process; the tree is ready by the next poll.
-            if pid not in _asked:
-                _asked.add(pid)
-                AX.AXUIElementSetAttributeValue(AX.AXUIElementCreateApplication(pid),'AXManualAccessibility',True)
-            return None,'VS Code is not sharing its focused element yet (code %s).'%error
-        error, owner=AX.AXUIElementGetPid(focused,None)
-        if error or owner!=pid: return None,'The focused element is not in VS Code.'
-        error,role=AX.AXUIElementCopyAttributeValue(focused,'AXRole',None)
-        if error or role not in {'AXTextArea','AXTextField','AXOutline','AXButton','AXGroup','AXScrollArea','AXWebArea'}: return None,'VS Code focus is on something LMemM does not read (%s).'%role
-        error,subrole=AX.AXUIElementCopyAttributeValue(focused,'AXSubrole',None)
-        if subrole=='AXSecureTextField' or error not in (0,-25205,-25212) or role=='AXTextField' and (error or subrole is None): return None,'VS Code focus is on a field LMemM will not read.'
+            _asked.add(pid)
+            AX.AXUIElementSetAttributeValue(AX.AXUIElementCreateApplication(pid),'AXManualAccessibility',True)
+        if known:
+            error, owner=AX.AXUIElementGetPid(focused,None)
+            if error or owner!=pid: return None,'The focused element is not in VS Code.'
+            error,role=AX.AXUIElementCopyAttributeValue(focused,'AXRole',None)
+            if error or role not in {'AXTextArea','AXTextField','AXOutline','AXButton','AXGroup','AXScrollArea','AXWebArea'}: return None,'VS Code focus is on something LMemM does not read (%s).'%role
+            error,subrole=AX.AXUIElementCopyAttributeValue(focused,'AXSubrole',None)
+            if subrole=='AXSecureTextField' or error not in (0,-25205,-25212) or role=='AXTextField' and (error or subrole is None): return None,'VS Code focus is on a field LMemM will not read.'
         element=AX.AXUIElementCreateApplication(pid)
         error, window=AX.AXUIElementCopyAttributeValue(element,'AXFocusedWindow',None)
         if error or window is None: return None,'VS Code has no focused window.'
@@ -73,7 +74,7 @@ def focus_probe(excluded_pids=()):
         result=match_window(pid,bounds,rows)
         if result is None:return None,'The VS Code window could not be matched on screen.'
         error,title=AX.AXUIElementCopyAttributeValue(window,'AXTitle',None)
-        return replace(result,title=title if not error and isinstance(title,str) else ''),None
+        return replace(result,title=title if not error and isinstance(title,str) else '',element=known),None
     except Exception as exc:
         return None,'Reading VS Code failed (%s%s).'%(type(exc).__name__,': '+str(getattr(exc,'name','') or '') if isinstance(exc,ImportError) else '')
 

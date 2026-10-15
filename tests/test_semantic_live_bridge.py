@@ -220,3 +220,19 @@ class FocusReasonTests(unittest.TestCase):
   trusted=NS(AXIsProcessTrusted=lambda:True)
   with patch.dict('sys.modules',{'AppKit':kit,'Quartz':NS(),'ApplicationServices':trusted}),patch('input_monitor.secure_input_enabled',return_value=False):
    self.assertEqual(focus_probe(),(None,'VS Code is not the front app.'))
+
+class WindowWithoutFocusedElementTests(unittest.TestCase):
+ setUp=BridgeTests.setUp
+ tearDown=BridgeTests.tearDown
+ msg=BridgeTests.msg
+ connect=BridgeTests.connect
+ def test_a_challenge_tab_verifies_but_no_text_is_read_without_a_known_element(self):
+  from dataclasses import replace
+  blind=replace(Focus(1,20,(0,0,800,600),title='LMemM '+'a'*32),element=False)
+  m=self.msg();m.pop('spans');self.bridge.accept(m,blind)
+  self.assertIn('a'*32,self.bridge.clients)            # the webview tab has no focused element, yet its title proves the window
+  s=self.msg('snapshot')
+  self.assertIsNone(self.bridge.accept(s,replace(self.focus,element=False)))
+
+ def test_focus_equality_ignores_the_element_flag(self):
+  self.assertEqual(Focus(1,2,(0,0,1,1),element=False),Focus(1,2,(0,0,1,1)))

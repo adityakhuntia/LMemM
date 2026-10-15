@@ -94,6 +94,7 @@ class Bridge:
                 if m['kind']=='heartbeat' and m.get('focused') is False:
                     self.last.pop(client,None);return None
             if focus is None:return None
+            if m['kind'] in ('snapshot','note') and not getattr(focus,'element',True):return None      # a window is known, its focused element is not: never read text
             if m['kind']=='connect':
                 if not re.search(r'(?<![a-f0-9])'+re.escape('LMemM '+client)+r'(?![a-f0-9])',focus.title): return None
                 if old and (old['window']!=focus.window or old['pid']!=focus.pid): return None

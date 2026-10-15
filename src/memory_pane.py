@@ -240,7 +240,7 @@ class MemoryPane:
         connected=view.get('status',{}).get('source_connected')
         blind=view.get('accessibility') is False                   # LMemM cannot see VS Code's window until macOS allows it
         if connected:
-            row(['chevron.left.forwardslash.chevron.right','curlybraces'],ACC,'VS Code','Sharing the text you view in the editor.',[],status='Connected')
+            row(['chevron.left.forwardslash.chevron.right','curlybraces'],ACC,'VS Code',('Connected, but nothing kept from this file. '+view['status']['capture_blocker']) if view.get('status',{}).get('capture_blocker') else 'Sharing the text you view in the editor.',[],status='Connected')
         elif installed and not busy:
             if not notice or kind not in ('connect_extension','install_extension'):text='macOS must let LMemM see VS Code first. Press Allow, switch LMemM on, then come back.' if blind else 'Connecting restarts VS Code so it loads the extension. Your windows reopen.'
             row(['chevron.left.forwardslash.chevron.right','curlybraces'],ACC,'VS Code',text,[('Allow Accessibility','allow_accessibility','primary')] if blind else [('Connect','reconnect_extension','primary')],status='Installed',sub_color=color)
@@ -259,7 +259,7 @@ class MemoryPane:
             text,color=note_for('install_model','On. Finds notes by meaning, not just by words.' if ready else 'A 46 MB model that stays on this Mac. Needs Ollama installed first.')
             row(['sparkles'],ACC,'Meaning search',text,[] if ready else [('Install','confirm_model','primary')],status='On' if ready else None,sub_color=color)
         cap('Agents')
-        row(['terminal.fill','terminal'],ACC,'Codex','Can read this project’s notes and sources. You can turn it off at any time.',[('Copy prompt','copy_codex_prompt','outline'),('Preview','preview','outline'),('Revoke','revoke_agent','outline')] if view.get('codex_connected') else [('Connect…','confirm_agent','primary')],status='Connected' if view.get('codex_connected') else None)
+        row(['terminal.fill','terminal'],ACC,'Codex','Connected. Can read this project’s notes and sources.' if view.get('codex_connected') else 'Can read this project’s notes and sources. You can turn it off at any time.',[('Copy prompt','copy_codex_prompt','outline'),('Preview','preview','outline'),('Revoke','revoke_agent','outline')] if view.get('codex_connected') else [('Connect…','confirm_agent','primary')])
         cap('Danger zone')
         row(['bolt.slash.fill','xmark.circle'],ACC,'Disconnect Memory','Stops capture and agent access. Saved notes stay on this Mac.',[('Disconnect…','confirm_disconnect','outline')])
         self.bottom=y

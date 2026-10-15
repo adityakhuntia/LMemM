@@ -330,6 +330,7 @@ class MemoryService:
             value.update(source_connected=bool(live),model_install=self.install_state,model_install_message=self.install_message,model_install_percent=getattr(self.runtime,'progress',None),model_install_seconds=elapsed)
             value.update(service_epoch=self.service_epoch,policy_revision=revision(c),index_generation=generation['id'] if generation else None)
             value['focus_blocker']=getattr(self,'focus_reason',None)
+            value['capture_blocker']=getattr(self.bridge,'last_reject',None) if self.bridge is not None else None
             return value
 
     def _sync_bridge(self):

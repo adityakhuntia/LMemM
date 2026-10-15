@@ -234,5 +234,11 @@ class WindowWithoutFocusedElementTests(unittest.TestCase):
   s=self.msg('snapshot')
   self.assertIsNone(self.bridge.accept(s,replace(self.focus,element=False)))
 
+ def test_a_refusal_says_why_without_naming_text(self):
+  from dataclasses import replace
+  self.connect();s=self.msg('snapshot')
+  self.assertIsNone(self.bridge.accept(s,replace(self.focus,element=False)))
+  self.assertIn('which element has focus',self.bridge.last_reject)
+
  def test_focus_equality_ignores_the_element_flag(self):
   self.assertEqual(Focus(1,2,(0,0,1,1),element=False),Focus(1,2,(0,0,1,1)))

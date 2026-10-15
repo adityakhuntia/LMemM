@@ -160,7 +160,7 @@ class MemoryPane:
                 title,show_command='Codex can now read this project',True
                 body=(codex.get('message') or 'LMemM could not add itself to Codex.')+' Paste this line in Terminal to finish. It stays on this Mac.'
             bh=kit.text_height(body,13,400,w-32);ch=kit.text_height(command,12,400,w-56) if show_command else 0
-            panel(x,y,w,bh+ch+(120 if show_command else 84),ACC)
+            panel(x,y,w,bh+ch+(120 if show_command else 100 if state=='added' else 70),ACC)
             kit.put_text(self.host,title,x+16,y+14,w-32,15,700,wrap=False,height=20)
             kit.put_text(self.host,body,x+16,y+40,w-32,13,400,kit.mute(),height=bh)
             by=y+bh+54
@@ -259,7 +259,7 @@ class MemoryPane:
             text,color=note_for('install_model','On. Finds notes by meaning, not just by words.' if ready else 'A 46 MB model that stays on this Mac. Needs Ollama installed first.')
             row(['sparkles'],ACC,'Meaning search',text,[] if ready else [('Install','confirm_model','primary')],status='On' if ready else None,sub_color=color)
         cap('Agents')
-        row(['terminal.fill','terminal'],ACC,'Codex','Can read this project’s notes and sources. You can turn it off at any time.',[('Preview','preview','outline'),('Revoke','revoke_agent','outline'),('Connect…','confirm_agent','primary')])
+        row(['terminal.fill','terminal'],ACC,'Codex','Can read this project’s notes and sources. You can turn it off at any time.',[('Preview','preview','outline'),('Revoke','revoke_agent','outline')] if view.get('codex_connected') else [('Connect…','confirm_agent','primary')],status='Connected' if view.get('codex_connected') else None)
         cap('Danger zone')
         row(['bolt.slash.fill','xmark.circle'],ACC,'Disconnect Memory','Stops capture and agent access. Saved notes stay on this Mac.',[('Disconnect…','confirm_disconnect','outline')])
         self.bottom=y

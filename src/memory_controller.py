@@ -117,7 +117,7 @@ class MemoryController:
         threading.Thread(target=work,daemon=True).start()
     def view(self):
         view=memory_view(self.state,self.binding,self.status if self.binding else {'state':'Disabled'},self.state['result'])
-        view['notice']=self.notice;view['accessibility']=self.ax_trusted
+        view['notice']=self.notice;view['accessibility']=self.ax_trusted;view['codex_connected']=bool(self.binding and self.agent)
         if self.codex and (view.get('preview') or {}).get('connection'):view['preview']['connection']['codex']=self.codex
         if self.busy:view['busy']=self.busy
         try:

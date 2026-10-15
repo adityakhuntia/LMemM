@@ -39,6 +39,26 @@ class FriendlyTextTests(unittest.TestCase):
         self.assertEqual(short_name("/x/short.md"), "short.md")
 
 
+class SearchNoteTests(unittest.TestCase):
+    def rows(self, *texts):
+        return [dict(section="Search results", text=t) for t in texts]
+
+    def test_a_fitting_result_gets_no_note(self):
+        from memory_view import search_note
+        self.assertIsNone(search_note("clean context export", self.rows("a clean context export for an AI")))
+
+    def test_common_words_alone_are_not_a_match(self):
+        from memory_view import search_note
+        note = search_note("a clean context export: what an AI should be handed", self.rows("def trail(): what a thing"))
+        self.assertIn("No match", note)
+        self.assertIn("probably not", note)
+
+    def test_nothing_found_says_so_and_why(self):
+        from memory_view import search_note
+        self.assertIn("No matches for", search_note("kubernetes ingress", []))
+        self.assertIsNone(search_note("the a of", []))
+
+
 class PaneColourTests(unittest.TestCase):
     """One blue accent; green, orange and grey only as state; never red (red is for a permission that is off)."""
 

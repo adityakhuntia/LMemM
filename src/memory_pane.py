@@ -4,7 +4,7 @@ memory_view.py (pure, tested).
 Colour: one blue accent (palette.ACCENT) for every icon, stripe and button. Green, orange and grey appear only as state
 (a dot, a status word). Red is not used here: it is for a permission that is off.
 """
-from memory_view import CONFIRMS, PERIOD_LABELS, STATE_LABELS, evidence_rows, friendly, group_evidence, short_name, source_presentation
+from memory_view import CONFIRMS, PERIOD_LABELS, STATE_LABELS, evidence_rows, friendly, group_evidence, search_note, short_name, source_presentation
 import palette
 
 ACC = palette.ACCENT
@@ -12,6 +12,7 @@ GREEN, ORANGE, GRAY = (.18, .62, .36), (.91, .45, .16), (.50, .50, .55)
 SECTIONS = {'Search results': ('Best matches', ['magnifyingglass'], ACC), 'Related evidence': ('Related', ['link'], ACC),
             'Decisions': ('Decisions', ['flag.fill'], ACC), 'Open tasks': ('Open tasks', ['checkmark.circle', 'checkmark.circle.fill'], ACC),
             'Recent evidence': ('Recent', ['clock'], GRAY)}
+ASKED = {'confirm_model': 'Meaning search', 'confirm_agent': 'Codex', 'confirm_disconnect': 'Disconnect Memory'}     # the row each confirmation belongs under
 STATE_COLORS = {'Ready': GREEN, 'Processing': ACC, 'Paused': GRAY, 'Needs attention': ORANGE}
 
 
@@ -67,14 +68,14 @@ class MemoryPane:
             panel(x,top,w,th+58+head,bar)
             if title:kit.put_text(host,title,x+16,top+12,inner,15,700,wrap=False,height=20)
             kit.put_text(host,text,x+16,top+12+head,inner,13 if title else 15,400 if title else 500,kit.mute() if title else None,height=th)
-            my=top+th+20+head;kit.put_text(host,meta,x+16,my,kit.text_width(meta,11,400)+8,11,400,kit.mute(),wrap=False,height=16);cx=x+16+kit.text_width(meta,11,400)+14
+            my=top+th+20+head;kit.put_text(host,meta,x+16,my,kit.text_width(meta,12,400)+8,12,400,kit.mute(),wrap=False,height=16);cx=x+16+kit.text_width(meta,12,400)+14
             name=None if title else short_name(locator)
             if name:
                 cw=kit.text_width(name,11,500)+26;chip=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(cx,my-2,cw,20),None);chip.fill=kit.faint(0.07);chip.radius=6;host.addSubview_(chip)
                 glyph=kit.icon(kit.first_symbol(['doc.text','doc']),11,kit.mute(),(cx+7,my+1,12,13))
                 if glyph is not None:host.addSubview_(glyph)
                 kit.put_text(host,name,cx+22,my-2,cw-24,11,500,kit.mute(),wrap=False,height=20,middle=True)
-            if citation:kit.button(host,'View source',x+w-104,my-4,92,24,lambda c=citation:self.action('source',{'citation_id':c}),kind='link',size=12,weight=600)
+            if citation:kit.button(host,'View source',x+w-108,my-6,96,28,lambda c=citation:self.action('source',{'citation_id':c}),kind='link',size=12,weight=600)
             y=top+th+58+head+10
         def field_box(field,fy,left=14):
             box=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(x,fy,w,40),None);box.fill=kit.faint(0.05);box.border=kit.line();box.radius=11
@@ -119,8 +120,10 @@ class MemoryPane:
             glyph=kit.icon('magnifyingglass',16,rgb(ACC),(x+14,y+11,18,18))
             if glyph is not None:host.addSubview_(glyph)
             y+=54
-            for i,period in enumerate(view['periods']):
-                kit.button(host,PERIOD_LABELS.get(period,period),x+i*70,y,64,26,lambda p=period:self.action('time_filter',{'period':p}),kind='outline' if period==view['period'] else 'quiet',size=12,weight=600)
+            px=x
+            for period in view['periods']:                       # the same selected look as the tabs: a filled blue chip
+                label=PERIOD_LABELS.get(period,period)
+                kit.chip(host,label,None,px,y-3,period==view['period'],lambda p=period:self.action('time_filter',{'period':p}));px+=kit.chip_width(label,None)+8
             if view.get('codex_connected'):
                 aw=kit.chip_width('Ask Codex','sparkles');kit.chip(host,'Ask Codex','sparkles',x+w-aw,y-3,False,lambda:self.action('ask_codex',{'text':str(self.query.stringValue())}))
             y+=44
@@ -138,10 +141,13 @@ class MemoryPane:
                 y=top+bh+(96 if ask['state']!='asking' else 68)+14
             if view['loading']:para('Loading permitted evidence…')
             if view['empty']:para(view['empty'],14,500)
-            previous=None;source=view.get('source')
-            for row in ([] if source else group_evidence(evidence_rows(view['result']))):
+            previous=None;source=view.get('source');rows=[] if source else evidence_rows(view['result'])
+            miss=search_note(view['query'],rows) if view['query'].strip() and not view['loading'] and not source else None
+            if miss:para(miss,14,500,kit.status_text('orange'))
+            for row in ([] if source else group_evidence(rows)):
                 if row['section']!=previous:
                     title,symbols,color_=SECTIONS.get(row['section'],(row['section'],['circle'],GRAY))
+                    if miss and row['section']=='Search results':title,symbols,color_='Closest, probably unrelated',['questionmark.circle'],GRAY
                     if previous is not None:y+=8
                     y+=label_row(symbols,color_,title,y);previous=row['section']
                 meta=row['provenance']+(' · seen %d times'%row['count'] if row['count']>1 else '')+(' · Truncated excerpt' if row['truncated'] else '')+(' · '+friendly(row['at']) if row['at'] else '')
@@ -201,13 +207,6 @@ class MemoryPane:
         y+=4
         kit.put_text(host,'Memory settings',x,y,w,24,700,height=32);y+=48
         if view.get('preview'):y=self._preview(view,x,w,y,kit,panel)+8
-        if self.confirm in CONFIRMS:
-            title,detail,go=CONFIRMS[self.confirm];dh=kit.text_height(detail,13,400,w-32);top=y
-            panel(x,top,w,dh+88,ACC)
-            kit.put_text(host,title,x+16,top+14,w-32,15,700,wrap=False,height=20)
-            kit.put_text(host,detail,x+16,top+38,w-32,13,400,kit.mute(),height=dh)
-            gw=kit.text_width(go,13,600)+34;kit.button(host,go,x+16,top+dh+50,gw,30,lambda:self.action('confirm_yes'),kind='outline' if self.confirm=='confirm_disconnect' else 'primary',size=13,weight=600)
-            kit.button(host,'Cancel',x+24+gw,top+dh+50,90,30,lambda:self.action('confirm_no'),kind='quiet',size=13,weight=600);y=top+dh+88+14
         mode=view['state']
         if mode=='Needs attention':
             st=view.get('status',{});detail=view.get('message') or ''
@@ -222,6 +221,15 @@ class MemoryPane:
             kit.button(host,'Try again',x+16,top+dh+66,110,30,lambda:self.action('resume'),kind='primary',size=13,weight=600)
             kit.chip(host,'Recover notes','lifepreserver',x+134,top+dh+66,False,lambda:self.action('recover_native_notes'))
             y=top+dh+100+14
+        def confirm_card():
+            """The question sits directly under the row whose button asked it, so it is never off screen."""
+            nonlocal y
+            title,detail,go=CONFIRMS[self.confirm];dh=kit.text_height(detail,13,400,w-32);top=y
+            panel(x,top,w,dh+88,ACC)
+            kit.put_text(host,title,x+16,top+14,w-32,15,700,wrap=False,height=20)
+            kit.put_text(host,detail,x+16,top+38,w-32,13,400,kit.mute(),height=dh)
+            gw=kit.text_width(go,13,600)+34;kit.button(host,go,x+16,top+dh+50,gw,30,lambda:self.action('confirm_yes'),kind='outline' if self.confirm=='confirm_disconnect' else 'primary',size=13,weight=600)
+            kit.button(host,'Cancel',x+24+gw,top+dh+50,90,30,lambda:self.action('confirm_no'),kind='quiet',size=13,weight=600);y=top+dh+88+8
         def row(symbols,color,title,sub,buttons,status=None,status_color=None,sub_color=None,progress=False,fraction=None,seconds=0):
             nonlocal y
             widths=[kit.text_width(b[0],13,600)+30 for b in buttons];btn_w=sum(widths)+8*len(widths)
@@ -239,6 +247,7 @@ class MemoryPane:
                 bx-=bw;kit.button(host,label,bx,y+(h-30)/2-(7 if progress else 0),bw,30,lambda a=action:self.action(a),kind=kind,size=13,weight=600,enabled=on);bx-=8
             if status:kit.put_text(host,status,bx-96,y,92,12,600,status_color or kit.status_text('green'),align=kit.RIGHT,wrap=False,height=h,middle=True)
             y+=h+8
+            if self.confirm in CONFIRMS and title==ASKED.get(self.confirm):confirm_card()
         def cap(text):
             nonlocal y
             y+=8;kit.put_text(host,text.upper(),x,y,w,11,700,kit.mute(),wrap=False,height=16);y+=24

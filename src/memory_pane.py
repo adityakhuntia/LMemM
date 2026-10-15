@@ -53,9 +53,9 @@ class MemoryPane:
         self.query.setHidden_(hide);self.note.setHidden_(hide)
         y=8;self.bottom=None
         def panel(px,py,pw,ph,bar=None):
-            box=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(px,py,pw,ph),lambda:None);box.fill=kit.faint(0.05);box.radius=10;host.addSubview_(box)
+            box=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(px,py,pw,ph),None);box.fill=kit.faint(0.05);box.radius=10;host.addSubview_(box)
             if bar is not None:
-                stripe=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(px,py+10,3,ph-20),lambda:None);stripe.fill=rgb(bar);stripe.radius=1.5;host.addSubview_(stripe)
+                stripe=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(px,py+10,3,ph-20),None);stripe.fill=rgb(bar);stripe.radius=1.5;host.addSubview_(stripe)
         def label_row(symbols,color,text,at):
             kit.tile(host,symbols,rgb(color),x,at,22)
             kit.put_text(host,text.upper(),x+30,at+3,w-30,11,700,kit.mute(),wrap=False,height=16)
@@ -68,14 +68,14 @@ class MemoryPane:
             my=top+th+20;kit.put_text(host,meta,x+16,my,kit.text_width(meta,11,400)+8,11,400,kit.mute(),wrap=False,height=16);cx=x+16+kit.text_width(meta,11,400)+14
             name=short_name(locator)
             if name:
-                cw=kit.text_width(name,11,500)+26;chip=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(cx,my-2,cw,20),lambda:None);chip.fill=kit.faint(0.07);chip.radius=6;host.addSubview_(chip)
+                cw=kit.text_width(name,11,500)+26;chip=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(cx,my-2,cw,20),None);chip.fill=kit.faint(0.07);chip.radius=6;host.addSubview_(chip)
                 glyph=kit.icon(kit.first_symbol(['doc.text','doc']),11,kit.mute(),(cx+7,my+1,12,13))
                 if glyph is not None:host.addSubview_(glyph)
                 kit.put_text(host,name,cx+22,my-2,cw-24,11,500,kit.mute(),wrap=False,height=20,middle=True)
             if citation:kit.button(host,'View source',x+w-104,my-4,92,24,lambda c=citation:self.action('source',{'citation_id':c}),kind='link',size=12,weight=600)
             y=top+th+58+10
         def field_box(field,fy,left=14):
-            box=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(x,fy,w,40),lambda:None);box.fill=kit.faint(0.05);box.border=kit.line();box.radius=11
+            box=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(x,fy,w,40),None);box.fill=kit.faint(0.05);box.border=kit.line();box.radius=11
             host.addSubview_positioned_relativeTo_(box,-1,field)        # behind the field
             field.setFrame_(NSMakeRect(x+left,fy+10,w-left-14,20))
         def para(text,size=13,weight=400,color=None,gap=10):
@@ -106,7 +106,7 @@ class MemoryPane:
         elif self.settings:self._settings(view,x,w,kit,rgb,panel)
         else:
             color=state_text(mode,kit);label=STATE_LABELS.get(mode,mode);shown=label+'  ›'
-            pw=kit.text_width(shown,12,600)+34;chip=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(x,y,pw,26),lambda:self.action('open_status'));chip.fill=rgb(STATE_COLORS.get(mode,GREEN),.14);chip.radius=13;host.addSubview_(chip)
+            pw=kit.text_width(shown,12,600)+34;chip=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(x,y,pw,26),lambda:self.action('open_status'));chip.fill=rgb(STATE_COLORS.get(mode,GREEN),.14);chip.radius=13;chip.focusable=True;host.addSubview_(chip)
             dot=kit.icon('circle.fill',7,rgb(STATE_COLORS.get(mode,GREEN)),(12,9,8,8))
             if dot is not None:chip.addSubview_(dot)
             kit.put_text(chip,shown,24,0,pw-26,12,600,color,wrap=False,height=26,middle=True)   # inside the pill, so a click on the words is a click on the pill
@@ -214,9 +214,9 @@ class MemoryPane:
             kit.put_text(host,title,x+64,y+12,sub_w,14,600,wrap=False,height=18)
             kit.put_text(host,sub,x+64,y+32,sub_w,12,400,sub_color or kit.mute(),height=sh)
             if progress:                                       # a thin bar, filled from the left to the percentage
-                bar_w=sub_w;by=y+h-20;track=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(x+64,by,bar_w,5),lambda:None);track.fill=kit.faint(0.10);track.radius=2.5;host.addSubview_(track)
+                bar_w=sub_w;by=y+h-20;track=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(x+64,by,bar_w,5),None);track.fill=kit.faint(0.10);track.radius=2.5;host.addSubview_(track)
                 fw=bar_w*(fraction or 0)
-                if fw>0:fill=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(x+64,by,max(fw,5),5),lambda:None);fill.fill=rgb(color);fill.radius=2.5;host.addSubview_(fill)
+                if fw>0:fill=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(x+64,by,max(fw,5),5),None);fill.fill=rgb(color);fill.radius=2.5;host.addSubview_(fill)
             bx=x+w-14
             for item,bw in reversed(list(zip(buttons,widths))):
                 label,action,kind=item[:3];on=item[3] if len(item)>3 else True

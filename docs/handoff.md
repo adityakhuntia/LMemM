@@ -96,8 +96,10 @@ Generation from a 600-message conversation is covered by a < 2 s test.
 * **Destinations are clipboard-only.** `can_insert` is `False` for every Mac destination: composer
   insertion through Accessibility is not trusted until it is shown to work (see smoke tests).
   The UI says "Copies to the clipboard; you paste and send" and never says "inserted" for it.
-* The fallback for any app is **Copied text**: copy the conversation, then use it as the source
-  (`Coordinator.use_manual`; the panel button for it is not built yet).
+* The fallback for any app is **Copied text**: copy the conversation (⌘A, ⌘C), press the hotkey, then
+  press **C** or the "Use copied text" button on the panel. The Claude desktop app needs this: its chat
+  is not exposed to Accessibility (see the audit).
+* `python3 lmemm.py handoff probe 4 [--tree]` prints what Accessibility exposes for the app in front.
 * Rule-based summaries are conservative and English-only; they quote lines instead of rewriting them.
   A model-backed `Generator` is the intended upgrade and would need disclosure in the UI.
 * Hotkey default ⌃⌥H is not stored in settings yet; use `--key`.

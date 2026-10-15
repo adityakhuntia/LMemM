@@ -22,7 +22,7 @@ measured result. "Reusable" means the component can serve the handoff workflow a
 
 | App | As source | As destination | Evidence |
 |---|---|---|---|
-| Claude desktop | visible text via AX: **unverified** | open app + clipboard: **unverified** | none yet |
+| Claude desktop | **not readable (observed on a Mac, 2026-10-15)**: with `AXManualAccessibility` on, the window shows only the shell page (`file:///Applications/Claude.app/.../app.asar/`, 72 elements, no text); the chat view is not in the tree. Use *Copied text* | open app + clipboard: **unverified** | none yet |
 | ChatGPT desktop | visible text via AX: **unverified** | open app + clipboard: **unverified** | none yet |
 | claude.ai / chatgpt.com / gemini.google.com in Chrome | URL match + AX: **unverified**; Chromium needs `AXManualAccessibility`, `trail_ax` handles it | opens the site: **unverified** | none yet |
 | Cursor | **unverified** (Electron editor; chat panel text may not be in the tree) | open app + clipboard: **unverified** | none yet |

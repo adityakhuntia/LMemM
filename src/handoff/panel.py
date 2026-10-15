@@ -162,7 +162,8 @@ class HandoffPanel:
                 rows += [("text", "Conversation: " + (v["conversation"] or "untitled")),
                          ("sub", "Context: " + v["context_status"])]
             else:
-                rows += [("sub", v["fallback"] or "Nothing to hand off from here.")]
+                rows += [("sub", v["fallback"] or "Nothing to hand off from here."),
+                         ("button", v["manual"], False, self.model.use_clipboard)]
             for i, d in enumerate(v["destinations"]):
                 tag = "▸ " if i == v["selected"] else "   "
                 label = tag + d["name"] + ("" if d["available"] else "  (unavailable)")

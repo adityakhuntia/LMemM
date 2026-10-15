@@ -4,6 +4,7 @@ so every state and key is tested without a window.
 Views (spec states A-F): loading, source, confirm, review, result.
 """
 
+from . import adapters as ad
 from . import coordinator as co
 from .model import PARTIAL
 
@@ -56,7 +57,8 @@ class PanelModel:
         rows = self.co.destination_list()
         v = {"kind": "source", "app": s.info.app, "supported": s.source is not None,
              "conversation": _short(c.title) if c else "", "destinations": rows,
-             "selected": min(self.selected, max(len(rows) - 1, 0)), "fallback": s.fallback}
+             "selected": min(self.selected, max(len(rows) - 1, 0)), "fallback": s.fallback,
+             "manual": "Use copied text (copy the conversation first)"}
         if c is not None:
             v["context_status"] = ("Retrieved" if c.status == "complete" else
                                    "Partial: " + (c.reason or "not all of the conversation could be read")
@@ -84,6 +86,8 @@ class PanelModel:
                 self.selected = min(v["selected"] + 1, len(rows) - 1)
             elif code == UP and rows:
                 self.selected = max(v["selected"] - 1, 0)
+            elif code == KEY_C and not v.get("readable"):
+                self.use_clipboard()
             elif code in (RETURN, ENTER) and rows and v.get("readable") and rows[v["selected"]]["available"]:
                 self.co.choose(rows[v["selected"]]["id"])
             else:
@@ -100,6 +104,13 @@ class PanelModel:
                 return False
             return True
         return False
+
+    def use_clipboard(self):
+        """Manual fallback: build the handoff from the conversation the user copied."""
+        s = self.session
+        if s is not None and s.state == co.READY:
+            self.selected = 0
+            self.co.use_manual(ad.ClipboardSource(self.co.clipboard), s)
 
     def choose_row(self, index):
         rows = self.co.destination_list()

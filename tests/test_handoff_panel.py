@@ -117,6 +117,28 @@ class PanelTests(unittest.TestCase):
         p.press(RETURN)
         self.assertEqual(p.view()["kind"], "source")
 
+    def test_unreadable_source_can_use_copied_text_by_key(self):
+        c, p, clip, (cursor, _) = open_panel()
+        c.front = lambda: ad.SourceInfo("Notes", "com.apple.Notes")
+        h.ready(c)
+        clip.text = "You: Build a login form. It must support keyboard navigation.\nAssistant: Done: markup finished."
+        self.assertIn("manual", p.view())
+        p.press(KEY_C)
+        v = p.view()
+        self.assertTrue(v["readable"])
+        self.assertEqual(v["context_status"], "Retrieved")
+        p.press(DOWN); p.press(RETURN)
+        self.assertIn("keyboard navigation", c.session.handoff.text)
+        self.assertEqual(cursor.composer, "")                 # still waiting for Continue
+
+    def test_empty_clipboard_keeps_the_fallback_message(self):
+        c, p, _, _ = open_panel()
+        c.front = lambda: ad.SourceInfo("Notes", "com.apple.Notes")
+        h.ready(c)
+        p.press(KEY_C)
+        self.assertFalse(p.view()["readable"])
+        self.assertIn("Copy the conversation", p.view()["fallback"])
+
     def test_partial_context_is_shown_on_source_and_confirm_views(self):               # AC-10 (UI)
         c, p, _, _ = open_panel(status=PARTIAL)
         h.ready(c)

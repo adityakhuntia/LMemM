@@ -28,7 +28,7 @@ class MemoryPane:
         from widget import _Fields,_Flipped
         self.project=None;self.settings=False;self.confirm=None;self.status_open=False
         self.action=on_action;self.host=_Flipped.alloc().initWithFrame_(NSMakeRect(0,0,800,600))
-        self.query_typing=_Fields.alloc().initWithChange_submit_cancel_(lambda text:self.action('query',{'text':text}),lambda text:self.action('submit',{}),lambda:self.action('query',{'text':''}))
+        self.query_typing=_Fields.alloc().initWithChange_submit_cancel_(lambda text:self.action('query',{'text':text}),lambda text:self.action('submit',{'enter':True}),lambda:self.action('query',{'text':''}))
         self.query=NSTextField.alloc().initWithFrame_(NSMakeRect(0,0,100,30));self.query.setDelegate_(self.query_typing)
         self.query.setPlaceholderString_('Ask your project…');self.query.setAccessibilityLabel_('Search project memory')
         self.note_typing=_Fields.alloc().initWithChange_submit_cancel_(lambda text:None,self._save_note,lambda:self.note.setStringValue_(''))
@@ -140,9 +140,9 @@ class MemoryPane:
                 if ask['state']!='asking':kit.button(host,'Close',x+16,top+bh+(68 if ask['state']=='done' else 54),80,26,lambda:self.action('close_ask'),kind='quiet',size=12,weight=600)
                 y=top+bh+(96 if ask['state']!='asking' else 68)+14
             if view['loading']:para('Loading permitted evidence…')
-            if view['empty']:para(view['empty'],14,500)
+            if view['empty'] and not (view['query'].strip() and view.get('asked')==view['query']):para(view['empty'],14,500)
             previous=None;source=view.get('source');rows=[] if source else evidence_rows(view['result'])
-            miss=search_note(view['query'],rows) if view['query'].strip() and not view['loading'] and not source else None
+            miss=search_note(view['query'],rows) if view['query'].strip() and view.get('asked')==view['query'] and not view['loading'] and not source else None
             if miss:para(miss,14,500,kit.status_text('orange'))
             for row in ([] if source else group_evidence(rows)):
                 if row['section']!=previous:

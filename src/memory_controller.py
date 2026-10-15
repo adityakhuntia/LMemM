@@ -10,8 +10,8 @@ def codex_binary():
     extra=['/opt/homebrew/bin','/usr/local/bin',home+'/.local/bin',home+'/.npm-global/bin',home+'/.bun/bin']
     found=shutil.which('codex',path=os.pathsep.join([os.environ.get('PATH','')]+extra))
     if found:return found
-    for app in ('/Applications/Codex.app',home+'/Applications/Codex.app'):          # the desktop app carries its own copy
-        for inside in ('Contents/Resources/codex','Contents/Resources/bin/codex','Contents/MacOS/codex','Contents/Resources/app/bin/codex'):
+    for app in ('/Applications/ChatGPT.app','/Applications/Codex.app',home+'/Applications/ChatGPT.app',home+'/Applications/Codex.app'):          # the desktop app carries its own copy
+        for inside in ('Contents/Resources/codex-cli/bin/codex','Contents/Resources/codex','Contents/Resources/bin/codex','Contents/MacOS/codex','Contents/Resources/app/bin/codex'):
             path=os.path.join(app,inside)
             if os.path.isfile(path) and os.access(path,os.X_OK):return path
     return None

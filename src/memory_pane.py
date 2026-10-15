@@ -4,7 +4,7 @@ memory_view.py (pure, tested).
 Colour: one blue accent (palette.ACCENT) for every icon, stripe and button. Green, orange and grey appear only as state
 (a dot, a status word). Red is not used here: it is for a permission that is off.
 """
-from memory_view import CONFIRMS, PERIOD_LABELS, STATE_LABELS, evidence_rows, friendly, short_name, source_presentation
+from memory_view import CONFIRMS, PERIOD_LABELS, STATE_LABELS, evidence_rows, friendly, group_evidence, short_name, source_presentation
 import palette
 
 ACC = palette.ACCENT
@@ -60,20 +60,22 @@ class MemoryPane:
             kit.tile(host,symbols,rgb(color),x,at,22)
             kit.put_text(host,text.upper(),x+30,at+3,w-30,11,700,kit.mute(),wrap=False,height=16)
             return 30
-        def card(text,meta,locator,citation,bar):
+        def card(text,meta,locator,citation,bar,title=None):
             nonlocal y
-            inner=w-32;th=kit.text_height(text,15,500,inner);top=y
-            panel(x,top,w,th+58,bar)
-            kit.put_text(host,text,x+16,top+12,inner,15,500,height=th)
-            my=top+th+20;kit.put_text(host,meta,x+16,my,kit.text_width(meta,11,400)+8,11,400,kit.mute(),wrap=False,height=16);cx=x+16+kit.text_width(meta,11,400)+14
-            name=short_name(locator)
+            inner=w-32;head=28 if title else 0
+            th=kit.text_height(text,13 if title else 15,400 if title else 500,inner);top=y
+            panel(x,top,w,th+58+head,bar)
+            if title:kit.put_text(host,title,x+16,top+12,inner,15,700,wrap=False,height=20)
+            kit.put_text(host,text,x+16,top+12+head,inner,13 if title else 15,400 if title else 500,kit.mute() if title else None,height=th)
+            my=top+th+20+head;kit.put_text(host,meta,x+16,my,kit.text_width(meta,11,400)+8,11,400,kit.mute(),wrap=False,height=16);cx=x+16+kit.text_width(meta,11,400)+14
+            name=None if title else short_name(locator)
             if name:
                 cw=kit.text_width(name,11,500)+26;chip=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(cx,my-2,cw,20),None);chip.fill=kit.faint(0.07);chip.radius=6;host.addSubview_(chip)
                 glyph=kit.icon(kit.first_symbol(['doc.text','doc']),11,kit.mute(),(cx+7,my+1,12,13))
                 if glyph is not None:host.addSubview_(glyph)
                 kit.put_text(host,name,cx+22,my-2,cw-24,11,500,kit.mute(),wrap=False,height=20,middle=True)
             if citation:kit.button(host,'View source',x+w-104,my-4,92,24,lambda c=citation:self.action('source',{'citation_id':c}),kind='link',size=12,weight=600)
-            y=top+th+58+10
+            y=top+th+58+head+10
         def field_box(field,fy,left=14):
             box=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(x,fy,w,40),None);box.fill=kit.faint(0.05);box.border=kit.line();box.radius=11
             host.addSubview_positioned_relativeTo_(box,-1,field)        # behind the field
@@ -123,13 +125,13 @@ class MemoryPane:
             if view['loading']:para('Loading permitted evidence…')
             if view['empty']:para(view['empty'],14,500)
             previous=None;source=view.get('source')
-            for row in ([] if source else evidence_rows(view['result'])):
+            for row in ([] if source else group_evidence(evidence_rows(view['result']))):
                 if row['section']!=previous:
                     title,symbols,color_=SECTIONS.get(row['section'],(row['section'],['circle'],GRAY))
                     if previous is not None:y+=8
                     y+=label_row(symbols,color_,title,y);previous=row['section']
-                meta=row['provenance']+(' · Truncated excerpt' if row['truncated'] else '')+(' · '+friendly(row['at']) if row['at'] else '')
-                card(row['text'],meta,row['locator'],row['citation_id'],SECTIONS.get(row['section'],('',[],GRAY))[2])
+                meta=row['provenance']+(' · seen %d times'%row['count'] if row['count']>1 else '')+(' · Truncated excerpt' if row['truncated'] else '')+(' · '+friendly(row['at']) if row['at'] else '')
+                card(row['text'],meta,row['locator'],row['citation_id'],SECTIONS.get(row['section'],('',[],GRAY))[2],row['title'])
             if source:
                 p=source_presentation(source);y+=label_row(['doc.text'],ACC,'Retained source',y)
                 inner=w-32;th=kit.text_height(p['text'],14,400,inner);top=y;panel(x,top,w,th+88,ACC)

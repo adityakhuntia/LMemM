@@ -38,6 +38,36 @@ def evidence_rows(result):
                 provenance=provenance(row),truncated=row.get('truncated',False)))
     return rows
 
+def excerpt(text,lines=6,width=110):
+    """A few readable lines of a captured chunk: no blank lines at the top, runs of blank lines folded, long lines cut."""
+    kept,blank=[],False
+    for line in str(text).replace('\t','    ').splitlines():
+        if not line.strip():
+            blank=bool(kept)
+            continue
+        if blank:kept.append('');blank=False
+        kept.append(line.rstrip() if len(line.rstrip())<=width else line.rstrip()[:width-1]+'…')
+    cut=len([l for l in kept if l is not None])>lines
+    shown=kept[:lines]
+    while shown and not shown[-1]:shown.pop()
+    return '\n'.join(shown)+('\n…' if cut else '')
+
+def group_evidence(rows):
+    """One row per file for observed text: scrolling a file keeps many near-copies, and a list of them says nothing.
+    The first (best) row is shown, with how many there were and when the latest was kept. Notes are never grouped."""
+    out,seen=[],{}
+    for row in rows:
+        if row['provenance']!='Observed content' or not row['locator']:
+            out.append(dict(row,title=None,count=1));continue
+        key=(row['section'],row['locator'])
+        if key in seen:
+            first=seen[key];first['count']+=1
+            if row['at']>first['at']:first['at']=row['at']
+            continue
+        first=dict(row,title=short_name(row['locator']),count=1,text=excerpt(row['text']))
+        seen[key]=first;out.append(first)
+    return out
+
 def source_presentation(source):
     return dict(text=source['text'],locator=source['locator'],at=source['at'],open_enabled=source.get('can_open_file',False),
                 provenance=provenance(source),truncated=source.get('truncated',False),

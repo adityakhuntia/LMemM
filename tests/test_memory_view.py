@@ -55,3 +55,33 @@ class PaneColourTests(unittest.TestCase):
         self.assertEqual(sorted(CONFIRMS), ['confirm_agent', 'confirm_disconnect', 'confirm_model'])
         for title, detail, go in CONFIRMS.values():
             self.assertTrue(title and detail and go)
+
+
+class GroupEvidenceTests(unittest.TestCase):
+    def rows(self):
+        from memory_view import evidence_rows
+        code = dict(origin_type='trusted_artifact_snapshot', locator='/p/src/trail_store.py')
+        return evidence_rows({'primary': [
+            dict(text='\n\n\ndef iso(dt):\n    return 1\n\n\n\nclass A:\n    pass', at='2026-10-15T10:00:00+00:00', citation_id='c1', **code),
+            dict(text='other part', at='2026-10-15T10:05:00+00:00', citation_id='c2', **code),
+            dict(text='We decided to use SQLite', at='2026-10-14T10:00:00+00:00', citation_id='c3', origin_type='user_note', locator='/p/.lmemm-project-notes/native-1.md')]})
+
+    def test_one_card_per_file_with_a_count_and_the_latest_time(self):
+        from memory_view import group_evidence
+        out = group_evidence(self.rows())
+        self.assertEqual(len(out), 2)
+        self.assertEqual((out[0]['title'], out[0]['count'], out[0]['at']), ('trail_store.py', 2, '2026-10-15T10:05:00+00:00'))
+        self.assertEqual(out[0]['citation_id'], 'c1')                  # the best match is the one shown
+
+    def test_notes_are_never_grouped_or_retitled(self):
+        from memory_view import group_evidence
+        note = group_evidence(self.rows())[1]
+        self.assertIsNone(note['title'])
+        self.assertEqual(note['text'], 'We decided to use SQLite')
+
+    def test_excerpt_drops_leading_blank_lines_folds_gaps_and_caps_length(self):
+        from memory_view import excerpt
+        self.assertEqual(excerpt('\n\n\ndef a():\n    pass\n\n\n\nclass B:'), 'def a():\n    pass\n\nclass B:')
+        long = '\n'.join('line %d' % i for i in range(20))
+        self.assertTrue(excerpt(long).endswith('\n…'))
+        self.assertEqual(len(excerpt('x' * 500).rstrip('…')), 109)

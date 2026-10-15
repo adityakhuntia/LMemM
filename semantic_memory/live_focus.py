@@ -16,6 +16,8 @@ def match_window(pid, bounds, windows):
                all(abs(a-b) <= 2 for a,b in zip(bounds,w['bounds']))]
     return Focus(pid,matches[0]['window'],tuple(bounds)) if len(matches)==1 else None
 
+_asked=set()      # VS Code process ids already asked to expose their accessibility tree
+
 def focused_context(excluded_pids=()):
     try:
         import AppKit
@@ -33,7 +35,13 @@ def focused_context(excluded_pids=()):
         error, focused=AX.AXUIElementCopyAttributeValue(AX.AXUIElementCreateSystemWide(),'AXFocusedUIElement',None)
         if error in (-25204,-25205,-25212):
             error,focused=AX.AXUIElementCopyAttributeValue(AX.AXUIElementCreateApplication(pid),'AXFocusedUIElement',None)
-        if error or focused is None: return None
+        if error or focused is None:
+            # VS Code is built on Chromium, which builds its accessibility tree only after an assistive app asks for it
+            # (AXManualAccessibility). Ask once per VS Code process; the tree is ready by the next poll.
+            if pid not in _asked:
+                _asked.add(pid)
+                AX.AXUIElementSetAttributeValue(AX.AXUIElementCreateApplication(pid),'AXManualAccessibility',True)
+            return None
         error, owner=AX.AXUIElementGetPid(focused,None)
         if error or owner!=pid: return None
         error,role=AX.AXUIElementCopyAttributeValue(focused,'AXRole',None)

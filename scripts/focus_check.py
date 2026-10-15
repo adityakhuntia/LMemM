@@ -15,7 +15,7 @@ def say(step, value):
 
 
 def main():
-    import AppKit, Quartz
+    import AppKit
     import ApplicationServices as AX
     from input_monitor import secure_input_enabled
     say('this program may see windows', AX.AXIsProcessTrusted())
@@ -35,6 +35,12 @@ def main():
     if error in (-25204, -25205, -25212):
         error, focused = AX.AXUIElementCopyAttributeValue(AX.AXUIElementCreateApplication(pid), 'AXFocusedUIElement', None)
         say('focused element (app)', 'error %s' % error if error else 'found')
+    if error or focused is None:
+        AX.AXUIElementSetAttributeValue(AX.AXUIElementCreateApplication(pid), 'AXManualAccessibility', True)
+        say('asked VS Code for its tree', 'waiting 2 seconds')
+        time.sleep(2)
+        error, focused = AX.AXUIElementCopyAttributeValue(AX.AXUIElementCreateApplication(pid), 'AXFocusedUIElement', None)
+        say('focused element (after asking)', 'error %s' % error if error else 'found')
     if error or focused is None:
         return say('RESULT', 'VS Code does not expose its focused element (error %s)' % error)
     _e, role = AX.AXUIElementCopyAttributeValue(focused, 'AXRole', None)

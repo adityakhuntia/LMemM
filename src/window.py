@@ -1035,6 +1035,17 @@ class MainWindow:
                 import permissions
                 permissions.MacSystem().open_settings('ax')        # lists LMemM there, then opens the page
                 return
+            elif action=='copy_codex_prompt':
+                from AppKit import NSPasteboard
+                from datetime import datetime,timedelta,timezone
+                project=(self.memory_snapshot.get('binding') or {}).get('project_id')
+                if project:
+                    now=datetime.now(timezone.utc);fmt='%Y-%m-%dT%H:%M:%SZ'
+                    prompt=('Use only the lmemm_memory tools. Call get_project_context for project_id %s with start %s and end %s. '
+                            'List my open tasks and decisions, with their citations.')%(project,(now-timedelta(days=30)).strftime(fmt),(now+timedelta(days=1)).strftime(fmt))
+                    paste=NSPasteboard.generalPasteboard();paste.clearContents();paste.setString_forType_(prompt,'public.utf8-plain-text')
+                    self.done={"message":"Copied. Paste it into Codex.","undo":None,"until":time.time()+3};self.render_now()
+                return
             elif action=='copy_codex_command':
                 from AppKit import NSPasteboard
                 command=((self.memory_snapshot.get('preview') or {}).get('connection') or {}).get('command')

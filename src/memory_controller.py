@@ -21,7 +21,9 @@ def codex_args(config_path):
     import sys
     from pathlib import Path
     adapter=Path(__file__).resolve().parent.parent/'scripts'/'project_memory_mcp.py'
-    return ['mcp','add','lmemm_memory','--',sys.executable,str(adapter),'--config',str(config_path)]
+    venv=adapter.parent.parent/'.venv'/'bin'/'python'      # the repo's own Python has the MCP package; the app's interpreter may not
+    python=str(venv) if venv.exists() else sys.executable
+    return ['mcp','add','lmemm_memory','--',python,str(adapter),'--config',str(config_path)]
 
 def codex_command(config_path):
     """The same thing as one line to paste in Terminal: the fallback when LMemM cannot add itself."""

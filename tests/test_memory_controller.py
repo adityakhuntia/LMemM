@@ -23,6 +23,8 @@ class ConnectResultTests(unittest.TestCase):
         self.assertEqual(m.view()['preview']['connection']['codex']['state'],'failed')   # no Codex here: the card falls back to the line to paste
         self.assertIn('not found',m.view()['preview']['connection']['codex']['message'])
         self.assertTrue(m.view()['codex_connected'])                  # the Codex row says Connected, with Preview and Revoke
+        from memory_controller import codex_args
+        self.assertTrue(codex_args('/p/g.json')[4].endswith('python'))
         m.action('close_preview');self.assertIsNone(m.view()['preview'])
     def test_a_connect_that_never_verifies_says_what_to_check(self):
         import time

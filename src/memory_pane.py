@@ -141,22 +141,40 @@ class MemoryPane:
                 kit.button(host,'Close source',x+(180 if p['open_enabled'] else 0),y,120,30,lambda:self.action('close_source'),kind='quiet',size=13,weight=600);y+=46
             y+=14;y+=label_row(['note.text','doc.text'],ACC,'Add a note',y)
             field_box(self.note,y);y+=54
-        if view.get('preview') and binding:self._preview(view,x,w,y,kit,panel)
+        if view.get('preview') and binding and not self.settings:self.bottom=self._preview(view,x,w,y,kit,panel)
         end=(self.bottom if self.bottom is not None else y)+40
         self.host.setFrame_(NSMakeRect(0,0,width,max(end,500)))
         return end
     def _preview(self,view,x,w,y,kit,panel):
+        """The Codex card: what Codex would see (Preview), or the one step left after Connect. Returns the y below it."""
         import json
-        title='Proposed context for Codex · no access granted' if view['preview'].get('proposed') else 'Exact context preview for Codex'
-        body=json.dumps(view['preview'],ensure_ascii=False,indent=2);th=kit.text_height(body,12,400,w-32)
+        preview=view['preview'];connection=preview.get('connection')
+        if connection:                                   # after Connect: words and one command, not the access file
+            title='Codex can now read this project';command=connection.get('command','')
+            body='One step left. Paste this line in Terminal to add LMemM to Codex. It stays on this Mac.'
+            bh=kit.text_height(body,13,400,w-32);ch=kit.text_height(command,12,400,w-56)
+            panel(x,y,w,bh+ch+120,ACC)
+            kit.put_text(self.host,title,x+16,y+14,w-32,15,700,wrap=False,height=20)
+            kit.put_text(self.host,body,x+16,y+40,w-32,13,400,kit.mute(),height=bh)
+            top=y+bh+52;box=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(x+16,top,w-32,ch+16),None);box.fill=kit.faint(0.07);box.radius=8;self.host.addSubview_(box)
+            kit.put_text(self.host,command,x+28,top+8,w-56,12,400,height=ch)
+            by=top+ch+28
+            kit.button(self.host,'Copy command',x+16,by,130,30,lambda:self.action('copy_codex_command'),kind='primary',size=13,weight=600)
+            kit.button(self.host,'Done',x+154,by,80,30,lambda:self.action('close_preview'),kind='quiet',size=13,weight=600)
+            return by+30+16
+        title='Proposed context for Codex · no access granted' if preview.get('proposed') else 'Exact context preview for Codex'
+        body=json.dumps(preview,ensure_ascii=False,indent=2);th=kit.text_height(body,12,400,w-32)
         y+=12;y+=kit.put_text(self.host,title,x,y,w,14,700,height=20)+6
         panel(x,y,w,th+24);kit.put_text(self.host,body,x+16,y+12,w-32,12,400,height=th);y+=th+36
-        kit.button(self.host,'Copy context preview',x,y,200,30,lambda:self.action('copy_preview'),kind='outline',size=13,weight=600);self.bottom=y+46
+        kit.button(self.host,'Copy context preview',x,y,200,30,lambda:self.action('copy_preview'),kind='outline',size=13,weight=600)
+        kit.button(self.host,'Close',x+208,y,80,30,lambda:self.action('close_preview'),kind='quiet',size=13,weight=600)
+        return y+46
     def _settings(self,view,x,w,kit,rgb,panel):
         from AppKit import NSMakeRect
         host=self.host;y=8;notice=view.get('notice')
         y+=4
         kit.put_text(host,'Memory settings',x,y,w,24,700,height=32);y+=48
+        if view.get('preview'):y=self._preview(view,x,w,y,kit,panel)+8
         if self.confirm in CONFIRMS:
             title,detail,go=CONFIRMS[self.confirm];dh=kit.text_height(detail,13,400,w-32);top=y
             panel(x,top,w,dh+88,ACC)

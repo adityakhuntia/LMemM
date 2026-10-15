@@ -1031,6 +1031,13 @@ class MainWindow:
                 pane=self._pane();chosen=pane.confirm;pane.confirm=None
                 if not chosen:return
                 action={'confirm_model':'install_model','confirm_agent':'connect_agent','confirm_disconnect':'disconnect'}[chosen];payload={'approved':True}
+            elif action=='copy_codex_command':
+                from AppKit import NSPasteboard
+                command=((self.memory_snapshot.get('preview') or {}).get('connection') or {}).get('command')
+                if command:
+                    paste=NSPasteboard.generalPasteboard();paste.clearContents();paste.setString_forType_(command,'public.utf8-plain-text')
+                    self.done={"message":"Copied. Paste it in Terminal to finish.","undo":None,"until":time.time()+3};self.render_now()
+                return
             elif action=='copy_preview':
                 from AppKit import NSPasteboard
                 import json

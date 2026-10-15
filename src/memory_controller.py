@@ -2,11 +2,18 @@
 import time
 from memory_model import new_memory_state,memory_reduce,memory_view,period_args
 
+def codex_command(config_path):
+    """The one line that adds LMemM's memory to Codex. Shown after Connect Codex, so nobody has to read a config file."""
+    import shlex,sys
+    from pathlib import Path
+    adapter=Path(__file__).resolve().parent.parent/'scripts'/'project_memory_mcp.py'
+    return ' '.join(['codex mcp add lmemm_memory --',shlex.quote(sys.executable),shlex.quote(str(adapter)),'--config',shlex.quote(str(config_path))])
+
 class MemoryController:
     def __init__(self,client,items,save):
         self.client=client;self.items=items;self.save=save;self.state=new_memory_state()
         self.bindings=[];self.status={};self.pending={};self.serial=0;self.last_poll=0;self.ui_project=None
-        self.agents={};self.busy=None;self.notice=None;self.notice_version=0;self.seen_notice=0;self.vscode_restart=False
+        self.agents={};self.busy=None;self.notice=None;self.notice_at=0;self.notice_version=0;self.seen_notice=0;self.vscode_restart=False
     @property
     def agent(self):
         return next((a for a in self.agents.values() if self.binding and self.binding['project_id'] in a['project_ids'] and a.get('client_id','Codex')=='Codex'),None)
@@ -21,7 +28,7 @@ class MemoryController:
         self.state=memory_reduce(self.state,'select_project',{'project_id':ui_project})
         if changed and self.binding and self.state['tab']=='Memory':self.action('submit',{})
     def set_notice(self,text,error=False,kind=None):
-        self.notice=(text,error,kind) if text else None;self.notice_version+=1
+        self.notice=(text,error,kind) if text else None;self.notice_version+=1;self.notice_at=time.monotonic()
     def install_extension(self):
         # Built and installed by the app itself: it touches no memory data, and the service
         # hides error details from the app, which would hide why an install failed.
@@ -88,6 +95,7 @@ class MemoryController:
             if self.binding:self.send('resolve_citation',{'project_id':self.binding['project_id'],'citation_id':payload['citation_id']},'open',{'project_id':self.ui_project})
             return
         if action=='close_source':self.state['source']=None;return
+        if action=='close_preview':self.state['preview']=None;return
         if action=='connect_agent':
             if not self.binding:raise ValueError('Enable Memory first')
             self.send('connect_agent',dict(client_id='Codex',project_ids=[self.binding['project_id']],app_ids=['com.microsoft.VSCode'],disclosure_approved=payload.get('approved') is True),'agent');return
@@ -142,7 +150,7 @@ class MemoryController:
             elif kind=='agent':
                 connection={k:v for k,v in event['result'].items() if k!='capability'}
                 self.agents[connection['grant_id']]=connection
-                if self.binding and self.binding['project_id'] in connection['project_ids']:self.state['preview']={'connection':connection}
+                if self.binding and self.binding['project_id'] in connection['project_ids']:self.state['preview']={'connection':dict(connection,command=codex_command(connection['config_path']))}
             elif kind=='open':
                 detail=event['result']
                 if self.binding and token['project_id']==self.ui_project and detail.get('can_open_file'):
@@ -156,6 +164,8 @@ class MemoryController:
                 self.last_poll=0
                 if kind=='enroll':self.bindings=[b for b in self.bindings if b['ui_project_id']!=event['result']['ui_project_id']]+[event['result']]
                 if kind in {'enroll','recover_native_notes','resume'}:self.action('submit',{})
+        if self.notice and self.notice[2]=='connect_extension' and not self.notice[1] and self.notice[0].startswith('Opened VS Code') and time.monotonic()-self.notice_at>25:
+            self.set_notice('Still waiting for VS Code to be verified. If it stays stuck, check that LMemM is switched on in System Settings → Privacy & Security → Accessibility, then press Connect again.',True,'connect_extension')
         if self.seen_notice!=self.notice_version:self.seen_notice=self.notice_version;changed=True
         if self.ui_project and time.monotonic()-self.last_poll>2:
             self.last_poll=time.monotonic();self.send('bindings',{},'bindings');self.send('status',{},'status');self.send('agent_connections',{},'agents')

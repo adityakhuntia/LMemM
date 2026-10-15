@@ -191,7 +191,7 @@ for label,notice,source in (('rich page',None,None),('page with notice',('VS Cod
     w.memory_view=lambda pid,v=snapshot:v
     step('Memory '+label,render)
 state['source']=None
-for label,notice,preview in (('settings',None,None),('settings with notice',('Installed. Quit VS Code.',False,'install_extension'),None),('settings with preview',None,{'proposed':True,'x':1})):
+for label,notice,preview in (('settings',None,None),('settings with notice',('Installed. Quit VS Code.',False,'install_extension'),None),('settings with preview',None,{'proposed':True,'x':1}),('settings with Codex connected',None,{'connection':{'grant_id':'g','command':'codex mcp add lmemm_memory -- python adapter --config /p/g.json'}})):
     state['preview']=preview
     snapshot=memory_view(state,binding,{'state':'Paused','model_state':'available'},rich);snapshot['notice']=notice
     w.memory_view=lambda pid,v=snapshot:v

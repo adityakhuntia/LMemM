@@ -4,6 +4,22 @@ class Client:
     def __init__(self):self.calls=[];self.events=[]
     def request(self,*args):self.calls.append(args)
     def poll(self):e,self.events=self.events,[];return e
+class ConnectResultTests(unittest.TestCase):
+    def test_connecting_codex_shows_one_command_not_the_access_file(self):
+        c=Client();m=MemoryController(lambda:c,lambda:{},lambda:None)
+        m.bindings=[dict(ui_project_id='a',project_id='pa',active=True,workspace_root='/a')]
+        m.select('a');m.action('connect_agent',{'approved':True});rid=c.calls[-1][2]
+        m.poll([dict(type='response',id=rid,result=dict(grant_id='g',project_ids=['pa'],config_path='/my dir/g.json',capability='secret'))])
+        connection=m.view()['preview']['connection']
+        self.assertTrue(connection['command'].startswith('codex mcp add lmemm_memory -- '))
+        self.assertIn("'/my dir/g.json'",connection['command'])        # a path with a space stays one argument
+        self.assertNotIn('capability',connection)
+        m.action('close_preview');self.assertIsNone(m.view()['preview'])
+    def test_a_connect_that_never_verifies_says_what_to_check(self):
+        import time
+        c=Client();m=MemoryController(lambda:c,lambda:{},lambda:None)
+        m.set_notice('Opened VS Code. Choose Allow there to finish.',False,'connect_extension');m.notice_at=time.monotonic()-30
+        m.poll([]);self.assertTrue(m.notice[1]);self.assertIn('Accessibility',m.notice[0])
 class ControllerTests(unittest.TestCase):
     def test_submit_only_and_response_project_fence(self):
         c=Client();m=MemoryController(lambda:c,lambda:{},lambda:None)

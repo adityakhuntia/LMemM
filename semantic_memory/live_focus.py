@@ -75,7 +75,7 @@ def focus_probe(excluded_pids=()):
         error,title=AX.AXUIElementCopyAttributeValue(window,'AXTitle',None)
         return replace(result,title=title if not error and isinstance(title,str) else ''),None
     except Exception as exc:
-        return None,'Reading VS Code failed (%s).'%type(exc).__name__
+        return None,'Reading VS Code failed (%s%s).'%(type(exc).__name__,': '+str(getattr(exc,'name','') or '') if isinstance(exc,ImportError) else '')
 
 def focused_context(excluded_pids=()):
     return focus_probe(excluded_pids)[0]

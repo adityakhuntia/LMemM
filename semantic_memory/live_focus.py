@@ -1,4 +1,5 @@
 """Metadata-only native focused-window validation. Unknown means denied."""
+import time
 from dataclasses import dataclass, field, replace
 
 @dataclass(frozen=True)
@@ -17,7 +18,7 @@ def match_window(pid, bounds, windows):
                all(abs(a-b) <= 2 for a,b in zip(bounds,w['bounds']))]
     return Focus(pid,matches[0]['window'],tuple(bounds)) if len(matches)==1 else None
 
-_asked=set()      # VS Code process ids already asked to expose their accessibility tree
+_asked={}      # VS Code process id -> when it was last asked to expose its accessibility tree
 
 def focus_probe(excluded_pids=()):
     """(Focus or None, reason). The reason names the first check that failed, in words a person can act on;
@@ -41,10 +42,11 @@ def focus_probe(excluded_pids=()):
         if error in (-25204,-25205,-25212):
             error,focused=AX.AXUIElementCopyAttributeValue(AX.AXUIElementCreateApplication(pid),'AXFocusedUIElement',None)
         known=not (error or focused is None)
-        if not known and pid not in _asked:
+        if not known and time.monotonic()-_asked.get(pid,-10)>=5:
             # VS Code is built on Chromium, which builds its accessibility tree only after an assistive app asks for it
-            # (AXManualAccessibility). Ask once per VS Code process; the tree is ready by the next poll.
-            _asked.add(pid)
+            # (AXManualAccessibility). Ask again every few seconds while the focused element is unknown,
+            # because Chromium can drop the request (a reload, or a window opened later).
+            _asked[pid]=time.monotonic()
             AX.AXUIElementSetAttributeValue(AX.AXUIElementCreateApplication(pid),'AXManualAccessibility',True)
         if known:
             error, owner=AX.AXUIElementGetPid(focused,None)

@@ -237,11 +237,12 @@ class MemoryPane:
         if kind=='connect_extension':text,color=notice[0],(kit.status_text('orange') if notice[1] else None)
         if busy and kind=='install_extension':text='Installing in VS Code…'
         connected=view.get('status',{}).get('source_connected')
+        stuck=bool(notice and kind=='connect_extension' and notice[1] and 'Accessibility' in notice[0])
         if connected:
             row(['chevron.left.forwardslash.chevron.right','curlybraces'],ACC,'VS Code','Sharing the text you view in the editor.',[],status='Connected')
         elif installed and not busy:
             if not notice or kind not in ('connect_extension','install_extension'):text='Connecting restarts VS Code so it loads the extension. Your windows reopen.'
-            row(['chevron.left.forwardslash.chevron.right','curlybraces'],ACC,'VS Code',text,[('Connect','reconnect_extension','primary')],status='Installed',sub_color=color)
+            row(['chevron.left.forwardslash.chevron.right','curlybraces'],ACC,'VS Code',text,([('Open Accessibility','open_accessibility','outline')] if stuck else [])+[('Connect','reconnect_extension','primary')],status='Installed',sub_color=color)
         else:
             row(['chevron.left.forwardslash.chevron.right','curlybraces'],ACC,'VS Code',text,[('Working…' if busy else 'Install extension','install_extension','quiet' if busy else 'primary',not busy)],sub_color=color)
         status=view.get('status',{});ready=status.get('model_state')=='available';state=status.get('model_install')

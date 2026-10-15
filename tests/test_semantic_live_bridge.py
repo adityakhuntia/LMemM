@@ -102,7 +102,7 @@ class NativeSecureElementTests(unittest.TestCase):
   app=NS(bundleIdentifier=lambda:'com.microsoft.VSCode',processIdentifier=lambda:1)
   def attribute(element,name,ignored):
    return 0,{'AXFocusedWindow':'window','AXPosition':'position','AXSize':'size','AXFocusedUIElement':'element','AXRole':'AXTextField','AXSubrole':'AXSecureTextField'}[name]
-  ax=NS(AXUIElementCreateApplication=lambda pid:'app',AXUIElementCreateSystemWide=lambda:'system',AXUIElementCopyAttributeValue=attribute,AXUIElementGetPid=lambda e,x:(0,1),AXValueGetValue=lambda value,kind,x:(True,NS(x=0,y=0) if value=='position' else NS(width=800,height=600)),kAXValueCGPointType=1,kAXValueCGSizeType=2)
+  ax=NS(AXIsProcessTrusted=lambda:True,AXUIElementCreateApplication=lambda pid:'app',AXUIElementCreateSystemWide=lambda:'system',AXUIElementCopyAttributeValue=attribute,AXUIElementGetPid=lambda e,x:(0,1),AXValueGetValue=lambda value,kind,x:(True,NS(x=0,y=0) if value=='position' else NS(width=800,height=600)),kAXValueCGPointType=1,kAXValueCGSizeType=2)
   quartz=NS(kCGWindowListOptionOnScreenOnly=1,CGWindowListCopyWindowInfo=lambda x,y:[{'kCGWindowLayer':0,'kCGWindowOwnerPID':1,'kCGWindowNumber':10,'kCGWindowBounds':dict(X=0,Y=0,Width=800,Height=600)}])
   kit=NS(NSWorkspace=NS(sharedWorkspace=lambda:NS(frontmostApplication=lambda:app)))
   with patch.dict('sys.modules',{'AppKit':kit,'Quartz':quartz,'ApplicationServices':ax}),patch('input_monitor.secure_input_enabled',return_value=False):
@@ -158,7 +158,7 @@ class AppFocusFallbackTests(unittest.TestCase):
    if name=='AXRole':return 0,state['role']
    if name=='AXSubrole':return -25212,state['subrole']
    return 0,{'AXFocusedWindow':'window','AXPosition':'position','AXSize':'size','AXFocusedUIElement':'element','AXTitle':'LMemM test'}[name]
-  ax=NS(AXUIElementCreateApplication=lambda pid:'app',AXUIElementCreateSystemWide=lambda:'system',AXUIElementCopyAttributeValue=attribute,AXUIElementGetPid=lambda e,x:(0,state['owner']),AXValueGetValue=lambda value,kind,x:(True,NS(x=0,y=0) if value=='position' else NS(width=800,height=600)),kAXValueCGPointType=1,kAXValueCGSizeType=2)
+  ax=NS(AXIsProcessTrusted=lambda:True,AXUIElementCreateApplication=lambda pid:'app',AXUIElementCreateSystemWide=lambda:'system',AXUIElementCopyAttributeValue=attribute,AXUIElementGetPid=lambda e,x:(0,state['owner']),AXValueGetValue=lambda value,kind,x:(True,NS(x=0,y=0) if value=='position' else NS(width=800,height=600)),kAXValueCGPointType=1,kAXValueCGSizeType=2)
   quartz=NS(kCGWindowListOptionOnScreenOnly=1,CGWindowListCopyWindowInfo=lambda x,y:[{'kCGWindowLayer':0,'kCGWindowOwnerPID':1,'kCGWindowNumber':10,'kCGWindowBounds':dict(X=0,Y=0,Width=800,Height=600)}])
   kit=NS(NSWorkspace=NS(sharedWorkspace=lambda:NS(frontmostApplication=lambda:app)))
   with patch.dict('sys.modules',{'AppKit':kit,'Quartz':quartz,'ApplicationServices':ax}),patch('input_monitor.secure_input_enabled',return_value=False):
@@ -206,3 +206,17 @@ class NoteDeliveryTests(unittest.TestCase):
   m=self.msg('note',note_id='c'*32,note_at=self.now)
   second=self.bridge.accept(m,self.focus);self.assertIsNotNone(second)
   self.assertNotEqual(first.source_id,second.source_id)
+
+class FocusReasonTests(unittest.TestCase):
+ def test_the_reason_names_the_first_failing_check(self):
+  from types import SimpleNamespace as NS
+  from unittest.mock import patch
+  from semantic_memory.live_focus import focus_probe
+  app=NS(bundleIdentifier=lambda:'com.apple.Safari',processIdentifier=lambda:1)
+  kit=NS(NSWorkspace=NS(sharedWorkspace=lambda:NS(frontmostApplication=lambda:app)))
+  untrusted=NS(AXIsProcessTrusted=lambda:False)
+  with patch.dict('sys.modules',{'AppKit':kit,'Quartz':NS(),'ApplicationServices':untrusted}),patch('input_monitor.secure_input_enabled',return_value=False):
+   self.assertIn('Accessibility',focus_probe()[1])
+  trusted=NS(AXIsProcessTrusted=lambda:True)
+  with patch.dict('sys.modules',{'AppKit':kit,'Quartz':NS(),'ApplicationServices':trusted}),patch('input_monitor.secure_input_enabled',return_value=False):
+   self.assertEqual(focus_probe(),(None,'VS Code is not the front app.'))

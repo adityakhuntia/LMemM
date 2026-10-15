@@ -219,7 +219,8 @@ class MemoryController:
                 if kind=='enroll':self.bindings=[b for b in self.bindings if b['ui_project_id']!=event['result']['ui_project_id']]+[event['result']]
                 if kind in {'enroll','recover_native_notes','resume'}:self.action('submit',{})
         if self.notice and self.notice[2]=='connect_extension' and not self.notice[1] and self.notice[0].startswith('Opened VS Code') and time.monotonic()-self.notice_at>25:
-            self.set_notice('Still waiting for VS Code to be verified. If it stays stuck, check that LMemM is switched on in System Settings → Privacy & Security → Accessibility, then press Connect again.',True,'connect_extension')
+            why=self.status.get('focus_blocker')              # the service says which check failed
+            self.set_notice('Still waiting for VS Code to be verified. '+(why+' ' if why else '')+'Fix that, then press Connect again.',True,'connect_extension')
         if self.seen_notice!=self.notice_version:self.seen_notice=self.notice_version;changed=True
         if self.ui_project and time.monotonic()-self.last_poll>2:
             self.last_poll=time.monotonic();self.send('bindings',{},'bindings');self.send('status',{},'status');self.send('agent_connections',{},'agents')

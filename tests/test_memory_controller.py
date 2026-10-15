@@ -28,7 +28,8 @@ class ConnectResultTests(unittest.TestCase):
         import time
         c=Client();m=MemoryController(lambda:c,lambda:{},lambda:None)
         m.set_notice('Opened VS Code. Choose Allow there to finish.',False,'connect_extension');m.notice_at=time.monotonic()-30
-        m.poll([]);self.assertTrue(m.notice[1]);self.assertIn('Accessibility',m.notice[0])
+        m.status={'focus_blocker':'VS Code is not the front app.'}
+        m.poll([]);self.assertTrue(m.notice[1]);self.assertIn('not the front app',m.notice[0])
 class ControllerTests(unittest.TestCase):
     def test_submit_only_and_response_project_fence(self):
         c=Client();m=MemoryController(lambda:c,lambda:{},lambda:None)

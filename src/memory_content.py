@@ -6,6 +6,13 @@ import re
 MAX_TEXT = 3000
 MAX_EXCERPTS = 12
 CONTENT_KINDS = {"heading", "paragraph", "text", "link"}
+# menu bars and other UI chrome that slips past memory_content's content filter
+CHROME_LINE = re.compile(
+    r"^(?:file\s+edit\s+view|edit\s+view\s+insert|view\s+insert\s+format|"
+    r"insert\s+format\s+tools)\b.*$|"
+    r"^(?:file|edit|view|insert|format|tools|window|help|extensions|share|comment)"
+    r"(?:\s+(?:file|edit|view|insert|format|tools|window|help|extensions|share|comment))+$", re.I)
+
 DECISION = re.compile(
     r"^(?:decision\s*:|(?:we|i)\s+(?:have\s+)?(?:decided|chose|agreed|selected)\b)", re.I)
 

@@ -58,6 +58,17 @@ app. Your answers are saved as the `user` block of `data/memory/memory.json`, on
 
 Rules, states and what is tested: `docs/specs/2026-10-09-first-run-onboarding.md`.
 
+### As an app (LMemM.app)
+
+```bash
+./build_app.sh
+open dist/LMemM.app
+```
+
+Builds a menu-bar app (no Dock icon) with py2app in alias mode: it runs this repository's code and keeps
+`data/` here, so `git pull` updates it. Grant Screen Recording and the other permissions to **LMemM**
+itself. `./build_app.sh --standalone` bundles the code (data then lives inside the bundle; not for daily use yet).
+
 ## Use
 
 ```bash

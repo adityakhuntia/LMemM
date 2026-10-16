@@ -8,6 +8,10 @@ import signal
 import sys
 import time
 sys.path[:0]=[str(Path(__file__).resolve().parents[1]),str(Path(__file__).resolve().parents[1]/'src')]
+# Started from LMemM.app, this process gets py2app's interpreter, whose path puts the base Python's packages first (they may
+# lack PyObjC's ApplicationServices or Quartz). Prefer the repo's .venv, as packaging/app_main.py does for the app itself.
+import glob
+for _site in glob.glob(str(Path(__file__).resolve().parents[1]/'.venv'/'lib'/'python*'/'site-packages')):sys.path.insert(0,_site)
 from semantic_memory.service import MemoryService
 from semantic_memory.ipc import PrivateServer
 

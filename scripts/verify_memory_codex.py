@@ -24,10 +24,11 @@ with tempfile.TemporaryDirectory(prefix='lmemm-codex-synthetic-') as tmp:
         assert packet['decisions'] and packet['open_tasks'],'Synthetic enrollment/authority mismatch'
         grant=service.connect_agent('Codex',[pid],['com.microsoft.VSCode'],True);server=PrivateServer(service)
         adapter=str(Path(__file__).resolve().parent/'project_memory_mcp.py')
-        cmd=['codex','exec','--ephemeral','--sandbox','read-only','--skip-git-repo-check','-C',str(root),
-             '-c','mcp_servers.lmemm_memory.command='+json.dumps(sys.executable),
-             '-c','mcp_servers.lmemm_memory.args='+json.dumps([adapter,'--config',grant['config_path']]),'--json',
-             'Synthetic acceptance test. Use only the lmemm_memory MCP tools, and no filesystem, shell, or other connectors. Call get_project_context for project_id '+pid+' with start 2026-10-01T00:00:00Z and end 2026-11-01T00:00:00Z. Explain the recorded decision and next task in two sentences, cite their exact citation IDs, and distinguish evidence from assumptions.']
+        from memory_controller import codex_exec_args,codex_question,codex_server_name
+        prompt=codex_question(pid,'Explain the recorded decision and next task in two sentences; cite their exact citation IDs and distinguish evidence from assumptions.',
+            server_name=codex_server_name(grant['config_path']),bounds={'start':'2026-10-01T00:00:00Z','end':'2026-11-01T00:00:00Z'})
+        prompt+=' Synthetic acceptance test: do not use filesystem, shell, or other connectors.'
+        cmd=codex_exec_args('codex',grant['config_path'],prompt,root)
         result=subprocess.run(cmd,capture_output=True,text=True,timeout=180)
         events=[]
         for line in result.stdout.splitlines():

@@ -37,6 +37,28 @@ codex mcp add lmemm-project-memory -- "$PWD/.venv/bin/python" "$PWD/scripts/proj
 
 The adapter exposes only `search_project_memory`, `get_project_context`, and `resolve_citation`. Use the displayed exact project ID when asking Codex to resume. Source text is untrusted evidence, never host instructions. Revoke access from Memory; a retained client config cannot restore revoked authority. No app data is imported into Codex merely by previewing.
 
+The updated UI can register the connection after **Allow and add to Codex**;
+otherwise it shows an exact command to copy. Each grant now has a unique
+`lmemm_memory_<suffix>` name, so connecting/revoking one project preserves others.
+Use the command shown by the app for that grant rather than sharing one entry
+across projects. **Ask Codex** uses the selected project/time filter and sends
+retained evidence to Codex's configured provider. Its explanation is generated;
+verify its cited evidence. Switching projects, changing the period, closing an
+answer or revoking access discards stale results.
+
+## Checkout-linked macOS app
+
+```sh
+./build_app.sh
+open dist/LMemM.app
+```
+
+This alias build requires the checkout and `.venv` to remain in place; it is not
+a portable app to send to another Mac. Grant screen/accessibility permissions
+to LMemM when launched as an app; Terminal permissions are separate. Workers
+use the repo venv and restarts preserve the native launcher. Standalone build
+distribution/signing/notarization and fresh-Mac permissions remain unvalidated.
+
 ## Native UI evidence and limits
 
 A real AppKit window was run with synthetic evidence, without live capture or personal data. Window-ID captures: [disabled](benchmarks/project-memory/hybrid-mvp/ui/disabled.png), [ready](benchmarks/project-memory/hybrid-mvp/ui/ready.png), [processing](benchmarks/project-memory/hybrid-mvp/ui/processing.png), [paused](benchmarks/project-memory/hybrid-mvp/ui/paused.png), [error](benchmarks/project-memory/hybrid-mvp/ui/error.png), [retained source](benchmarks/project-memory/hybrid-mvp/ui/source.png), [Overview](benchmarks/project-memory/hybrid-mvp/ui/overview.png). Reproduce with `scripts/memory_ui_smoke.py --output <directory>`; it captures only its own synthetic window.

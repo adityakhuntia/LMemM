@@ -37,3 +37,71 @@ class FriendlyTextTests(unittest.TestCase):
         self.assertIn("…", name)
         self.assertTrue(name.endswith("c0a1.md"))
         self.assertEqual(short_name("/x/short.md"), "short.md")
+
+
+class SearchNoteTests(unittest.TestCase):
+    def rows(self, *texts):
+        return [dict(section="Search results", text=t) for t in texts]
+
+    def test_a_fitting_result_gets_no_note(self):
+        from memory_view import search_note
+        self.assertIsNone(search_note("clean context export", self.rows("a clean context export for an AI")))
+
+    def test_common_words_alone_are_not_a_match(self):
+        from memory_view import search_note
+        note = search_note("a clean context export: what an AI should be handed", self.rows("def trail(): what a thing"))
+        self.assertIn("No match", note)
+        self.assertIn("probably not", note)
+
+    def test_nothing_found_says_so_and_why(self):
+        from memory_view import search_note
+        self.assertIn("No matches for", search_note("kubernetes ingress", []))
+        self.assertIsNone(search_note("the a of", []))
+
+
+class PaneColourTests(unittest.TestCase):
+    """One blue accent; green, orange and grey only as state; never red (red is for a permission that is off)."""
+
+    def test_state_colours_use_the_accent_and_never_red(self):
+        import palette
+        from memory_pane import ACC, SECTIONS, STATE_COLORS
+        self.assertEqual(ACC, palette.ACCENT)
+        self.assertEqual(STATE_COLORS['Processing'], palette.ACCENT)
+        for colour in list(STATE_COLORS.values()) + [c for _t, _s, c in SECTIONS.values()]:
+            self.assertFalse(colour[0] > 0.8 and colour[1] < 0.4, 'red-looking colour %r' % (colour,))
+
+    def test_every_confirmation_has_a_title_an_explanation_and_a_button(self):
+        from memory_view import CONFIRMS
+        self.assertEqual(sorted(CONFIRMS), ['confirm_agent', 'confirm_disconnect', 'confirm_model'])
+        for title, detail, go in CONFIRMS.values():
+            self.assertTrue(title and detail and go)
+
+
+class GroupEvidenceTests(unittest.TestCase):
+    def rows(self):
+        from memory_view import evidence_rows
+        code = dict(origin_type='trusted_artifact_snapshot', locator='/p/src/trail_store.py')
+        return evidence_rows({'primary': [
+            dict(text='\n\n\ndef iso(dt):\n    return 1\n\n\n\nclass A:\n    pass', at='2026-10-15T10:00:00+00:00', citation_id='c1', **code),
+            dict(text='other part', at='2026-10-15T10:05:00+00:00', citation_id='c2', **code),
+            dict(text='We decided to use SQLite', at='2026-10-14T10:00:00+00:00', citation_id='c3', origin_type='user_note', locator='/p/.lmemm-project-notes/native-1.md')]})
+
+    def test_one_card_per_file_with_a_count_and_the_latest_time(self):
+        from memory_view import group_evidence
+        out = group_evidence(self.rows())
+        self.assertEqual(len(out), 2)
+        self.assertEqual((out[0]['title'], out[0]['count'], out[0]['at']), ('trail_store.py', 2, '2026-10-15T10:05:00+00:00'))
+        self.assertEqual(out[0]['citation_id'], 'c1')                  # the best match is the one shown
+
+    def test_notes_are_never_grouped_or_retitled(self):
+        from memory_view import group_evidence
+        note = group_evidence(self.rows())[1]
+        self.assertIsNone(note['title'])
+        self.assertEqual(note['text'], 'We decided to use SQLite')
+
+    def test_excerpt_drops_leading_blank_lines_folds_gaps_and_caps_length(self):
+        from memory_view import excerpt
+        self.assertEqual(excerpt('\n\n\ndef a():\n    pass\n\n\n\nclass B:'), 'def a():\n    pass\n\nclass B:')
+        long = '\n'.join('line %d' % i for i in range(20))
+        self.assertTrue(excerpt(long).endswith('\n…'))
+        self.assertEqual(len(excerpt('x' * 500).rstrip('…')), 109)

@@ -101,3 +101,38 @@ hybrid retrieval remains 20/20 Recall@5. Independent review identified the fixed
 editor-symlink edge case. See the portability audit for evidence and limits;
 second-Mac setup, physical crash acceptance, paired resources and external users
 remain pending.
+
+### Main/UI/AskCodex integration and direction (2026-10-16)
+
+Remote main 9b8efb3 was merged with local readiness head 82fc2b5, resolving ten
+conflicted files while preserving both the new blue UI/focus diagnostics and
+runtime/privacy/recovery safeguards. The previously local readiness fixes were
+not on remote main, so cofounder's testing did not necessarily use identical code.
+Untracked user context.md is unchanged; no new push performed.
+
+New main includes grouped observed file excerpts, sheet-based dialogs, Settings,
+accessibility/capture diagnostics, py2app alias packaging and AskCodex. Review
+reproduced/fixed late cross-project answers, shared MCP entry overwrite and
+add/revoke races. Grant-specific MCP names, serialized mutation and request
+project/grant/serial/time-filter fences now apply. AskCodex explicitly configures
+the correct grant per invocation and asks for exact citation IDs. Generated
+answers are no longer presented as identical to visible search evidence.
+
+Built alias .app successfully. Its bundled Python directly reproduced a base
+environment without MCP; worker/probe subprocesses now use the repo venv, while
+restarts preserve the native app launcher. Built app status-command startup ran.
+Fixed a calendar-dependent save-batching fixture, not product retention logic.
+Final verification: 878 Python tests, six extension tests, 13 real native
+synthetic states. Live synthetic AskCodex passed one MCP context call and both
+expected citations using the production command builder; no personal data or
+global Codex config mutation. Native answer screenshot inspected. Fresh Mac
+permissions, portable standalone distribution, resources/crash and external
+users still need acceptance.
+
+User explicitly wants BOTH developers and general knowledge workers. Proposed
+shared job: resume a project across code/docs/browser work. Next product scope
+is not approved/built yet: common resume front door; notes/context without a
+mandatory coding workspace or Codex setup; then one controlled browser/document
+source. Current scoped semantic sources remain VS Code and intentional notes;
+generic app tracking is not equivalent broad semantic ingestion. Full review,
+limits and proposed validation are in docs/2026-10-16-main-review-and-direction.md.

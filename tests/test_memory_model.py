@@ -21,6 +21,12 @@ class MemoryModelTests(unittest.TestCase):
         self.assertEqual(v['tabs'],['Overview','Memory'])
         self.assertIn('keyword',v['message'].lower())
         self.assertEqual(v['periods'],['Last 2 days','Last 7 days','All retained'])
+    def test_a_missing_optional_model_is_not_a_warning(self):
+        v=memory_view(new_memory_state(),{'workspace_root':'/repo'},{'state':'Needs attention','reason':'Local model unavailable','model_state':'missing'},None)
+        self.assertEqual(v['state'],'Ready')
+        self.assertIn('Memory is working. Keyword search is on;',v['message'])
+        v=memory_view(new_memory_state(),{'workspace_root':'/repo'},{'state':'Needs attention','reason':'A note save was interrupted.','model_state':'available'},None)
+        self.assertEqual(v['state'],'Needs attention')
     def test_revocation_clears_previous_evidence(self):
         s=new_memory_state();s['result']={'primary':[{'text':'old'}]}
         s=memory_reduce(s,'revoke',{})

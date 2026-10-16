@@ -21,11 +21,12 @@ def memory_reduce(state,action,payload):
         s['tab']=payload['tab'];s['source']=None
     elif action=='query':
         if payload['text']!=s['query']:
-            s.update(query=payload['text'],epoch=s['epoch']+1,request=None,result=None,source=None,loading=False)
+            s.update(query=payload['text'],asked=None,epoch=s['epoch']+1,request=None,result=None,source=None,loading=False)
     elif action=='time_filter':
         if payload['period'] not in PERIODS:raise ValueError('Unknown period')
         s.update(period=payload['period'],result=None,source=None,epoch=s['epoch']+1)
     elif action in {'submit','source','preview'}:
+        if action=='submit' and payload.get('enter'):s['asked']=s['query']      # Enter pressed: only now may the tab say "no match"
         s['request_count']+=1
         s.update(request={'id':s['request_count'],'project_id':s['project_id'],'epoch':s['epoch'],'generation':s['generation'],'kind':action},loading=True,error=None)
         if action=='source':s['request']['citation_id']=payload['citation_id']
@@ -51,13 +52,16 @@ def period_args(period,now=None):
 
 def memory_view(state,binding,status,result):
     status=status or {};result=result or {};mode=status.get('state','Disabled')
+    model_only=mode=='Needs attention' and status.get('reason')=='Local model unavailable'
+    if model_only:mode='Ready'           # the optional search model is the only problem: working, not alarming
     messages={'Disabled':'Enable Memory for this project to retain new permitted evidence.',
               'Paused':'Capture and indexing paused. Keyword recall of retained evidence remains available.',
               'Processing':'Processing new evidence. Retained evidence remains available.',
               'Needs attention':status.get('reason') or 'Memory needs attention.'}
     message=messages.get(mode,'Retained snapshots with citations. Matching evidence may not answer your question.')
-    if status.get('model_state')=='missing' and mode!='Disabled':message+=' Keyword search is available; install the local model for semantic recall.'
-    return dict(tabs=list(TABS),periods=list(PERIODS),tab=state['tab'],query=state['query'],period=state['period'],
+    if model_only or (status.get('model_state')=='missing' and mode!='Disabled'):
+        message=(message if not model_only else 'Memory is working.')+' Keyword search is on; install the local model for semantic recall.'
+    return dict(tabs=list(TABS),periods=list(PERIODS),tab=state['tab'],query=state['query'],asked=state.get('asked'),period=state['period'],
                 state=mode,binding=binding,status=status,message=message,loading=state['loading'],error=state['error'],
                 result=result,source=state['source'],preview=state['preview'],
                 empty='No retained evidence for this period.' if not any(result.get(k) for k in ('primary','decisions','open_tasks','recent_evidence')) else '',

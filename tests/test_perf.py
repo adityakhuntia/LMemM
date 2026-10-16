@@ -220,6 +220,7 @@ class RetentionTests(unittest.TestCase):
 class BatchedSavesAndCostTests(Base):
     def test_while_running_memory_is_written_at_most_once_per_interval(self):
         self.capture.save_interval = 5
+        self.capture.last_retention_sweep = tracker.time.time()  # This test measures save batching, not expiry of its fixed-date fixtures.
         with patch.object(store, "save_memory", wraps=store.save_memory) as writes:
             self.feed("one", fake_frame(1200, 800, 235))
             self.feed("two", fake_frame(1200, 800, 235, [(0, 0, 600, 400, 0)]))

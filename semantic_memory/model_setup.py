@@ -5,6 +5,7 @@ import shutil
 import socket
 import subprocess
 import sys
+from semantic_memory.runtime_environment import python_executable
 import threading
 import time
 import urllib.request
@@ -39,7 +40,7 @@ class OwnedEmbeddingRuntime:
             self.weights.mkdir(parents=True,mode=0o700,exist_ok=True)
             r,w=os.pipe();self.control=w
             script=Path(__file__).resolve().parents[1]/'scripts/local_embedding_server.py'
-            try:self.process=subprocess.Popen([sys.executable,str(script),'--control-fd',str(r),'--models',str(self.weights),'--ollama',executable],pass_fds=(r,),stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            try:self.process=subprocess.Popen([python_executable(),str(script),'--control-fd',str(r),'--models',str(self.weights),'--ollama',executable],pass_fds=(r,),stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
             except BaseException:
                 os.close(w);self.control=None;raise
             finally:os.close(r)

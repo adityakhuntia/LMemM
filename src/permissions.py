@@ -41,10 +41,11 @@ def screen_allowed_here():
 def screen_allowed_fresh():
     """Would a brand-new process be allowed? True with screen_allowed_here() False means the
     switch is on but LMemM must restart."""
+    from semantic_memory.runtime_environment import python_executable
     try:
-        out = subprocess.run([sys.executable, "-c", _FRESH], capture_output=True, text=True, timeout=5)
+        out = subprocess.run([python_executable(), "-c", _FRESH], capture_output=True, text=True, timeout=5)
         return out.returncode == 0 and out.stdout.strip() == "1"
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, ValueError, subprocess.SubprocessError):
         return False
 
 
@@ -165,7 +166,8 @@ class MacSystem:
         """Resume saved setup in a fresh native app process, preserving registration."""
         from AppKit import NSApplication
         self._stop.set()
-        subprocess.Popen([sys.executable] + sys.argv)
+        from semantic_memory.runtime_environment import launch_argv
+        subprocess.Popen(launch_argv(sys.argv[1:]))
         NSApplication.sharedApplication().terminate_(None)
 
     # -- the Mac's account

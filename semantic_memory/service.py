@@ -12,7 +12,7 @@ from pathlib import Path
 from .api_contracts import MemoryStatus,ModelManifest,Query
 from .contracts import AccessPolicy,SourceScope
 from .live_bridge import Bridge,read_private_json,write_private_json
-from .live_focus import focused_context
+from .live_focus import focus_probe
 from .project_scope import bind_project
 from .grants import enroll_grant,authorize,revoke_grant,revoke_project,revision,bump_revision
 from .store import SemanticStore
@@ -42,7 +42,8 @@ class MemoryService:
         except BaseException:os.close(self.lock_fd);raise
         self.closed=False;self.bridge=None;self.roots_dirty=True;self.backend=None;self.model_manifest=None
         self.model_thread=None;self.model_error=None;self.install_state=None;self.install_message=None;self.install_started=None;self.last_retention=clock();self.last_focus=None;self.system_flags=set()
-        self.focus_provider=focus_provider or (lambda:focused_context(excluded_pids={os.getpid(),os.getppid()}))
+        self.focus_reason=None
+        self.focus_provider=focus_provider or self._probe_focus
         from .embedding_runtime import load_backend
         self.backend_factory=backend_factory or load_backend
         from .model_setup import OwnedEmbeddingRuntime
@@ -302,6 +303,10 @@ class MemoryService:
                 self.bridge.last.clear()
                 self.bridge.publish_grant()
 
+    def _probe_focus(self):
+        focus,self.focus_reason=focus_probe({os.getpid(),os.getppid()})
+        return focus
+
     def status(self):
         with self.store.lock:
             c=self.store.connection
@@ -332,6 +337,8 @@ class MemoryService:
                          model_install=self.install_state,model_install_message=self.install_message,
                          model_install_percent=getattr(self.runtime,'progress',None),model_install_seconds=elapsed)
             value.update(service_epoch=self.service_epoch,policy_revision=revision(c),index_generation=generation['id'] if generation else None)
+            value['focus_blocker']=self.focus_reason
+            value['capture_blocker']=getattr(self.bridge,'last_reject',None) if self.bridge else None
             return value
 
     def _sync_bridge(self):

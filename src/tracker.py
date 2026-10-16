@@ -811,7 +811,9 @@ class Tracker:
         return controller.view()
 
     def window_memory_action(self,action,payload):
-        with self.lock:self._memory_controller().action(action,payload)
+        if action=='note':                              # only a note touches the shared items; the rest must never wait on the lock
+            with self.lock:self._memory_controller().action(action,payload)
+        else:self._memory_controller().action(action,payload)
 
     def show_memory_file(self):
         subprocess.run(["open", "-R", config.paths().items_file], check=False)
@@ -862,6 +864,11 @@ class Tracker:
         elif self.widget:
             self.widget.flash("All access is on")
 
+    def _open_window(self):
+        """The main window when it is on screen: a question about it becomes a sheet on it."""
+        win = self.main_window
+        return win.window if win is not None and win.visible() else None
+
     def confirm_leaving(self, row):
         """Ask before a restart, reopening setup or deleting everything. The words come from
         menu_model; nothing happens on Cancel."""
@@ -872,10 +879,10 @@ class Tracker:
             except ValueError as error:
                 say(str(error))
                 return False
-            return self.menubar.ask(title, text, "Delete everything", careful=True)
+            return self.menubar.ask(title, text, "Delete everything", careful=True, window=self._open_window())
         if row == "setup":
             title, text = menu_model.setup_words()
-            return self.menubar.ask(title, text, "Reopen setup")
+            return self.menubar.ask(title, text, "Reopen setup", window=self._open_window())
         return True                                      # a restart has nothing to lose
 
     def widget_pause(self, kind):
@@ -1623,7 +1630,7 @@ class Tracker:
         its status item unregistered with macOS even though floating panels work."""
         if not self.after_exit:
             return
-        python, script = sys.executable, os.path.abspath(sys.argv[0])
+        from semantic_memory.runtime_environment import launch_argv
         if self.after_exit == "delete":
             import forget
             try:
@@ -1631,11 +1638,11 @@ class Tracker:
                 say(f"deleted {result['files']} file(s). LMemM will ask you to set up again.")
             except ValueError as error:
                 say(str(error))
-            argv = [python, script, "start"]
+            argv = launch_argv(["start"])
         elif self.after_exit == "setup":
-            argv = [python, script, "setup", "--again"]
+            argv = launch_argv(["setup", "--again"])
         else:
-            argv = [python] + sys.argv
+            argv = launch_argv(sys.argv[1:])
         subprocess.Popen(argv)
 
     def start_memory(self):

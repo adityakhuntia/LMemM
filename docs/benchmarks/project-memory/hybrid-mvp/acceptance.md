@@ -51,3 +51,11 @@ Ten native synthetic UI states rendered, including settings and recovery.
 [Refreshed held-out retrieval](readiness-held-out.json) remains hybrid 20/20
 Recall@5 (exact 10/10, paraphrase 10/10), using the owned installed local model.
 This does not replace fresh second-Mac permissions/setup or pending launch gates.
+
+2026-10-16 remote-main integration: 878 Python tests and six Node tests pass;
+13 real native synthetic states rendered, including AskCodex answer/failure/loading.
+Alias app build/signing and command startup passed. Worker interpreter mismatch
+was reproduced and fixed. [Live synthetic AskCodex](codex-oct16.json) passed with
+one MCP call and both expected exact citation IDs, using the production command
+builder, without personal sources or global Codex config changes. This is not
+portable standalone packaging or a fresh-Mac permissions acceptance claim.

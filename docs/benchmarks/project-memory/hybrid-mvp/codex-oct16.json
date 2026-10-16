@@ -1,0 +1,8 @@
+{
+  "synthetic_only": true,
+  "returncode": 0,
+  "mcp_calls": 1,
+  "response": "The recorded evidence in `note0.md` documents the decision to use SQLite because all project data must stay on this Mac, making the storage choice serve that requirement [evidence-996296af4dfef185be5c1da9].  \nThe recorded next task in `note1.md` is to verify rollback before the beta; assuming rollback means undoing changes, this matters for recovery, but the memory contains no implementation details or confirmation that verification is complete [evidence-02cf709d6588022042310b93].",
+  "all_expected_citations_present": true,
+  "passed": true
+}

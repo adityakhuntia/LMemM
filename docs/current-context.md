@@ -136,3 +136,15 @@ mandatory coding workspace or Codex setup; then one controlled browser/document
 source. Current scoped semantic sources remain VS Code and intentional notes;
 generic app tracking is not equivalent broad semantic ingestion. Full review,
 limits and proposed validation are in docs/2026-10-16-main-review-and-direction.md.
+
+### Main recheck (2026-10-20)
+
+Fetched origin: remote main remains 9b8efb3 with no new commits/refs since the
+last review; it is already an ancestor of local e425854. No merge required.
+Reran 878 Python tests and six Node tests: all pass. All 13 native synthetic UI
+states render successfully. Existing alias-app status startup works and reports
+no tracker running. No new failures or production code changes. Unchanged code
+did not justify another hosted request; October 16 remains the last live
+synthetic AskCodex check. Internal context refreshed; user context.md preserved.
+Local integration/fixes remain unpushed, so cofounder will not obtain them merely
+by pulling the current shared main. Launch/second-Mac acceptance limits unchanged.

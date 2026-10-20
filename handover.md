@@ -1,6 +1,14 @@
 # LMemM — continuation handover
 
-Updated 2026-10-16. Read [current context](docs/current-context.md), [runbook](docs/hybrid-memory-runbook.md), and [acceptance](docs/benchmarks/project-memory/hybrid-mvp/acceptance.md).
+Updated 2026-10-20. Read [current context](docs/current-context.md), [runbook](docs/hybrid-memory-runbook.md), and [acceptance](docs/benchmarks/project-memory/hybrid-mvp/acceptance.md).
+
+October 20 recheck: fetched all origin refs; remote main is still `9b8efb3`,
+already included by local integration `e425854`. No new code to pull or review.
+Fresh verification: 878 Python tests, six Node tests and all 13 native synthetic
+UI states pass. Existing alias-app command startup correctly reports no running
+tracker. No new hosted request was needed for unchanged code; the October 16
+synthetic hosted evidence remains the last live AskCodex check. Local fixes
+remain unpushed; shared main does not yet contain the local integration.
 
 Latest: remote main `9b8efb3` is integrated with the previously unpushed local
 readiness work. See [review and direction](docs/2026-10-16-main-review-and-direction.md).

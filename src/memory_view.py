@@ -70,20 +70,24 @@ def group_evidence(rows):
     return out
 
 def source_presentation(source):
+    explanation='This is the retained snapshot. Open file shows the file as it exists today.'
+    if source.get('origin_type')=='user_note' and not source.get('can_open_file',False):
+        explanation='Saved project note. Its retained text is shown here; no external file is available to open.'
     return dict(text=source['text'],locator=source['locator'],at=source['at'],open_enabled=source.get('can_open_file',False),
                 provenance=provenance(source),truncated=source.get('truncated',False),
-                open_explanation='This is the retained snapshot. Open file shows the file as it exists today.')
+                open_explanation=explanation)
 
 FILLER=frozenset('a an and are as at be by for from has have how in is it its of on or that the this to was what when where which who why with'.split())
 KEPT='Memory only keeps the notes you write and the text VS Code showed while it was connected, so it may never have seen this.'
 
 def search_note(query,rows):
-    """None when the results fit the question; otherwise an honest sentence. Search ORs the words, so a few common words can
-    pull in unrelated cards: when no result holds at least half of the question's real words, say so instead of implying a match."""
+    """Explain empty results or uncertain wording without judging semantic relevance.
+    Low word overlap cannot distinguish paraphrases from unrelated evidence.
+    """
     words=[w for w in dict.fromkeys(re.findall(r'\w+',str(query).lower())) if w not in FILLER and len(w)>2]
     if not words:return None
     primary=[r for r in rows if r['section']=='Search results']
     need=max(1,(len(words)+1)//2)
     if any(sum(w in r['text'].lower() for w in words)>=need for r in primary):return None
     if not primary:return 'No matches for “%s”. %s'%(str(query).strip(),KEPT)
-    return 'No match for “%s”. Below is what Memory has seen that shares a few common words, so it is probably not what you are looking for. %s'%(str(query).strip(),KEPT)
+    return 'Possible matches with different wording. Open a source to check whether it answers your question.'

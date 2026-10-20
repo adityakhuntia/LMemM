@@ -148,3 +148,19 @@ did not justify another hosted request; October 16 remains the last live
 synthetic AskCodex check. Internal context refreshed; user context.md preserved.
 Local integration/fixes remain unpushed, so cofounder will not obtain them merely
 by pulling the current shared main. Launch/second-Mac acceptance limits unchanged.
+
+### Live note-search follow-up (2026-10-20)
+
+User saved a SQLite decision and searched "Why did we pick our database".
+Retained-source text was correct, but a presentation-only word-overlap heuristic
+incorrectly called the retrieved note unrelated. Regression reproduced; weak
+overlap now says Possible matches without making a semantic irrelevance claim.
+Saved notes without external files now explain the missing Open file button.
+No retrieval behavior or stored evidence changed. App was left running for the
+user's AskCodex test; new presentation wording needs the next restart.
+
+The full suite with a live p1 enrollment exposed project tests reading real
+default paths. scripts/test.sh now uses scripts/run_tests.py with temporary
+default config paths before discovery, preserving exit status and nested test
+fixtures. Isolated full run: 880 tests pass. Personal app data was not reset or
+changed to make tests pass. Root context.md and scope proposal remain untracked.

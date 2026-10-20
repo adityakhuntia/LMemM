@@ -143,11 +143,11 @@ class MemoryPane:
             if view['empty'] and not (view['query'].strip() and view.get('asked')==view['query']):para(view['empty'],14,500)
             previous=None;source=view.get('source');rows=[] if source else evidence_rows(view['result'])
             miss=search_note(view['query'],rows) if view['query'].strip() and view.get('asked')==view['query'] and not view['loading'] and not source else None
-            if miss:para(miss,14,500,kit.status_text('orange'))
+            if miss:para(miss,14,500,kit.mute() if rows else kit.status_text('orange'))
             for row in ([] if source else group_evidence(rows)):
                 if row['section']!=previous:
                     title,symbols,color_=SECTIONS.get(row['section'],(row['section'],['circle'],GRAY))
-                    if miss and row['section']=='Search results':title,symbols,color_='Closest, probably unrelated',['questionmark.circle'],GRAY
+                    if miss and row['section']=='Search results':title,symbols,color_='Possible matches',['magnifyingglass'],GRAY
                     if previous is not None:y+=8
                     y+=label_row(symbols,color_,title,y);previous=row['section']
                 meta=row['provenance']+(' · seen %d times'%row['count'] if row['count']>1 else '')+(' · Truncated excerpt' if row['truncated'] else '')+(' · '+friendly(row['at']) if row['at'] else '')

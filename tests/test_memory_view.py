@@ -47,11 +47,24 @@ class SearchNoteTests(unittest.TestCase):
         from memory_view import search_note
         self.assertIsNone(search_note("clean context export", self.rows("a clean context export for an AI")))
 
-    def test_common_words_alone_are_not_a_match(self):
+    def test_weak_word_overlap_does_not_claim_semantic_results_are_unrelated(self):
         from memory_view import search_note
         note = search_note("a clean context export: what an AI should be handed", self.rows("def trail(): what a thing"))
-        self.assertIn("No match", note)
-        self.assertIn("probably not", note)
+        self.assertIn("Possible matches", note)
+        self.assertNotIn("No match", note)
+        self.assertNotIn("probably not", note)
+
+    def test_database_paraphrase_does_not_discredit_saved_sqlite_note(self):
+        from memory_view import search_note
+        note=search_note('Why did we pick our database',self.rows('We decided to use SQLite because the data stays on this Mac'))
+        self.assertNotIn('No match',note or '')
+        self.assertNotIn('probably not',note or '')
+
+    def test_native_note_without_a_file_explains_why_open_is_unavailable(self):
+        from memory_view import source_presentation
+        shown=source_presentation(dict(text='Saved note',locator='/p/.lmemm-project-notes/native.md',at='2026-10-20T12:43:00Z',origin_type='user_note',can_open_file=False))
+        self.assertFalse(shown['open_enabled'])
+        self.assertIn('no external file',shown['open_explanation'].lower())
 
     def test_nothing_found_says_so_and_why(self):
         from memory_view import search_note

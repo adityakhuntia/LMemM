@@ -41,9 +41,9 @@ def screen_allowed_here():
 def screen_allowed_fresh():
     """Would a brand-new process be allowed? True with screen_allowed_here() False means the
     switch is on but LMemM must restart."""
-    from semantic_memory.runtime_environment import python_executable
+    from semantic_memory.runtime_environment import worker_argv
     try:
-        out = subprocess.run([python_executable(), "-c", _FRESH], capture_output=True, text=True, timeout=5)
+        out = subprocess.run(worker_argv('permission-probe'), capture_output=True, text=True, timeout=5)
         return out.returncode == 0 and out.stdout.strip() == "1"
     except (OSError, ValueError, subprocess.SubprocessError):
         return False

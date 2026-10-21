@@ -108,6 +108,17 @@ class AskCodexTests(unittest.TestCase):
         self.assertEqual(m.view()['ask']['state'],'failed');self.assertIn('not found',m.view()['ask']['message'])
         m.action('close_ask');self.assertIsNone(m.view()['ask'])
 class ControllerTests(unittest.TestCase):
+    def test_entering_bound_project_loads_resume_without_waiting_for_a_global_revision(self):
+        c=Client();m=MemoryController(lambda:c,lambda:{},lambda:None)
+        m.bindings=[dict(ui_project_id='a',project_id='pa',active=True,workspace_root=None)]
+        m.select('a')
+        self.assertTrue(any(call[0]=='resume_project' and call[1]['project_id']=='pa' for call in c.calls))
+
+    def test_startup_binding_response_loads_selected_resume(self):
+        c=Client();m=MemoryController(lambda:c,lambda:{},lambda:None);m.select('a')
+        m.send('bindings',{},'bindings');rid=c.calls[-1][2]
+        m.poll([dict(type='response',id=rid,result=[dict(ui_project_id='a',project_id='pa',active=True,workspace_root=None)])])
+        self.assertTrue(any(call[0]=='resume_project' for call in c.calls))
     def test_folder_free_enrollment_and_resume_request(self):
         c=Client();m=MemoryController(lambda:c,lambda:{},lambda:None);m.select('a')
         m.action('enroll',{})

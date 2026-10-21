@@ -24,6 +24,8 @@ def codex_args(config_path):
     """The program and arguments that add LMemM's memory to Codex."""
     import sys
     from pathlib import Path
+    from semantic_memory.runtime_environment import standalone_resources,worker_argv
+    if standalone_resources():return ['mcp','add',codex_server_name(config_path),'--',*worker_argv('mcp',['--config',str(config_path)])]
     adapter=Path(__file__).resolve().parent.parent/'scripts'/'project_memory_mcp.py'
     venv=adapter.parent.parent/'.venv'/'bin'/'python'      # the repo's own Python has the MCP package; the app's interpreter may not
     python=str(venv) if venv.exists() else sys.executable
@@ -87,7 +89,7 @@ class MemoryController:
         changed=self.ui_project!=ui_project;self.ui_project=ui_project
         if changed:self.ask_serial+=1;self.ask=None
         self.state=memory_reduce(self.state,'select_project',{'project_id':ui_project})
-        if changed and self.binding and self.state['tab']=='Memory':self.action('submit',{})
+        if changed and self.binding and self.state['tab'] in {'Memory','Resume'}:self.action('submit',{})
     def set_notice(self,text,error=False,kind=None):
         self.notice=(text,error,kind) if text else None;self.notice_version+=1;self.notice_at=time.monotonic()
     def install_extension(self):
@@ -227,6 +229,14 @@ class MemoryController:
             if self.binding:self.send('export_project_context',{'project_id':self.binding['project_id']},'copy_context',{'project_id':self.ui_project})
             return
         if action=='install_extension':self.install_extension();return
+        if action=='open_browser_extension':
+            from pathlib import Path
+            from semantic_memory.runtime_environment import standalone_resources
+            from AppKit import NSWorkspace
+            from Foundation import NSURL
+            directory=(standalone_resources() or Path(__file__).resolve().parents[1])/'extensions/lmemm-browser'
+            NSWorkspace.sharedWorkspace().openURL_(NSURL.fileURLWithPath_(str(directory)))
+            return
         if action=='reconnect_extension':self.connect_extension();return
         if action=='install_model':self.set_notice('Starting…',False,'install_model')
         if action in {'pause','resume','install_model','recover_native_notes','install_browser','revoke_browser'}:self.send(action,{},action);return
@@ -298,8 +308,10 @@ class MemoryController:
                 if kind=='install_model':self.set_notice('Could not start the model install. Refresh Memory and try again.',True,kind)
                 else:self.state['error']=event['error']
             elif kind=='bindings':
+                prior=self.binding
                 self.bindings=event['result']
                 if not self.binding:self.state=memory_reduce(self.state,'revoke',{})
+                elif prior is None and self.state['tab'] in {'Memory','Resume'}:self.action('submit',{})
             elif kind=='status':
                 previous=(self.status.get('service_epoch'),self.status.get('policy_revision'),self.status.get('index_generation'))
                 self.status=event['result']

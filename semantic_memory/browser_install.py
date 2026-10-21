@@ -18,8 +18,8 @@ def install_browser_host(home,data_dir,*,browser='Chrome',command=None):
     if private.stat().st_uid!=os.getuid() or private.stat().st_mode&0o777!=0o700:
         raise ValueError('Browser host directory must be private (0700)')
     if command is None:
-        from .runtime_environment import python_executable
-        command=[python_executable(),str(Path(__file__).resolve().parents[1]/'packaging/browser_host_main.py')]
+        from .runtime_environment import worker_argv
+        command=worker_argv('browser-host')
     # A small executable wrapper keeps manifest paths free of embedded arguments.
     host=private/'browser-host'
     temp=host.with_name(host.name+'.tmp-'+os.urandom(8).hex())

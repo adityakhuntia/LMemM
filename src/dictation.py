@@ -120,6 +120,8 @@ LISTEN_APP = os.path.join(HERE, "bin", "LMemM Listen.app")
 def ensure_listener():
     """Build the speech helper app once (needs Xcode Command Line Tools' clang)."""
     exe = os.path.join(LISTEN_APP, "Contents", "MacOS", "listen")
+    from semantic_memory.runtime_environment import standalone_resources
+    if standalone_resources():return os.path.isfile(exe) and os.access(exe,os.X_OK)
     src = os.path.join(HERE, "native", "listen", "listen.m")
     if os.path.exists(exe) and os.path.getmtime(exe) >= os.path.getmtime(src):
         return True

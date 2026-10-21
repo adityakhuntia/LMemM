@@ -5,7 +5,7 @@ import shutil
 import socket
 import subprocess
 import sys
-from semantic_memory.runtime_environment import python_executable
+from semantic_memory.runtime_environment import worker_argv
 import threading
 import time
 import urllib.request
@@ -16,6 +16,14 @@ from .embedding_runtime import validate_manifest
 SELECTED_DIGEST='1b226e2802dbb772b5fc32a58f103ca1804ef7501331012de126ab22f67475ef'
 MODEL='all-minilm:22m'
 DOWNLOAD_BYTES=45_960_589   # layers of the selected model, from the development selection record
+
+
+def ollama_binary():
+    found=shutil.which('ollama')
+    if found:return found
+    for candidate in ('/Applications/Ollama.app/Contents/Resources/ollama','/usr/local/bin/ollama','/opt/homebrew/bin/ollama'):
+        if Path(candidate).is_file() and os.access(candidate,os.X_OK):return candidate
+    raise ValueError('Install the local Ollama runtime, then retry model setup')
 
 class OwnedEmbeddingRuntime:
     def __init__(self,weights):
@@ -30,7 +38,7 @@ class OwnedEmbeddingRuntime:
             if self.stopped:raise ValueError('Runtime stopped')
             if self.process and self.process.poll() is None:return
             self._stop_owned_process()
-            executable=shutil.which('ollama')
+            executable=ollama_binary()
             if not executable:raise ValueError('Install the local Ollama runtime, then retry model setup')
             self._reap_orphan()
             # Never attach source-bearing requests to an unowned server.
@@ -40,7 +48,7 @@ class OwnedEmbeddingRuntime:
             self.weights.mkdir(parents=True,mode=0o700,exist_ok=True)
             r,w=os.pipe();self.control=w
             script=Path(__file__).resolve().parents[1]/'scripts/local_embedding_server.py'
-            try:self.process=subprocess.Popen([python_executable(),str(script),'--control-fd',str(r),'--models',str(self.weights),'--ollama',executable],pass_fds=(r,),stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            try:self.process=subprocess.Popen(worker_argv('embedding-service',['--control-fd',str(r),'--models',str(self.weights),'--ollama',executable]),pass_fds=(r,),stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
             except BaseException:
                 os.close(w);self.control=None;raise
             finally:os.close(r)
@@ -63,7 +71,7 @@ class OwnedEmbeddingRuntime:
     def install(self):
         self.ensure()
         env={**os.environ,'OLLAMA_NO_CLOUD':'1','OLLAMA_HOST':'127.0.0.1:11455','OLLAMA_MODELS':str(self.weights)}
-        self.progress=0;pull=subprocess.Popen([shutil.which('ollama'),'pull',MODEL],env=env,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+        self.progress=0;pull=subprocess.Popen([ollama_binary(),'pull',MODEL],env=env,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
         deadline=time.monotonic()+600
         threading.Thread(target=self._read_progress,args=(pull,),daemon=True).start()
         while pull.poll() is None:

@@ -6,7 +6,7 @@ import queue
 import stat
 import subprocess
 import sys
-from semantic_memory.runtime_environment import python_executable
+from semantic_memory.runtime_environment import worker_argv
 import threading
 import time
 
@@ -58,7 +58,7 @@ class MemoryClient:
             if self.stopping:return
             read_fd,write_fd=os.pipe();self.control=write_fd
             script=Path(__file__).resolve().parents[1]/'scripts/project_memory_service.py'
-            args=[python_executable(),str(script),'--data-dir',str(self.directory),'--control-fd',str(read_fd)]
+            args=worker_argv('memory-service',['--data-dir',str(self.directory),'--control-fd',str(read_fd)])
             if self.headless:args.append('--headless')
             try:
                 # Keep the service's last words in a private log: the IPC layer hides errors by design, so this is how a failed start is diagnosed.

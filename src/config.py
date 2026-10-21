@@ -128,6 +128,11 @@ class Paths:
 
 
 PATHS = Paths(data_dir=os.path.join(ROOT, "data"), pidfile=os.path.join(ROOT, ".lmemm.pid"))
+import sys
+_resource_dir=os.environ.get('RESOURCEPATH',os.path.join(os.path.dirname(sys.executable),'..','Resources'))
+if getattr(sys,'frozen',False) and os.path.isfile(os.path.join(_resource_dir,'standalone.json')):
+    _installed_data=os.path.expanduser('~/Library/Application Support/LMemM/data')
+    PATHS=Paths(data_dir=_installed_data,pidfile=os.path.join(_installed_data,'.lmemm.pid'))
 
 
 @contextlib.contextmanager

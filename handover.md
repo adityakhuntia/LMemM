@@ -2,25 +2,24 @@
 
 Updated 2026-10-20. Read [current context](docs/current-context.md), [runbook](docs/hybrid-memory-runbook.md), and [acceptance](docs/benchmarks/project-memory/hybrid-mvp/acceptance.md).
 
-October 20 recheck: fetched all origin refs; remote main is still `9b8efb3`,
-already included by local integration `e425854`. No new code to pull or review.
-Fresh verification: 878 Python tests, six Node tests and all 13 native synthetic
-UI states pass. Existing alias-app command startup correctly reports no running
-tracker. No new hosted request was needed for unchanged code; the October 16
-synthetic hosted evidence remains the last live AskCodex check. Local fixes
-remain unpushed; shared main does not yet contain the local integration.
+Current delivery (2026-10-20): main includes the cofounder's UI at `9b8efb3`,
+local readiness integration `e425854`, and note-search/test-isolation fix
+`a0410f5`. The user authorized publication after manually verifying AskCodex.
+This handover supersedes the historical unpushed status recorded below.
 
-Latest: remote main `9b8efb3` is integrated with the previously unpushed local
-readiness work. See [review and direction](docs/2026-10-16-main-review-and-direction.md).
-The new blue UI, grouped sources, sheet flows, focus diagnostics, alias app and
-AskCodex are included. Review fixed cross-project/stale answers, MCP registration
-overwrite/races, and alias-app child environment/restart handling. Live synthetic
-AskCodex passed with one context call and both expected exact citation IDs.
-No personal memories were used and global Codex settings were not changed by testing.
-Final integrated verification: 878 Python tests, six Node tests, 13 real native
-synthetic UI states, successful alias app build and command startup.
-The new merge remains local until explicitly pushed; old publication statements
-below are historical. Preserve untracked context.md.
+Latest validation: **880 Python tests pass** with isolated default data paths.
+Six Node tests and 13 real native synthetic UI states passed during integration;
+the alias app built and its command startup worked. Live synthetic AskCodex
+returned both expected exact citations, and the user subsequently verified it.
+Search no longer labels relevant paraphrases unrelated; saved notes without
+external files explain why Open file is unavailable. Restart the existing app
+once to load those final wording fixes.
+
+Read the [integration review](docs/2026-10-16-main-review-and-direction.md) for
+fixed project/answer scoping, MCP registration races and alias worker environment
+issues. The [Astra scope proposal](docs/2026-10-20-project-resume-beta-proposal.md)
+is included for discussion; it is not approved implementation or built features.
+Personal context.md remains untracked and excluded from publication.
 
 User direction: serve developers AND knowledge workers through one outcome,
 resuming a project across code/docs/browser work. The documented next-step
@@ -34,6 +33,10 @@ alias app. It requires this repo and .venv to stay in place. It is not yet a
 portable distribution. Fresh app permissions must be granted to LMemM itself.
 For synthetic UI testing use `scripts/memory_ui_smoke.py --output <directory>`;
 this avoids starting personal capture or invoking hosted AI.
+
+## Historical verification records
+
+Publication statements below describe their respective dates, not this delivery.
 
 2026-10-13 readiness follow-up: cofounder setup improvements through `b84f6db`
 are integrated into local main, preserving the audit fixes. All five concerns

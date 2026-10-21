@@ -164,3 +164,13 @@ default paths. scripts/test.sh now uses scripts/run_tests.py with temporary
 default config paths before discovery, preserving exit status and nested test
 fixtures. Isolated full run: 880 tests pass. Personal app data was not reset or
 changed to make tests pass. Root context.md and scope proposal remain untracked.
+
+### Publication authorized (2026-10-20)
+
+After manually verifying AskCodex, the user requested pushing the tested changes
+to main with a clean commit message. The delivery includes code through a0410f5
+and the draft Astra beta scope proposal. Latest isolated full suite: 880 tests
+pass. No production code changed for publication and no history was rewritten.
+Root context.md remains private untracked work. Earlier unpushed statements
+above are historical; the updated root handover is the current entry point.
+The proposal remains proposed scope, not approval to implement new features.

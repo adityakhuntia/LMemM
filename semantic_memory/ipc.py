@@ -4,7 +4,7 @@ import socket
 import struct
 from .live_bridge import read_private_json
 
-MAX_FRAME=65536
+MAX_FRAME=1048576  # Bounded 128 KiB saves can expand under JSON escaping.
 
 
 def _exact(sock,size):

@@ -103,11 +103,16 @@ class MemoryService:
         if secrets.compare_digest(capability,self.owner_capability):return 'owner',self.owner_grant_id
         agent=self.capabilities['agents'].get(capability)
         if agent:return 'agent',agent['grant_id']
+        if capability in self.capabilities.get('browsers',{}):return 'browser',None
         raise ValueError('unavailable')
 
     def serve_request(self,capability,method,params):
         if self.closed or not isinstance(params,dict):raise ValueError('unavailable')
         role,grant_id=self._role(capability)
+        if role=='browser':
+            if method!='browser_request' or set(params)!={'request'}:raise ValueError('Browser operation not permitted')
+            from .browser_pairing import browser_request
+            return browser_request(self,capability,params['request'])
         if method in READ_METHODS:
             self.native_notes.sync_fences()
             allowed={'search_project_memory':{'project_id','query','start','end','limit'},'get_project_context':{'project_id','start','end'},'resolve_citation':{'project_id','citation_id'}}[method]
@@ -143,7 +148,7 @@ class MemoryService:
                 return result
         handlers={'enroll':self.enroll,'bindings':self.bindings,'status':self.status,'pause':self.pause,'resume':self.resume,
                   'configure_model':self.configure_model,'connect_agent':self.connect_agent,'agent_connections':self.agent_connections,'revoke_agent':self.revoke_agent,'revoke_project':self.revoke_project,'begin_note_mutation':self.begin_note_mutation,'reconcile_notes':self.reconcile_notes,'recover_native_notes':self.recover_native_notes,'install_model':self.install_model,'install_extension':self.install_extension,'preview_agent_context':self.preview_agent_context,
-                  'save_excerpt':self.save_excerpt,'move_saved_source':self.move_saved_source,'delete_saved_source':self.delete_saved_source,'record_claim':self.record_claim,'remove_relationship':self.remove_relationship,'set_task_state':self.set_task_state}
+                  'save_excerpt':self.save_excerpt,'move_saved_source':self.move_saved_source,'delete_saved_source':self.delete_saved_source,'record_claim':self.record_claim,'remove_relationship':self.remove_relationship,'set_task_state':self.set_task_state,'pair_browser':self.pair_browser,'revoke_browser':self.revoke_browser}
         handler=handlers.get(method)
         if not handler:raise ValueError('unavailable')
         try:inspect.signature(handler).bind(**params)
@@ -177,6 +182,14 @@ class MemoryService:
         from .intentional_sources import save_intentional
         if payload.get('kind') != 'pasted_excerpt':raise ValueError('Choose Save excerpt')
         return save_intentional(self.store,project_id,payload)
+
+    def pair_browser(self,extension_id):
+        from .browser_pairing import pair_browser
+        return pair_browser(self,extension_id)
+
+    def revoke_browser(self):
+        from .browser_pairing import revoke_browser
+        return revoke_browser(self)
 
     def set_task_state(self,project_id,claim_id,done):
         from .contracts import Correction
@@ -387,6 +400,7 @@ class MemoryService:
             value.update(service_epoch=self.service_epoch,policy_revision=revision(c),index_generation=generation['id'] if generation else None)
             value['focus_blocker']=self.focus_reason
             value['capture_blocker']=getattr(self.bridge,'last_reject',None) if self.bridge else None
+            value['browser_paired']=bool(self.capabilities.get('browsers'))
             return value
 
     def _sync_bridge(self):

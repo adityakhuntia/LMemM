@@ -1,5 +1,5 @@
 """Atomic, additive v1→v2 upgrade; no evidence reconstruction or file crawl."""
-VERSION = 2
+VERSION = 3
 V1_TABLES = {'meta','projects','artifacts','sources','blobs','occurrences','evidence_search',
              'episodes','episode_evidence','claims','edges','support','corrections','jobs','tombstones'}
 V2_SQL = (
@@ -22,10 +22,10 @@ V2_TABLES = {'project_bindings','memory_grants','note_mirrors','note_fences','me
 
 
 def validate_schema(connection, version):
-    if version not in (1, VERSION):
+    if version not in (1, 2, VERSION):
         raise ValueError('Unsupported semantic schema')
     tables = {r[0] for r in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    required = V1_TABLES | (V2_TABLES if version == VERSION else set())
+    required = V1_TABLES | (V2_TABLES if version >= 2 else set())
     if not required <= tables:
         raise ValueError('Incomplete semantic schema')
     # Detect falsely versioned databases even when all table names are present.
@@ -42,10 +42,15 @@ def migrate(connection):
         return
     try:
         connection.execute('BEGIN IMMEDIATE')
-        for statement in V2_SQL:
-            connection.execute(statement)
-        connection.execute("INSERT INTO meta(key,value) VALUES('memory_revision','1')")
-        connection.execute('PRAGMA user_version=2')
+        if version == 1:
+            for statement in V2_SQL:
+                connection.execute(statement)
+            connection.execute("INSERT INTO meta(key,value) VALUES('memory_revision','1')")
+        connection.execute('CREATE TABLE project_bindings_v3(ui_project_id TEXT PRIMARY KEY, project_id TEXT NOT NULL UNIQUE REFERENCES projects(id), workspace_root TEXT UNIQUE, enrolled_at TEXT NOT NULL, active INTEGER NOT NULL CHECK(active IN (0,1)))')
+        connection.execute('INSERT INTO project_bindings_v3 SELECT * FROM project_bindings')
+        connection.execute('DROP TABLE project_bindings')
+        connection.execute('ALTER TABLE project_bindings_v3 RENAME TO project_bindings')
+        connection.execute('PRAGMA user_version=3')
         connection.commit()
     except BaseException:
         connection.rollback()

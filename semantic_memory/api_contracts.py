@@ -14,7 +14,7 @@ def valid_id(value):
 class ProjectBinding:
     ui_project_id: str
     project_id: str
-    workspace_root: str
+    workspace_root: str | None
     enrolled_at: str
     active: bool
 

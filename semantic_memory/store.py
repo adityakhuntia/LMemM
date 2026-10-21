@@ -55,7 +55,7 @@ class SemanticStore:
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA foreign_keys=ON")
         version = self.connection.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2):
+        if version not in (0, 1, 2, 3):
             self.connection.close()
             raise ValueError("Unsupported semantic schema")
         if version == 0:
@@ -67,7 +67,31 @@ class SemanticStore:
             self.connection.commit()
         from .migrations import migrate
         try:
+            if version in (1, 2):
+                backup = self.path.with_name(self.path.name + '.pre-v3')
+                # Exclusive creation prevents overwriting a previous recovery copy.
+                try:
+                    backup_fd = os.open(backup, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                except FileExistsError:
+                    if backup.is_symlink() or not backup.is_file() or backup.stat().st_uid != os.getuid():
+                        raise ValueError('Unsafe memory migration backup')
+                else:
+                    os.close(backup_fd)
+                    try:
+                        recovery = sqlite3.connect(backup)
+                        try:
+                            self.connection.backup(recovery)
+                            if recovery.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
+                                raise ValueError('Memory migration backup failed validation')
+                        finally:
+                            recovery.close()
+                    except BaseException:
+                        backup.unlink()
+                        raise
             migrate(self.connection)
+            if version != 3:
+                # Table replacement leaves free pages; reclaim before quota setup.
+                self.connection.execute('VACUUM')
         except BaseException:
             self.connection.close()
             raise
@@ -109,6 +133,9 @@ class SemanticStore:
         if semantic_bytes(self) + projected > budget:
             raise RuntimeError("Semantic ingestion paused: projected budget")
         project, artifact = canonical_identity(s)
+        if s.workspace_locator:
+            binding = self.connection.execute('SELECT project_id FROM project_bindings WHERE workspace_root=?',(str(Path(s.workspace_locator).resolve()),)).fetchone()
+            if binding: project = binding[0]
         ids = tuple(identifier("evidence", s.source_id + "|" + p.span_id) for p in s.spans)
         with self.transaction() as c:
             if c.execute("SELECT 1 FROM tombstones WHERE source_id=?", (s.source_id,)).fetchone():

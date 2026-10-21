@@ -137,10 +137,10 @@ class MemoryService:
         except TypeError as error:raise ValueError('Invalid memory arguments') from error
         return handler(**params)
 
-    def enroll(self,ui_project_id,root):
+    def enroll(self,ui_project_id,root=None):
         # Intake enrollment is an explicit native action, never an agent call.
-        path=Path(root)
-        if not path.is_dir():raise ValueError('Choose a local workspace folder')
+        path=Path(root) if root is not None else None
+        if path is not None and not path.is_dir():raise ValueError('Choose a local workspace folder')
         from memory_notes import native_sync_lock
         from .project_scope import set_binding_active,resolve_binding
         # Lock order is always native writer lock, then store lock.
@@ -148,7 +148,7 @@ class MemoryService:
             prior=resolve_binding(self.store,ui_project_id)
             if (prior is None or not prior.active) and self.store.connection.execute('SELECT count(*) FROM project_bindings WHERE active=1').fetchone()[0]>=64:
                 raise ValueError('At most 64 projects can have Memory enabled')
-            binding=bind_project(self.store,ui_project_id,str(path),timestamp(self.clock()))
+            binding=bind_project(self.store,ui_project_id,str(path) if path is not None else None,timestamp(self.clock()))
             if not binding.active:
                 set_binding_active(self.store,ui_project_id,True);binding=resolve_binding(self.store,ui_project_id)
                 try:self.native_notes.queue_reconciliation(binding.project_id)
@@ -347,7 +347,7 @@ class MemoryService:
     def _sync_bridge_locked(self):
         if self.bridge:
             self.bridge.active=False;self.bridge.publish_grant()
-        roots=[Path(r[0]) for r in self.store.connection.execute('SELECT workspace_root FROM project_bindings WHERE active=1')]
+        roots=[Path(r[0]) for r in self.store.connection.execute('SELECT workspace_root FROM project_bindings WHERE active=1 AND workspace_root IS NOT NULL')]
         roots=[p for p in roots if p.is_dir()]
         if roots:
             self.bridge=Bridge(self.directory/'bridge',roots,self.clock)

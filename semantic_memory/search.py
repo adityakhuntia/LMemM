@@ -57,9 +57,9 @@ def resolve_source(store,ctx,project_id,citation_id):
             JOIN artifacts a ON a.id=s.artifact_id JOIN project_bindings pb ON pb.project_id=s.project_id
             WHERE o.id=? AND '''+where,[citation_id,*args]).fetchone()
         if not row:return None
-        path=Path(row['locator']);root=Path(row['workspace_root'])
+        path=Path(row['locator']);root=Path(row['workspace_root']) if row['workspace_root'] else None
         # No content is read; current symlink ownership is checked again on UI click.
-        can_open=path.is_absolute() and path.is_file() and path.resolve().is_relative_to(root)
+        can_open=bool(root and path.is_absolute() and path.is_file() and path.resolve().is_relative_to(root))
         current_grant(store,ctx,project_id)
         return SourceDetail(project_id,citation_id,row['text'],row['locator'],row['at'],row['origin_type'],bool(row['truncated']),can_open)
 

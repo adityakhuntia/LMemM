@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from semantic_memory.store import SCHEMA, SemanticStore
-from semantic_memory.migrations import migrate
+from semantic_memory.migrations import migrate, VERSION
 from memory_helpers import memory_source, APP
 from semantic_memory.contracts import AccessPolicy
 
@@ -23,7 +23,7 @@ class MemoryMigrationTests(unittest.TestCase):
         c = self.v1()
         c.execute("INSERT INTO projects VALUES('p','/synthetic/repo')"); c.commit(); c.close()
         store = SemanticStore(self.path); self.addCleanup(store.close)
-        self.assertEqual(store.connection.execute('PRAGMA user_version').fetchone()[0], 2)
+        self.assertEqual(store.connection.execute('PRAGMA user_version').fetchone()[0], VERSION)
         self.assertEqual(store.connection.execute('SELECT locator FROM projects WHERE id=?',('p',)).fetchone()[0], '/synthetic/repo')
         result = store.ingest(memory_source('s', '/synthetic/repo', 'Retained café.'), AccessPolicy(1,frozenset({APP}),frozenset()))
         before = store.evidence(result.occurrence_ids)
@@ -43,7 +43,7 @@ class MemoryMigrationTests(unittest.TestCase):
         self.assertEqual(c.execute('PRAGMA user_version').fetchone()[0], 1)
         self.assertIsNone(c.execute("SELECT name FROM sqlite_master WHERE name='project_bindings'").fetchone())
         migrate(c)
-        self.assertEqual(c.execute('PRAGMA user_version').fetchone()[0], 2)
+        self.assertEqual(c.execute('PRAGMA user_version').fetchone()[0], VERSION)
         c.close()
 
     def test_future_and_partial_schemas_fail_closed(self):

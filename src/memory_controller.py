@@ -191,6 +191,7 @@ class MemoryController:
             status['source_connected']=self.binding['project_id'] in status['source_connected_project_ids']
         view=memory_view(self.state,self.binding,status,self.state['result'])
         view['notice']=self.notice;view['accessibility']=self.ax_trusted;view['codex_connected']=bool(self.binding and self.agent)
+        view['last_completed']=getattr(self,'last_completed',{}).get(self.ui_project)
         view['ask']=self.ask if self.ask and self.binding and self.agent and self.ask.get('grant_id')==self.agent['grant_id'] and self.ask.get('project_id')==self.binding['project_id'] and self.ask.get('serial')==self.ask_serial else None
         connection=(view.get('preview') or {}).get('connection')
         if connection:connection['codex']=self.codex_states.get(codex_server_name(connection['config_path']),{})
@@ -203,7 +204,28 @@ class MemoryController:
     def action(self,action,payload=None):
         payload=payload or {}
         if action=='time_filter':self.ask_serial+=1;self.ask=None
-        if action=='enroll':self.busy='Enabling Memory…';self.send('enroll',{'ui_project_id':self.ui_project,'root':payload['root']},'enroll');return
+        if action=='enroll':self.busy='Enabling Memory…';self.send('enroll',{'ui_project_id':self.ui_project,'root':payload.get('root')},'enroll');return
+        if action in {'save_excerpt','record_claim','remove_relationship','set_task_state','delete_saved_source'}:
+            if not self.binding:raise ValueError('Enable Memory first')
+            data=dict(payload)
+            if action=='set_task_state' and payload.get('done'):
+                if not hasattr(self,'last_completed'):self.last_completed={}
+                self.last_completed[self.ui_project]=(action,dict(payload,done=False))
+            if action not in {'delete_saved_source'}:data['project_id']=self.binding['project_id']
+            self.send(action,data,'mutation');return
+        if action=='complete_native_note':
+            import notes
+            for item in self.items().values():
+                for note in item.get('notes',[]):
+                    if note.get('memory_id')==payload['note_id'] and note.get('memory_project_id')==self.ui_project:
+                        if payload['done']:
+                            if not hasattr(self,'last_completed'):self.last_completed={}
+                            self.last_completed[self.ui_project]=(action,dict(payload,done=False))
+                        notes.set_done(self.items(),[notes.note_id(note)],payload['done']);self.save();self.action('submit',{});return
+            raise ValueError('Project note unavailable')
+        if action=='copy_context':
+            if self.binding:self.send('export_project_context',{'project_id':self.binding['project_id']},'copy_context',{'project_id':self.ui_project})
+            return
         if action=='install_extension':self.install_extension();return
         if action=='reconnect_extension':self.connect_extension();return
         if action=='install_model':self.set_notice('Starting…',False,'install_model')
@@ -225,20 +247,24 @@ class MemoryController:
         if action=='open_file':
             if self.binding:self.send('resolve_citation',{'project_id':self.binding['project_id'],'citation_id':payload['citation_id']},'open',{'project_id':self.ui_project})
             return
+        if action=='open_original':
+            if self.binding:self.send('resolve_citation',{'project_id':self.binding['project_id'],'citation_id':payload['citation_id']},'open_original',{'project_id':self.ui_project})
+            return
         if action=='close_source':self.state['source']=None;return
         if action=='close_preview':self.state['preview']=None;return
         if action=='ask_codex':self.ask_codex(payload.get('text'));return
         if action=='close_ask':self.ask_serial+=1;self.ask=None;return
         if action=='connect_agent':
             if not self.binding:raise ValueError('Enable Memory first')
-            self.send('connect_agent',dict(client_id='Codex',project_ids=[self.binding['project_id']],app_ids=['com.microsoft.VSCode'],disclosure_approved=payload.get('approved') is True),'agent');return
+            from semantic_memory.intentional_sources import NATIVE_APP,BROWSER_APP,BROWSER_SCOPE
+            self.send('connect_agent',dict(client_id='Codex',project_ids=[self.binding['project_id']],app_ids=['com.microsoft.VSCode',NATIVE_APP,BROWSER_APP],origins=[BROWSER_SCOPE],disclosure_approved=payload.get('approved') is True),'agent');return
         if action=='revoke_agent':
             for grant_id,connection in list(self.agents.items()):
                 if self.binding and self.binding['project_id'] in connection['project_ids'] and connection.get('client_id','Codex')=='Codex':
                     self.send('revoke_agent',{'grant_id':grant_id},'revoke_agent');self.agents.pop(grant_id,None);self.remove_from_codex(connection);self.ask_serial+=1;self.ask=None
             return
         self.state=memory_reduce(self.state,action,payload)
-        if action=='tab' and payload['tab']=='Memory':self.last_poll=0;self.action('submit',{})
+        if action=='tab' and payload['tab'] in {'Memory','Resume'}:self.last_poll=0;self.action('submit',{})
         elif action=='time_filter':self.action('submit',{})
         elif action in {'submit','source','preview'} and self.binding:
             params={'project_id':self.binding['project_id']}
@@ -246,7 +272,8 @@ class MemoryController:
             else:
                 params.update(period_args(self.state['period']))
                 method='get_project_context'
-                if action=='submit' and self.state['query'].strip():method='search_project_memory';params['query']=self.state['query'].strip()
+                if action=='submit' and self.state['tab']=='Resume' and not self.state['query'].strip():method='resume_project';params={'project_id':self.binding['project_id']}
+                elif action=='submit' and self.state['query'].strip():method='search_project_memory';params['query']=self.state['query'].strip()
                 if action=='preview':
                     method='preview_agent_context';params['client_id']='Codex'
                     if self.agent:params['grant_id']=self.agent['grant_id']
@@ -281,8 +308,21 @@ class MemoryController:
                 current=(self.status.get('service_epoch'),self.status.get('policy_revision'),self.status.get('index_generation'))
                 if current!=previous:
                     self.state=memory_reduce(self.state,'generation',{'generation':current})
-                    if self.binding and self.state['tab']=='Memory':self.action('submit',{})
+                    if self.binding and self.state['tab'] in {'Memory','Resume'}:self.action('submit',{})
             elif kind=='agents':self.agents={a['grant_id']:a for a in event['result']}
+            elif kind=='copy_context':
+                if token['project_id']==self.ui_project:
+                    from AppKit import NSPasteboard
+                    pb=NSPasteboard.generalPasteboard();pb.clearContents();pb.setString_forType_(event['result'],'public.utf8-plain-text')
+                    self.set_notice('Project context copied with source citations.')
+            elif kind=='open_original':
+                if token['project_id']==self.ui_project and event['result'].get('url'):
+                    from semantic_memory.policy import origin
+                    from Foundation import NSURL
+                    from AppKit import NSWorkspace
+                    url=event['result']['url'];origin(url)
+                    NSWorkspace.sharedWorkspace().openURL_(NSURL.URLWithString_(url))
+            elif kind=='mutation':self.action('submit',{})
             elif kind=='agent':
                 connection={k:v for k,v in event['result'].items() if k!='capability'}
                 self.agents[connection['grant_id']]=connection

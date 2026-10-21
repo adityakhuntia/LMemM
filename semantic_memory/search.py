@@ -61,7 +61,7 @@ def resolve_source(store,ctx,project_id,citation_id):
     from .api_contracts import Query
     with store.lock:
         where,args=scope_filter(store,ctx,Query(project_id,''))
-        row=store.connection.execute('''SELECT o.id,b.text,a.locator,s.at,s.origin_type,o.truncated,pb.workspace_root,
+        row=store.connection.execute('''SELECT o.id,s.id AS source_id,b.text,a.locator,s.at,s.origin_type,o.truncated,pb.workspace_root,
             (SELECT title FROM source_details WHERE source_id=s.id) AS title,
             (SELECT url FROM source_details WHERE source_id=s.id) AS url
             FROM occurrences o JOIN blobs b ON b.id=o.blob_id JOIN sources s ON s.id=o.source_id
@@ -72,7 +72,7 @@ def resolve_source(store,ctx,project_id,citation_id):
         # No content is read; current symlink ownership is checked again on UI click.
         can_open=bool(root and path.is_absolute() and path.is_file() and path.resolve().is_relative_to(root))
         current_grant(store,ctx,project_id)
-        return SourceDetail(project_id,citation_id,row['text'],row['locator'],row['at'],row['origin_type'],bool(row['truncated']),can_open,row['title'] or '',row['url'])
+        return SourceDetail(project_id,citation_id,row['text'],row['locator'],row['at'],row['origin_type'],bool(row['truncated']),can_open,row['title'] or '',row['url'],row['source_id'])
 
 
 def search_project(store,backend,ctx,query):

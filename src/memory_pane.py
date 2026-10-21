@@ -102,9 +102,9 @@ class MemoryPane:
             y=40;cx=x+w/2
             kit.tile(host,['brain','sparkles'],rgb(ACC),cx-32,y,64);y+=84
             kit.put_text(host,'Give this project a memory',x,y,w,22,700,align=kit.CENTER,height=30);y+=38
-            body='Choose one folder. LMemM keeps new text you view in VS Code and the notes you write here. It never scans the folder or imports history.'
+            body='Save notes, decisions and browser sources for this project. A folder and VS Code are optional. LMemM never scans your folders or imports history.'
             bw=min(w,420);y+=kit.put_text(host,body,cx-bw/2,y,bw,14,400,kit.mute(),align=kit.CENTER)+20
-            kit.button(host,'Choose folder…',cx-90,y,180,40,lambda:self.action('choose_root'),kind='primary',size=15);y+=40
+            kit.button(host,'Enable Memory',cx-90,y,180,40,lambda:self.action('enroll',{}),kind='primary',size=15);y+=40
             if view.get('error'):y+=24;error_card(view['error'],y)
         elif self.settings:self._settings(view,x,w,kit,rgb,panel)
         else:
@@ -163,6 +163,7 @@ class MemoryPane:
                 kit.button(host,'Close source',x+(180 if p['open_enabled'] else 0),y,120,30,lambda:self.action('close_source'),kind='quiet',size=13,weight=600);y+=46
             y+=14;y+=label_row(['note.text','doc.text'],ACC,'Add a note',y)
             field_box(self.note,y);y+=54
+            kit.button(host,'Save excerpt…',x,y,160,32,lambda:self.action('show_excerpt_form'),kind='outline',size=13);y+=44
         if view.get('preview') and binding and not self.settings:self.bottom=self._preview(view,x,w,y,kit,panel)
         end=(self.bottom if self.bottom is not None else y)+40
         self.host.setFrame_(NSMakeRect(0,0,width,max(end,500)))
@@ -265,9 +266,11 @@ class MemoryPane:
         def note_for(kind,default):
             if notice and len(notice)>2 and notice[2]==kind:return notice[0],(kit.status_text('orange') if notice[1] else None)
             return default,None
-        root=(view.get('binding') or {}).get('workspace_root','')
+        root=(view.get('binding') or {}).get('workspace_root') or 'No folder connected — notes and browser saves work without one.'
         cap('Capture')
         row(['folder.fill','folder'],ACC,'Folder',root,[('Resume' if mode=='Paused' else 'Pause','resume' if mode=='Paused' else 'pause','outline')],status=STATE_LABELS.get(mode,mode).split(' ·')[0],status_color=state_text(mode,kit))
+        if not (view.get('binding') or {}).get('workspace_root'):
+            row(['folder'],ACC,'Optional workspace','Connect a folder for VS Code capture.',[('Choose folder…','choose_root','outline')])
         installed=view.get('extension_installed');kind=notice[2] if notice and len(notice)>2 else None
         busy=bool(notice and kind in ('install_extension','connect_extension') and notice[0].endswith('…'))
         text,color=note_for('install_extension','Shares the text you view in the editor.')

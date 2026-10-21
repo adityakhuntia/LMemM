@@ -493,7 +493,12 @@ class MainWindow:
         if moved:
             self.cur = {"zone": self.cur["zone"], "id": None}
         self._fill(self.side_scroll, SIDE_W, lambda doc: self._side(doc, page["side"]))
-        if self.memory_snapshot and self.memory_snapshot['tab']=='Memory':
+        if self.memory_snapshot and self.memory_snapshot['tab']=='Resume' and self.memory_snapshot.get('binding'):
+            from resume_pane import ResumePane
+            if not getattr(self,'resume_pane',None):self.resume_pane=ResumePane(self._memory_action)
+            self.resume_pane.render(self.memory_snapshot,self.W-SIDE_W,self.col_x,self.main_w)
+            self.main_scroll.setDocumentView_(self.resume_pane.host)
+        elif self.memory_snapshot and self.memory_snapshot['tab'] in {'Memory','Resume'}:
             from memory_pane import MemoryPane
             if self.memory_pane is None:self.memory_pane=MemoryPane(self._memory_action)
             self.memory_pane.render(self.memory_snapshot,self.W-SIDE_W,self.col_x,self.main_w)
@@ -1023,6 +1028,23 @@ class MainWindow:
                     if result==1:self._memory_dispatch('enroll',{'root':str(panel.URL().path())})
                 self.window.makeKeyAndOrderFront_(None)
                 panel.beginSheetModalForWindow_completionHandler_(self.window,chosen);return
+            if action=='show_excerpt_form':
+                from AppKit import NSAlert,NSView,NSTextField,NSMakeRect
+                import secrets
+                alert=NSAlert.alloc().init();alert.setMessageText_('Save project context')
+                alert.setInformativeText_('Paste an excerpt with an optional source URL. This is saved as user-supplied text.')
+                accessory=NSView.alloc().initWithFrame_(NSMakeRect(0,0,420,180))
+                fields=[]
+                for placeholder,y,h in [('Title',146,24),('Source URL (optional)',110,24),('Text to remember',0,98)]:
+                    field=NSTextField.alloc().initWithFrame_(NSMakeRect(0,y,420,h));field.setPlaceholderString_(placeholder);field.setAccessibilityLabel_(placeholder);accessory.addSubview_(field);fields.append(field)
+                alert.setAccessoryView_(accessory);alert.addButtonWithTitle_('Save excerpt');alert.addButtonWithTitle_('Save note');alert.addButtonWithTitle_('Cancel')
+                def saved(response):
+                    if response==1000:
+                        title,url,text=[str(f.stringValue()) for f in fields]
+                        self._memory_dispatch('save_excerpt',{'payload':dict(request_id=secrets.token_hex(16),kind='pasted_excerpt',title=title,url=url or None,text=text)})
+                    elif response==1001:
+                        self._memory_dispatch('note',{'text':str(fields[2].stringValue())})
+                alert.beginSheetModalForWindow_completionHandler_(self.window,saved);return
             elif action in {'confirm_model','confirm_agent','confirm_disconnect'}:
                 self._pane().confirm=action;self.shown=None;self.render();return        # asked in the window itself: a pop-up could open out of sight
             elif action=='confirm_no':
@@ -1453,7 +1475,7 @@ class MainWindow:
         if self.memory_snapshot:
             tx=x;in_settings=bool(self.memory_pane and self.memory_pane.settings and self.memory_snapshot.get('binding'))
             for tab in self.memory_snapshot['tabs']:
-                symbol={'Overview':'square.grid.2x2','Memory':'brain'}.get(tab)
+                symbol={'Resume':'arrow.clockwise','Overview':'square.grid.2x2','Memory':'brain'}.get(tab)
                 tx+=kit.chip(host,tab,symbol,tx,y,self.memory_snapshot['tab']==tab and not in_settings,lambda t=tab:self._memory_action('tab',{'tab':t}))+8
             if self.memory_snapshot.get('binding'):                    # always in view, so setup is never hunted for
                 sx=x+w-kit.chip_width('Settings','gearshape')
@@ -1461,7 +1483,7 @@ class MainWindow:
                 if in_settings:                                        # the way back sits right beside it
                     bw=kit.chip_width('Back to Memory','chevron.left');kit.chip(host,'Back to Memory','chevron.left',sx-bw-8,y,False,lambda:self._memory_action('close_settings'))
             y+=48
-            if self.memory_snapshot['tab']=='Memory' or page.get('empty'):return y
+            if self.memory_snapshot['tab'] in {'Memory','Resume'} or page.get('empty'):return y
         self._label(host, "PICK UP WHERE YOU LEFT OFF", x, y, w)
         y += 22
         if page["pick_up"]:

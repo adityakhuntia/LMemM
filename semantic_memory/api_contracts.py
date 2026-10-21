@@ -109,6 +109,7 @@ class SourceDetail:
     can_open_file: bool
     title: str = ''
     url: str | None = None
+    source_id: str | None = None
 
 
 @dataclass(frozen=True)

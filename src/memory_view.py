@@ -28,6 +28,8 @@ CONFIRMS={'confirm_model':('Install meaning search?','Downloads about 46 MB (the
           'confirm_disconnect':('Disconnect Memory for this project?','Stops capture and revokes agent access. Saved notes stay on this Mac but can’t be searched until you enable Memory again.','Disconnect')}
 
 def provenance(row):
+    if row.get('origin_type') in {'browser_page','browser_selection'}:return 'Saved from browser'
+    if row.get('origin_type')=='pasted_excerpt':return 'User-supplied excerpt'
     return 'Your note' if row.get('origin_type')=='user_note' else 'Observed content' if row.get('origin_type') else 'Supported by cited sources'
 
 def evidence_rows(result):
@@ -73,12 +75,14 @@ def source_presentation(source):
     explanation='This is the retained snapshot. Open file shows the file as it exists today.'
     if source.get('origin_type')=='user_note' and not source.get('can_open_file',False):
         explanation='Saved project note. Its retained text is shown here; no external file is available to open.'
+    elif source.get('origin_type') in {'browser_page','browser_selection','pasted_excerpt'}:
+        explanation='Retained saved text. Open original shows the page as it exists today.' if source.get('url') else 'User-supplied retained text; no external file is available.'
     return dict(text=source['text'],locator=source['locator'],at=source['at'],open_enabled=source.get('can_open_file',False),
                 provenance=provenance(source),truncated=source.get('truncated',False),
-                open_explanation=explanation)
+                open_explanation=explanation,url=source.get('url'),title=source.get('title',''))
 
 FILLER=frozenset('a an and are as at be by for from has have how in is it its of on or that the this to was what when where which who why with'.split())
-KEPT='Memory only keeps the notes you write and the text VS Code showed while it was connected, so it may never have seen this.'
+KEPT='Memory searches saved notes, excerpts, browser saves and connected VS Code text, so it may never have seen this.'
 
 def search_note(query,rows):
     """Explain empty results or uncertain wording without judging semantic relevance.

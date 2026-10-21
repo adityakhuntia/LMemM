@@ -108,6 +108,14 @@ class AskCodexTests(unittest.TestCase):
         self.assertEqual(m.view()['ask']['state'],'failed');self.assertIn('not found',m.view()['ask']['message'])
         m.action('close_ask');self.assertIsNone(m.view()['ask'])
 class ControllerTests(unittest.TestCase):
+    def test_folder_free_enrollment_and_resume_request(self):
+        c=Client();m=MemoryController(lambda:c,lambda:{},lambda:None);m.select('a')
+        m.action('enroll',{})
+        self.assertIsNone(c.calls[-1][1]['root'])
+        m.bindings=[dict(ui_project_id='a',project_id='pa',active=True,workspace_root=None)]
+        m.action('tab',{'tab':'Resume'})
+        self.assertEqual(c.calls[-1][0],'resume_project')
+
     def test_submit_only_and_response_project_fence(self):
         c=Client();m=MemoryController(lambda:c,lambda:{},lambda:None)
         m.bindings=[dict(ui_project_id='a',project_id='pa',active=True,workspace_root='/a')]

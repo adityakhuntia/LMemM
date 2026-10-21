@@ -130,9 +130,20 @@ class MemoryService:
             self.native_notes.sync_fences()
             return json.loads(serialize_authorized(self.store,ctx,result))
         if role!='owner':raise ValueError('unavailable')
+        if method in {'resume_project','export_project_context'}:
+            if set(params)!={'project_id'}:raise ValueError('Invalid memory arguments')
+            from .resume import resume_project,export_project_context
+            self.native_notes.sync_fences()
+            ctx=authorize(self.store,self.owner_grant_id,params['project_id'])
+            with self.store.lock:
+                result=(resume_project if method=='resume_project' else export_project_context)(self.store,ctx,params['project_id'])
+                self.native_notes.sync_fences()
+                from .grants import current_grant
+                current_grant(self.store,ctx,params['project_id'])
+                return result
         handlers={'enroll':self.enroll,'bindings':self.bindings,'status':self.status,'pause':self.pause,'resume':self.resume,
                   'configure_model':self.configure_model,'connect_agent':self.connect_agent,'agent_connections':self.agent_connections,'revoke_agent':self.revoke_agent,'revoke_project':self.revoke_project,'begin_note_mutation':self.begin_note_mutation,'reconcile_notes':self.reconcile_notes,'recover_native_notes':self.recover_native_notes,'install_model':self.install_model,'install_extension':self.install_extension,'preview_agent_context':self.preview_agent_context,
-                  'save_excerpt':self.save_excerpt,'move_saved_source':self.move_saved_source,'delete_saved_source':self.delete_saved_source,'record_claim':self.record_claim,'remove_relationship':self.remove_relationship}
+                  'save_excerpt':self.save_excerpt,'move_saved_source':self.move_saved_source,'delete_saved_source':self.delete_saved_source,'record_claim':self.record_claim,'remove_relationship':self.remove_relationship,'set_task_state':self.set_task_state}
         handler=handlers.get(method)
         if not handler:raise ValueError('unavailable')
         try:inspect.signature(handler).bind(**params)
@@ -166,6 +177,17 @@ class MemoryService:
         from .intentional_sources import save_intentional
         if payload.get('kind') != 'pasted_excerpt':raise ValueError('Choose Save excerpt')
         return save_intentional(self.store,project_id,payload)
+
+    def set_task_state(self,project_id,claim_id,done):
+        from .contracts import Correction
+        from .relationships import apply_correction
+        if type(done) is not bool:raise ValueError('Invalid task state')
+        with self.store.lock:
+            if not self.store.connection.execute("SELECT 1 FROM claims WHERE id=? AND project_id=? AND kind='task'",(claim_id,project_id)).fetchone():raise ValueError('Task unavailable')
+            apply_correction(self.store,Correction('complete' if done else 'reopen',claim_id,None,timestamp(self.clock())))
+            from .grants import bump_revision
+            with self.store.transaction() as c:bump_revision(c)
+        return {'id':claim_id,'done':done}
 
     def move_saved_source(self,source_id,project_id):
         from .intentional_sources import move_saved_source

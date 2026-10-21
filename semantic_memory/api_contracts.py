@@ -107,6 +107,8 @@ class SourceDetail:
     origin_type: str
     truncated: bool
     can_open_file: bool
+    title: str = ''
+    url: str | None = None
 
 
 @dataclass(frozen=True)

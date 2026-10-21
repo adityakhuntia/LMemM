@@ -40,7 +40,7 @@ class IndexWorker:
             manifest=ModelManifest(**json.loads(job['manifest']))
             if manifest!=self.backend.manifest:raise ValueError('Embedding generation mismatch')
             source=c.execute('''SELECT s.* FROM sources s JOIN project_bindings p ON p.project_id=s.project_id
-                WHERE s.id=? AND p.active=1 AND s.at>=p.enrolled_at AND s.origin IS NULL AND NOT EXISTS(SELECT 1 FROM tombstones t WHERE t.source_id=s.id)''',(job['source_id'],)).fetchone()
+                WHERE s.id=? AND p.active=1 AND s.at>=p.enrolled_at AND (s.origin IS NULL OR EXISTS(SELECT 1 FROM source_details sd WHERE sd.source_id=s.id AND sd.kind IN ('browser_page','browser_selection'))) AND NOT EXISTS(SELECT 1 FROM tombstones t WHERE t.source_id=s.id)''',(job['source_id'],)).fetchone()
             if not source:
                 with store.transaction() as tx:tx.execute('DELETE FROM index_jobs WHERE source_id=?',(job['source_id'],))
                 return True

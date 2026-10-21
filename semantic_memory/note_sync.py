@@ -86,9 +86,10 @@ class NativeNoteMirror:
             mirror=self.store.connection.execute('SELECT * FROM note_mirrors WHERE note_id=?',(snapshot.note_id,)).fetchone()
             if mirror and mirror['project_id']!=project_id:raise ValueError('Native note identity belongs to another project')
             if mirror and mirror['revision']==snapshot.revision and mirror['source_id'] and not mirror['deleted']:continue
-            sid='native-note-'+secrets.token_hex(16)
-            source=SourceEnvelope(sid,snapshot.created_at,'native-notes','com.microsoft.VSCode',binding.workspace_root+'/.lmemm-project-notes/'+snapshot.note_id+'.md',binding.workspace_root,True,'user_note',(TextSpan('note',snapshot.text),),self.service.policy.revision)
-            result=self.store.ingest(source,self.service.policy);schedule_source(self.store,result.source_id)
+            from .intentional_sources import save_intentional
+            result=save_intentional(self.store,project_id,dict(request_id='note-sync-'+secrets.token_hex(16),
+                kind='native_note',text=snapshot.text,title='Your note'),owner='native-note-mirror',at=snapshot.created_at)
+            sid=result['source_id']
             with self.store.transaction() as c:
                 c.execute('INSERT OR REPLACE INTO note_mirrors VALUES(?,?,?,?,0)',(snapshot.note_id,project_id,snapshot.revision,sid))
                 claim_ids=[r[0] for r in c.execute("SELECT cl.id FROM claims cl JOIN support sp ON sp.entity_id=cl.id JOIN occurrences o ON o.id=sp.occurrence_id WHERE o.source_id=? AND cl.kind='task'",(sid,))]

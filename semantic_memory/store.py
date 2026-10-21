@@ -55,7 +55,8 @@ class SemanticStore:
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA foreign_keys=ON")
         version = self.connection.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2, 3):
+        from .migrations import VERSION
+        if version not in (0, 1, 2, 3, VERSION):
             self.connection.close()
             raise ValueError("Unsupported semantic schema")
         if version == 0:
@@ -67,8 +68,8 @@ class SemanticStore:
             self.connection.commit()
         from .migrations import migrate
         try:
-            if version in (1, 2):
-                backup = self.path.with_name(self.path.name + '.pre-v3')
+            if version and version < VERSION:
+                backup = self.path.with_name(self.path.name + '.pre-v' + str(VERSION))
                 # Exclusive creation prevents overwriting a previous recovery copy.
                 try:
                     backup_fd = os.open(backup, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
@@ -89,7 +90,7 @@ class SemanticStore:
                         backup.unlink()
                         raise
             migrate(self.connection)
-            if version != 3:
+            if version != VERSION:
                 # Table replacement leaves free pages; reclaim before quota setup.
                 self.connection.execute('VACUUM')
         except BaseException:

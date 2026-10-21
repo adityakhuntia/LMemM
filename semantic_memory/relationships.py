@@ -117,8 +117,9 @@ def recompute_support(store,entity_ids):
         if claim:
             # A surviving citation must independently ground the full claim;
             # partial public support cannot retain derived private text.
+            user_recorded=c.execute("SELECT 1 FROM support WHERE entity_id=? AND method='user_recorded'",(eid,)).fetchone()
             grounded=any(claim['statement'].lower() in e['text'].lower() and
-                         (claim['kind'] not in {'decision','task'} or e['origin_type']=='user_note')
+                         (claim['kind'] not in {'decision','task'} or e['origin_type']=='user_note' or user_recorded)
                          and (not claim['reason'] or claim['reason'].lower() in e['text'].lower()) for e in evidence)
             if not grounded:c.execute('DELETE FROM claims WHERE id=?',(eid,))
         edge=c.execute('SELECT * FROM edges WHERE id=?',(eid,)).fetchone()
@@ -156,11 +157,25 @@ def record_retained_source(store, source_id):
         project=c.execute('SELECT locator FROM projects WHERE id=?',(e['project_id'],)).fetchone()
         if not project:continue
         root=Path(project[0])
+        # Browser references are explicit URLs to already-retained project sources.
+        from .policy import canonical_url
+        for match in re.finditer(r'https?://[^\s<>"\x27]+',text):
+            try: target_url=canonical_url(match[0].rstrip('.,;)'))
+            except ValueError: continue
+            for target_row in c.execute('SELECT a.id,a.locator FROM artifacts a WHERE a.project_id=? AND a.id!=? AND EXISTS(SELECT 1 FROM sources s WHERE s.artifact_id=a.id)',(e['project_id'],e['artifact_id'])).fetchall():
+                try: matches=canonical_url(target_row['locator'])==target_url
+                except ValueError: continue
+                removed=c.execute("SELECT 1 FROM corrections WHERE subject_id=? AND object_id=? AND action='remove_reference'",(e['artifact_id'],target_row['id'])).fetchone()
+                if matches and not removed:
+                    _edge(c,e['artifact_id'],target_row['id'],'references','supported',e['at'],refs,None,'explicit_url')
+        if not root.is_absolute(): continue
         for match in re.finditer(r'(?<![\w/])(?:\./|\.\./|/)[\w./-]+',text):
             token=match[0].rstrip('.,;')
+            if not Path(e['locator']).is_absolute(): continue
             target=(Path(e['locator']).parent/token).resolve() if not token.startswith('/') else Path(token).resolve()
             if not target.is_relative_to(root):continue
             artifact=c.execute('''SELECT a.id FROM artifacts a WHERE a.locator=? AND a.project_id=?
                 AND EXISTS(SELECT 1 FROM sources s WHERE s.artifact_id=a.id)''',(str(target),e['project_id'])).fetchone()
             if artifact and artifact[0]!=e['artifact_id']:
+                if c.execute("SELECT 1 FROM corrections WHERE subject_id=? AND object_id=? AND action='remove_reference'",(e['artifact_id'],artifact[0])).fetchone():continue
                 _edge(c,e['artifact_id'],artifact[0],'references','supported',e['at'],refs,None,'explicit_path')

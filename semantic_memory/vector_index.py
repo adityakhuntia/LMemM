@@ -25,7 +25,7 @@ def begin_generation(store,manifest):
         c.execute("DELETE FROM index_generations WHERE state='building'")
         c.execute('INSERT INTO index_generations VALUES(?,?,?,?)',(gid,json.dumps(dataclasses.asdict(manifest),sort_keys=True),'building',datetime.now(timezone.utc).isoformat()))
         c.execute('DELETE FROM index_jobs')
-        c.execute("INSERT INTO index_jobs(source_id,generation_id,state) SELECT s.id,?,'queued' FROM sources s JOIN project_bindings p ON p.project_id=s.project_id WHERE p.active=1 AND s.at>=p.enrolled_at AND s.origin IS NULL",(gid,))
+        c.execute("INSERT INTO index_jobs(source_id,generation_id,state) SELECT s.id,?,'queued' FROM sources s JOIN project_bindings p ON p.project_id=s.project_id WHERE p.active=1 AND s.at>=p.enrolled_at AND (s.origin IS NULL OR EXISTS(SELECT 1 FROM source_details sd WHERE sd.source_id=s.id AND sd.kind IN ('browser_page','browser_selection')))",(gid,))
     return gid
 
 
@@ -36,7 +36,7 @@ def activate_generation(store,generation_id):
         if c.execute("SELECT 1 FROM index_jobs WHERE generation_id=? AND state!='done'",(generation_id,)).fetchone():raise ValueError('Incomplete index generation')
         missing=c.execute('''SELECT 1 FROM memory_chunks c JOIN occurrences o ON o.id=c.occurrence_id
             JOIN sources s ON s.id=o.source_id JOIN project_bindings p ON p.project_id=s.project_id
-            WHERE p.active=1 AND s.at>=p.enrolled_at AND s.origin IS NULL AND NOT EXISTS
+            WHERE p.active=1 AND s.at>=p.enrolled_at AND (s.origin IS NULL OR EXISTS(SELECT 1 FROM source_details sd WHERE sd.source_id=s.id AND sd.kind IN ('browser_page','browser_selection'))) AND NOT EXISTS
             (SELECT 1 FROM chunk_vectors v WHERE v.chunk_id=c.id AND v.generation_id=?) LIMIT 1''',(generation_id,)).fetchone()
         if missing:raise ValueError('Incomplete index generation')
         c.execute("UPDATE index_generations SET state='active' WHERE id=?",(generation_id,))

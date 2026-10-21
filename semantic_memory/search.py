@@ -14,12 +14,21 @@ JOINS = '''JOIN occurrences o ON o.id=c.occurrence_id
 def scope_filter(store,ctx,query):
     grant=current_grant(store,ctx,query.project_id)
     apps=sorted(grant.source_scope.app_ids)
-    # MVP has local-file origins only, regardless of older experimental data.
-    clauses=['s.project_id=?','pb.active=1','s.at>=pb.enrolled_at','s.origin IS NULL',
+    from .intentional_sources import BROWSER_SCOPE, BROWSER_APP
+    origins=sorted(grant.source_scope.origins-{BROWSER_SCOPE})
+    origin_clause='s.origin IS NULL'
+    origin_args=[]
+    if origins:
+        origin_clause+=' OR s.origin IN ('+','.join('?' for _ in origins)+')'
+        origin_args.extend(origins)
+    if BROWSER_SCOPE in grant.source_scope.origins:
+        origin_clause+=' OR (s.app_id=? AND EXISTS(SELECT 1 FROM source_details sd WHERE sd.source_id=s.id))'
+        origin_args.append(BROWSER_APP)
+    clauses=['s.project_id=?','pb.active=1','s.at>=pb.enrolled_at','('+origin_clause+')',
              's.app_id IN ('+','.join('?' for _ in apps)+')',
              'NOT EXISTS(SELECT 1 FROM tombstones t WHERE t.source_id=s.id)',
              "NOT (s.origin_type='user_note' AND EXISTS(SELECT 1 FROM note_fences nf WHERE nf.project_id=s.project_id))"]
-    args=[query.project_id,*apps]
+    args=[query.project_id,*origin_args,*apps]
     if query.start is not None:clauses.append('s.at>=?');args.append(query.start)
     if query.end is not None:clauses.append('s.at<=?');args.append(query.end)
     return ' AND '.join(clauses),args
@@ -52,7 +61,9 @@ def resolve_source(store,ctx,project_id,citation_id):
     from .api_contracts import Query
     with store.lock:
         where,args=scope_filter(store,ctx,Query(project_id,''))
-        row=store.connection.execute('''SELECT o.id,b.text,a.locator,s.at,s.origin_type,o.truncated,pb.workspace_root
+        row=store.connection.execute('''SELECT o.id,b.text,a.locator,s.at,s.origin_type,o.truncated,pb.workspace_root,
+            (SELECT title FROM source_details WHERE source_id=s.id) AS title,
+            (SELECT url FROM source_details WHERE source_id=s.id) AS url
             FROM occurrences o JOIN blobs b ON b.id=o.blob_id JOIN sources s ON s.id=o.source_id
             JOIN artifacts a ON a.id=s.artifact_id JOIN project_bindings pb ON pb.project_id=s.project_id
             WHERE o.id=? AND '''+where,[citation_id,*args]).fetchone()
@@ -61,7 +72,7 @@ def resolve_source(store,ctx,project_id,citation_id):
         # No content is read; current symlink ownership is checked again on UI click.
         can_open=bool(root and path.is_absolute() and path.is_file() and path.resolve().is_relative_to(root))
         current_grant(store,ctx,project_id)
-        return SourceDetail(project_id,citation_id,row['text'],row['locator'],row['at'],row['origin_type'],bool(row['truncated']),can_open)
+        return SourceDetail(project_id,citation_id,row['text'],row['locator'],row['at'],row['origin_type'],bool(row['truncated']),can_open,row['title'] or '',row['url'])
 
 
 def search_project(store,backend,ctx,query):

@@ -94,8 +94,9 @@ class MemoryService:
         return AccessPolicy(int(row[0]) if row else 1,frozenset({APP}),frozenset())
 
     def _refresh_owner(self):
+        from .intentional_sources import NATIVE_APP, BROWSER_APP, BROWSER_SCOPE
         pids={r[0] for r in self.store.connection.execute('SELECT project_id FROM project_bindings WHERE active=1')}
-        if pids:self.owner_grant_id=enroll_grant(self.store,'native-owner',pids,SourceScope(frozenset({APP}))).id
+        if pids:self.owner_grant_id=enroll_grant(self.store,'native-owner',pids,SourceScope(frozenset({APP,NATIVE_APP,BROWSER_APP}),frozenset({BROWSER_SCOPE}))).id
 
     def _role(self,capability):
         if not isinstance(capability,str) or len(capability)>256:raise ValueError('unavailable')
@@ -130,7 +131,8 @@ class MemoryService:
             return json.loads(serialize_authorized(self.store,ctx,result))
         if role!='owner':raise ValueError('unavailable')
         handlers={'enroll':self.enroll,'bindings':self.bindings,'status':self.status,'pause':self.pause,'resume':self.resume,
-                  'configure_model':self.configure_model,'connect_agent':self.connect_agent,'agent_connections':self.agent_connections,'revoke_agent':self.revoke_agent,'revoke_project':self.revoke_project,'begin_note_mutation':self.begin_note_mutation,'reconcile_notes':self.reconcile_notes,'recover_native_notes':self.recover_native_notes,'install_model':self.install_model,'install_extension':self.install_extension,'preview_agent_context':self.preview_agent_context}
+                  'configure_model':self.configure_model,'connect_agent':self.connect_agent,'agent_connections':self.agent_connections,'revoke_agent':self.revoke_agent,'revoke_project':self.revoke_project,'begin_note_mutation':self.begin_note_mutation,'reconcile_notes':self.reconcile_notes,'recover_native_notes':self.recover_native_notes,'install_model':self.install_model,'install_extension':self.install_extension,'preview_agent_context':self.preview_agent_context,
+                  'save_excerpt':self.save_excerpt,'move_saved_source':self.move_saved_source,'delete_saved_source':self.delete_saved_source,'record_claim':self.record_claim,'remove_relationship':self.remove_relationship}
         handler=handlers.get(method)
         if not handler:raise ValueError('unavailable')
         try:inspect.signature(handler).bind(**params)
@@ -160,14 +162,38 @@ class MemoryService:
     def bindings(self):
         with self.store.lock:return [dict(row) for row in self.store.connection.execute('SELECT * FROM project_bindings ORDER BY ui_project_id')]
 
-    def connect_agent(self,client_id,project_ids,app_ids,disclosure_approved=False):
-        with self.store.lock:return self._connect_agent(client_id,project_ids,app_ids,disclosure_approved)
+    def save_excerpt(self,project_id,payload):
+        from .intentional_sources import save_intentional
+        if payload.get('kind') != 'pasted_excerpt':raise ValueError('Choose Save excerpt')
+        return save_intentional(self.store,project_id,payload)
 
-    def _connect_agent(self,client_id,project_ids,app_ids,disclosure_approved):
+    def move_saved_source(self,source_id,project_id):
+        from .intentional_sources import move_saved_source
+        return move_saved_source(self.store,source_id,project_id)
+
+    def delete_saved_source(self,source_id):
+        from .intentional_sources import delete_saved_source
+        return delete_saved_source(self.store,source_id)
+
+    def record_claim(self,project_id,source_id,kind,start,end,reason_span=None):
+        from .intentional_sources import record_claim
+        return record_claim(self.store,project_id,source_id,kind,start,end,reason_span)
+
+    def remove_relationship(self,project_id,edge_id):
+        from .intentional_sources import remove_relationship
+        return remove_relationship(self.store,project_id,edge_id)
+
+    def connect_agent(self,client_id,project_ids,app_ids,disclosure_approved=False,origins=None):
+        with self.store.lock:return self._connect_agent(client_id,project_ids,app_ids,disclosure_approved,origins)
+
+    def _connect_agent(self,client_id,project_ids,app_ids,disclosure_approved,origins=None):
         self._prune_agents()
-        if disclosure_approved is not True or set(app_ids)!={APP}:raise ValueError('Explicit agent disclosure approval required')
+        from .intentional_sources import NATIVE_APP,BROWSER_APP,BROWSER_SCOPE
+        if disclosure_approved is not True or not app_ids or not set(app_ids)<={APP,NATIVE_APP,BROWSER_APP}:raise ValueError('Explicit agent disclosure approval required')
+        if origins and set(origins)!={BROWSER_SCOPE}:raise ValueError('Invalid source disclosure')
+        if BROWSER_APP in app_ids and BROWSER_SCOPE not in (origins or ()):raise ValueError('Explicit browser evidence approval required')
         if len(self.capabilities['agents'])>=8:raise ValueError('At most eight active agent connections are supported; revoke one first')
-        grant=enroll_grant(self.store,client_id,project_ids,SourceScope(frozenset(app_ids)))
+        grant=enroll_grant(self.store,client_id,project_ids,SourceScope(frozenset(app_ids),frozenset(origins or ())))
         token=secrets.token_hex(32);self.capabilities['agents'][token]={'grant_id':grant.id}
         write_private_json(self.directory/'capabilities.json',self.capabilities)
         clients=self.directory/'clients';clients.mkdir(mode=0o700,exist_ok=True)

@@ -38,7 +38,8 @@ def get_context(store,ctx,project_id,start=None,end=None):
             details=[d for d in details if d.at<=end and (claim['kind']=='task' or d.at>=start)]
             if not details:continue
             # Every emitted assertion is grounded in a permitted intentional note.
-            if not any(d.origin_type=='user_note' and claim['statement'] in d.text for d in details):continue
+            user_recorded=store.connection.execute("SELECT 1 FROM support WHERE entity_id=? AND method='user_recorded'",(claim['id'],)).fetchone()
+            if not any((d.origin_type=='user_note' or user_recorded) and claim['statement'] in d.text for d in details):continue
             if claim['kind']=='task':
                 if claim['task_state']!='open':continue
                 correction=store.connection.execute("SELECT action FROM corrections WHERE subject_id=? AND action IN ('complete','reopen') AND at<=? ORDER BY at DESC,rowid DESC LIMIT 1",(claim['id'],end)).fetchone()

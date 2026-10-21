@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from semantic_memory.store import SemanticStore, SCHEMA
-from semantic_memory.migrations import V2_SQL, migrate
+from semantic_memory.migrations import V2_SQL, VERSION, migrate
 from semantic_memory.project_scope import bind_project, resolve_binding
 from semantic_memory.contracts import AccessPolicy
 from memory_helpers import AT, APP, memory_source
@@ -62,11 +62,11 @@ class ProjectIdentityTests(unittest.TestCase):
     def test_upgrade_preserves_evidence_and_creates_private_recoverable_backup(self):
         self.v2().close()
         store = self.store()
-        self.assertEqual(store.connection.execute('PRAGMA user_version').fetchone()[0], 3)
+        self.assertEqual(store.connection.execute('PRAGMA user_version').fetchone()[0], VERSION)
         self.assertEqual(resolve_binding(store, 'ui').project_id, 'old-project')
         self.assertEqual(store.evidence(['citation'])[0]['text'], 'TODO: Test recovery.')
         self.assertEqual(store.connection.execute("SELECT task_state FROM claims WHERE id='task'").fetchone()[0], 'open')
-        backup = self.path.with_name(self.path.name + '.pre-v3')
+        backup = self.path.with_name(self.path.name + '.pre-v' + str(VERSION))
         self.assertEqual(os.stat(backup).st_mode & 0o777, 0o600)
         with sqlite3.connect(backup) as c:
             self.assertEqual(c.execute('PRAGMA user_version').fetchone()[0], 2)
@@ -84,7 +84,7 @@ class ProjectIdentityTests(unittest.TestCase):
         self.assertEqual(c.execute('SELECT project_id FROM project_bindings').fetchone()[0], 'old-project')
         self.assertIsNone(c.execute("SELECT name FROM sqlite_master WHERE name='project_bindings_v3'").fetchone())
         migrate(c)
-        self.assertEqual(c.execute('PRAGMA user_version').fetchone()[0], 3)
+        self.assertEqual(c.execute('PRAGMA user_version').fetchone()[0], VERSION)
 
     def test_service_enrollment_without_folder_does_not_start_editor_bridge(self):
         from semantic_memory.service import MemoryService

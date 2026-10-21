@@ -42,10 +42,12 @@ class PilotTests(unittest.TestCase):
   calls=iter([self.focus,None]);self.p.focus_provider=lambda:next(calls,None)
   self.send('snapshot');self.assertEqual(self.p.store.count('sources'),0)
  def test_quota_caps_all_sql_writers(self):
-  self.p.close();self.p=Pilot(self.base/'small',self.roots,clock=lambda:self.now,focus_provider=lambda:self.focus,limit=1024*1024)
+  # Source ownership metadata increases the empty schema; keep the write larger
+  # than this deliberately small budget rather than assuming a fixed page count.
+  self.p.close();self.p=Pilot(self.base/'small',self.roots,clock=lambda:self.now,focus_provider=lambda:self.focus,limit=2*1024*1024)
   with self.assertRaises(sqlite3.DatabaseError):
-   with self.p.store.transaction() as c:c.execute("INSERT INTO meta VALUES('huge',?)",('x'*1024*1024,))
-  self.assertLess(self.p.store.path.stat().st_size,1024*1024)
+   with self.p.store.transaction() as c:c.execute("INSERT INTO meta VALUES('huge',?)",('x'*2*1024*1024,))
+  self.assertLess(self.p.store.path.stat().st_size,2*1024*1024)
  def test_readonly_does_not_create_database(self):
   missing=self.base/'missing.db'
   with self.assertRaises(sqlite3.OperationalError):SemanticStore(missing,readonly=True)

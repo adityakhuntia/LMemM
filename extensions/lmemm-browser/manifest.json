@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "LMemM — Save project context",
+  "version": "0.1.0",
+  "minimum_chrome_version": "116",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqvEvRXSgW9UOxLNUiTb0Nee9Bs+qZi4QnZzf9QehO67Sg/gYp5h7VBtzxG3ag5kKu4eYjoi97JDsjq/kBwW76uH9TTjwSJ8dzCt/8j0xqSi7vtT15u5EDd3O+wwuS1cG8QnZuHZDXXtH8sLYb5/HQXz/tqh+KdJ4mHc5pfTceKlKm2bVy2EYfoXaOkjOF4tE1Vtytn+CTIDyxeQ8xWeubHk4hjitxjcGezb54O6z7ONniv7cHVQGfoYs8JgEKUnJjhNNpjy0tQBwbiDfdiEKP3o8Jlzv/G34LiCYHYL7WDvxSYcUn3t/4ENpbKQDHeluLoLsLJ4LKX25iWjlH2kLcQIDAQAB",
+  "permissions": ["activeTab", "scripting", "nativeMessaging", "contextMenus", "storage"],
+  "incognito": "not_allowed",
+  "background": {"service_worker": "background.js"},
+  "action": {"default_title": "Save to LMemM — choose a project first"},
+  "options_page": "popup.html",
+  "commands": {
+    "save_selection": {"suggested_key": {"default": "Ctrl+Shift+S", "mac": "MacCtrl+Shift+S"}, "description": "Save selected text to LMemM"}
+  }
+}

@@ -229,7 +229,7 @@ class MemoryController:
         if action=='install_extension':self.install_extension();return
         if action=='reconnect_extension':self.connect_extension();return
         if action=='install_model':self.set_notice('Starting…',False,'install_model')
-        if action in {'pause','resume','install_model','recover_native_notes'}:self.send(action,{},action);return
+        if action in {'pause','resume','install_model','recover_native_notes','install_browser','revoke_browser'}:self.send(action,{},action);return
         if action=='refresh':
             retry=getattr(self.client(),'retry',None)
             if retry:retry()

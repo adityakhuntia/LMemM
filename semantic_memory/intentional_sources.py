@@ -79,6 +79,7 @@ def save_intentional(store, project_id, payload, *, owner='native', at=None):
                 c.execute('INSERT INTO occurrences VALUES(?,?,?,?,?)',(oid,sid,blob,'saved',int(p['truncated'])))
                 c.execute('INSERT INTO source_details VALUES(?,?,?,?,?)',(sid,p['title'],p['url'],p['kind'],owner))
                 c.execute('INSERT INTO save_receipts VALUES(?,?,?,?)',(request,digest,sid,project_id))
+                bump_revision(c)
                 result = {'source_id':sid,'project_id':project_id,'duplicate':False}
         schedule_source(store,sid)
         return result

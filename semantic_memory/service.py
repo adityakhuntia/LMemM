@@ -148,7 +148,7 @@ class MemoryService:
                 return result
         handlers={'enroll':self.enroll,'bindings':self.bindings,'status':self.status,'pause':self.pause,'resume':self.resume,
                   'configure_model':self.configure_model,'connect_agent':self.connect_agent,'agent_connections':self.agent_connections,'revoke_agent':self.revoke_agent,'revoke_project':self.revoke_project,'begin_note_mutation':self.begin_note_mutation,'reconcile_notes':self.reconcile_notes,'recover_native_notes':self.recover_native_notes,'install_model':self.install_model,'install_extension':self.install_extension,'preview_agent_context':self.preview_agent_context,
-                  'save_excerpt':self.save_excerpt,'move_saved_source':self.move_saved_source,'delete_saved_source':self.delete_saved_source,'record_claim':self.record_claim,'remove_relationship':self.remove_relationship,'set_task_state':self.set_task_state,'pair_browser':self.pair_browser,'revoke_browser':self.revoke_browser}
+                  'save_excerpt':self.save_excerpt,'move_saved_source':self.move_saved_source,'delete_saved_source':self.delete_saved_source,'record_claim':self.record_claim,'remove_relationship':self.remove_relationship,'set_task_state':self.set_task_state,'pair_browser':self.pair_browser,'revoke_browser':self.revoke_browser,'install_browser':self.install_browser}
         handler=handlers.get(method)
         if not handler:raise ValueError('unavailable')
         try:inspect.signature(handler).bind(**params)
@@ -186,6 +186,12 @@ class MemoryService:
     def pair_browser(self,extension_id):
         from .browser_pairing import pair_browser
         return pair_browser(self,extension_id)
+
+    def install_browser(self):
+        from .browser_install import install_browser_host
+        result=install_browser_host(Path.home(),self.directory)
+        self.pair_browser(result['extension_id'])
+        return result
 
     def revoke_browser(self):
         from .browser_pairing import revoke_browser

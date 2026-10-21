@@ -1,0 +1,9 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>LMemM browser</title>
+<style>body{font:14px system-ui;background:#f8f9fc;color:#202124;margin:24px;max-width:420px}h1{font-size:22px}p{line-height:1.5}select,button{font:inherit;padding:10px;margin:6px 0;width:100%;border:1px solid #cbd0dc;border-radius:8px;background:white}button{cursor:pointer}button.primary{color:white;background:#2b61ef;border:0}#status{white-space:pre-wrap}small{color:#626774}</style></head>
+<body><h1>Save project context</h1><p id="status" role="status">Connecting to LMemM…</p>
+<label for="project">Destination project</label><select id="project"></select>
+<button id="choose" class="primary">Use this project</button><button id="save">Save original page</button>
+<button id="move">Move last save here</button><button id="undo">Undo last save</button>
+<p><small>Highlight text, then press Control + Shift + S or right-click → Save selection to LMemM. Clicking the pinned extension saves the current selection or page.</small></p>
+<a href="https://developer.chrome.com/docs/extensions/develop/concepts/activeTab" target="_blank" rel="noreferrer">About browser access</a>
+<script src="popup.js"></script></body></html>

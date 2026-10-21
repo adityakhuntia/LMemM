@@ -271,6 +271,10 @@ class MemoryPane:
         row(['folder.fill','folder'],ACC,'Folder',root,[('Resume' if mode=='Paused' else 'Pause','resume' if mode=='Paused' else 'pause','outline')],status=STATE_LABELS.get(mode,mode).split(' ·')[0],status_color=state_text(mode,kit))
         if not (view.get('binding') or {}).get('workspace_root'):
             row(['folder'],ACC,'Optional workspace','Connect a folder for VS Code capture.',[('Choose folder…','choose_root','outline')])
+        paired=view.get('status',{}).get('browser_paired')
+        row(['globe'],ACC,'Chrome browser',
+            'Paired. Pin the LMemM extension; save selected text with Control + Shift + S. Saved sources stay when disconnected.' if paired else 'Connect Chrome, then load the bundled LMemM browser extension from its installation folder. No background browsing is collected.',
+            [('Disconnect','revoke_browser','outline')] if paired else [('Connect Chrome','install_browser','primary')],status='Paired' if paired else None)
         installed=view.get('extension_installed');kind=notice[2] if notice and len(notice)>2 else None
         busy=bool(notice and kind in ('install_extension','connect_extension') and notice[0].endswith('…'))
         text,color=note_for('install_extension','Shares the text you view in the editor.')

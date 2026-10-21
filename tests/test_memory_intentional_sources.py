@@ -120,3 +120,8 @@ class IntentionalSourceTests(unittest.TestCase):
         with self.store.transaction() as c: c.execute("INSERT INTO meta VALUES('memory_paused','User paused')")
         with self.assertRaises(ValueError): self.save()
         self.assertEqual(self.store.count('sources'), 0)
+
+    def test_new_save_invalidates_cached_project_context(self):
+        ctx=self.ctx()
+        self.save()
+        with self.assertRaises(ValueError):current_grant(self.store,ctx,self.a)

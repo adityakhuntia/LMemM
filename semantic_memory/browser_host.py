@@ -49,5 +49,5 @@ def main(config_path,origin):
             response={'request_id':message.get('request_id'),'ok':True,'result':result}
         except (OSError,ValueError,KeyError,TypeError):
             response={'request_id':message.get('request_id'),'ok':False,'error':{
-                'code':'unavailable','message':'Not saved. Open LMemM, resume Memory and check browser pairing and the destination project.'}}
+                'code':'unavailable','message':'Save not confirmed. Open LMemM, resume Memory and check browser pairing and the destination project.'}}
         write_message(sys.stdout.buffer,response)

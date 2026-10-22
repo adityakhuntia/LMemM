@@ -24,7 +24,7 @@ def scope_filter(store,ctx,query):
     if BROWSER_SCOPE in grant.source_scope.origins:
         origin_clause+=' OR (s.app_id=? AND EXISTS(SELECT 1 FROM source_details sd WHERE sd.source_id=s.id))'
         origin_args.append(BROWSER_APP)
-    clauses=['s.project_id=?','pb.active=1','s.at>=pb.enrolled_at','('+origin_clause+')',
+    clauses=['s.project_id=?','pb.active=1','(s.at>=pb.enrolled_at OR EXISTS(SELECT 1 FROM source_details d WHERE d.source_id=s.id))','('+origin_clause+')',
              's.app_id IN ('+','.join('?' for _ in apps)+')',
              'NOT EXISTS(SELECT 1 FROM tombstones t WHERE t.source_id=s.id)',
              "NOT (s.origin_type='user_note' AND EXISTS(SELECT 1 FROM note_fences nf WHERE nf.project_id=s.project_id))"]

@@ -97,6 +97,7 @@ class MemoryService:
         from .intentional_sources import NATIVE_APP, BROWSER_APP, BROWSER_SCOPE
         pids={r[0] for r in self.store.connection.execute('SELECT project_id FROM project_bindings WHERE active=1')}
         if pids:self.owner_grant_id=enroll_grant(self.store,'native-owner',pids,SourceScope(frozenset({APP,NATIVE_APP,BROWSER_APP}),frozenset({BROWSER_SCOPE}))).id
+        else:self.owner_grant_id=None
 
     def _role(self,capability):
         if not isinstance(capability,str) or len(capability)>256:raise ValueError('unavailable')
@@ -148,7 +149,7 @@ class MemoryService:
                 return result
         handlers={'enroll':self.enroll,'bindings':self.bindings,'status':self.status,'pause':self.pause,'resume':self.resume,
                   'configure_model':self.configure_model,'connect_agent':self.connect_agent,'agent_connections':self.agent_connections,'revoke_agent':self.revoke_agent,'revoke_project':self.revoke_project,'begin_note_mutation':self.begin_note_mutation,'reconcile_notes':self.reconcile_notes,'recover_native_notes':self.recover_native_notes,'install_model':self.install_model,'install_extension':self.install_extension,'preview_agent_context':self.preview_agent_context,
-                  'save_excerpt':self.save_excerpt,'move_saved_source':self.move_saved_source,'delete_saved_source':self.delete_saved_source,'record_claim':self.record_claim,'remove_relationship':self.remove_relationship,'set_task_state':self.set_task_state,'pair_browser':self.pair_browser,'revoke_browser':self.revoke_browser,'install_browser':self.install_browser}
+                  'save_excerpt':self.save_excerpt,'move_saved_source':self.move_saved_source,'delete_saved_source':self.delete_saved_source,'record_claim':self.record_claim,'remove_relationship':self.remove_relationship,'set_task_state':self.set_task_state,'pair_browser':self.pair_browser,'revoke_browser':self.revoke_browser,'install_browser':self.install_browser,'delete_project_memory':self.delete_project_memory}
         handler=handlers.get(method)
         if not handler:raise ValueError('unavailable')
         try:inspect.signature(handler).bind(**params)
@@ -214,7 +215,30 @@ class MemoryService:
 
     def delete_saved_source(self,source_id):
         from .intentional_sources import delete_saved_source
-        return delete_saved_source(self.store,source_id)
+        with self.store.lock:
+            result=delete_saved_source(self.store,source_id);self.native_notes.publish_bindings();return result
+
+    def delete_project_memory(self,project_id):
+        from .retention import delete_sources
+        with self.store.lock:
+            if not self.store.connection.execute('SELECT 1 FROM project_bindings WHERE project_id=?',(project_id,)).fetchone():raise ValueError('Project unavailable')
+            revoke_project(self.store,project_id)
+            ids={r[0] for r in self.store.connection.execute('SELECT id FROM sources WHERE project_id=?',(project_id,))}
+            removed=delete_sources(self.store,ids,forget=True)
+            with self.store.transaction() as c:
+                claims=[r[0] for r in c.execute('SELECT id FROM claims WHERE project_id=?',(project_id,))]
+                for cid in claims:
+                    c.execute('DELETE FROM support WHERE entity_id=?',(cid,))
+                    c.execute('DELETE FROM edges WHERE subject_id=? OR object_id=?',(cid,cid))
+                c.execute('DELETE FROM claims WHERE project_id=?',(project_id,))
+                c.execute('DELETE FROM note_mirrors WHERE project_id=?',(project_id,))
+                c.execute('DELETE FROM note_fences WHERE project_id=?',(project_id,))
+                c.execute('DELETE FROM project_bindings WHERE project_id=?',(project_id,))
+                c.execute('DELETE FROM artifacts WHERE project_id=?',(project_id,))
+                c.execute('DELETE FROM projects WHERE id=?',(project_id,))
+                bump_revision(c)
+            self.roots_dirty=True;self._refresh_owner();self._prune_agents();self.native_notes.publish_bindings()
+            return {'removed':removed.sources}
 
     def record_claim(self,project_id,source_id,kind,start,end,reason_span=None):
         from .intentional_sources import record_claim

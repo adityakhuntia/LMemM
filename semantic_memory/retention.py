@@ -24,7 +24,7 @@ def memory_usage(store,bridge_dir=None):
 def semantic_bytes(store):
     return memory_usage(store)['total_bytes']
 
-def delete_sources(store,source_ids):
+def delete_sources(store,source_ids,forget=False):
     source_ids=set(source_ids)
     if not source_ids: return DeletionResult(0,0)
     count=occurrences=0
@@ -33,11 +33,18 @@ def delete_sources(store,source_ids):
         for sid in source_ids:
             if not c.execute('SELECT 1 FROM sources WHERE id=?',(sid,)).fetchone(): continue
             count+=1
+            if forget:c.execute('UPDATE note_mirrors SET deleted=2 WHERE source_id=?',(sid,))
             affected.update(r[0] for r in c.execute('SELECT entity_id FROM support WHERE occurrence_id IN (SELECT id FROM occurrences WHERE source_id=?)',(sid,)))
             occurrences+=c.execute('SELECT count(*) FROM occurrences WHERE source_id=?',(sid,)).fetchone()[0]
             c.execute('INSERT OR IGNORE INTO tombstones VALUES(?)',(sid,))
             c.execute('DELETE FROM sources WHERE id=?',(sid,))
         recompute_support(store,affected)
+        orphaned=[r[0] for r in c.execute('SELECT id FROM artifacts WHERE NOT EXISTS(SELECT 1 FROM sources s WHERE s.artifact_id=artifacts.id)')]
+        for aid in orphaned:
+            for edge in c.execute('SELECT id FROM edges WHERE subject_id=? OR object_id=?',(aid,aid)).fetchall():
+                c.execute('DELETE FROM support WHERE entity_id=?',(edge[0],))
+                c.execute('DELETE FROM edges WHERE id=?',(edge[0],))
+            c.execute('DELETE FROM artifacts WHERE id=?',(aid,))
         c.execute("DELETE FROM jobs WHERE episode_id IN (SELECT id FROM episodes WHERE NOT EXISTS(SELECT 1 FROM episode_evidence WHERE episode_id=episodes.id))")
         c.execute("DELETE FROM episodes WHERE NOT EXISTS(SELECT 1 FROM episode_evidence WHERE episode_id=episodes.id)")
         c.execute("DELETE FROM support WHERE entity_id NOT IN (SELECT id FROM claims) AND entity_id NOT IN (SELECT id FROM edges)")

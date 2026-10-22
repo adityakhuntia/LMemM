@@ -47,8 +47,10 @@ class MemoryPane:
         def rgb(c,alpha=1.0):return NSColor.colorWithRed_green_blue_alpha_(c[0],c[1],c[2],alpha)
         for sub in list(host.subviews()):
             if sub is not self.query and sub is not self.note:sub.removeFromSuperview()
-        binding=view.get('binding');project=binding.get('project_id') if binding else None
+        retained=view.get('retained_binding') or view.get('binding')
+        project=retained.get('project_id') if retained else None
         if project!=self.project:self.project=project;self.settings=False;self.confirm=None;self.status_open=False;self.note.setStringValue_('')
+        binding=view.get('binding') or (retained if self.settings else None)
         if str(self.query.stringValue())!=view['query']:self.query.setStringValue_(view['query'])
         hide=not binding or self.settings
         self.query.setHidden_(hide);self.note.setHidden_(hide)
@@ -106,7 +108,7 @@ class MemoryPane:
             bw=min(w,420);y+=kit.put_text(host,body,cx-bw/2,y,bw,14,400,kit.mute(),align=kit.CENTER)+20
             kit.button(host,'Enable Memory',cx-90,y,180,40,lambda:self.action('enroll',{}),kind='primary',size=15);y+=40
             if view.get('error'):y+=24;error_card(view['error'],y)
-        elif self.settings:self._settings(view,x,w,kit,rgb,panel)
+        elif self.settings:self._settings(dict(view,binding=binding),x,w,kit,rgb,panel)
         else:
             color=state_text(mode,kit);label=STATE_LABELS.get(mode,mode);shown=label+'  ›'
             pw=kit.text_width(shown,12,600)+34;chip=kit._KitButton.alloc().initWithFrame_callback_(NSMakeRect(x,y,pw,26),lambda:self.action('open_status'));chip.fill=rgb(STATE_COLORS.get(mode,GREEN),.14);chip.radius=13;chip.focusable=True;host.addSubview_(chip)
@@ -161,6 +163,8 @@ class MemoryPane:
                 y=top+th+98
                 if p['open_enabled']:kit.button(host,'Open current file…',x,y,170,30,lambda c=source['citation_id']:self.action('open_file',{'citation_id':c}),kind='outline',size=13,weight=600)
                 kit.button(host,'Close source',x+(180 if p['open_enabled'] else 0),y,120,30,lambda:self.action('close_source'),kind='quiet',size=13,weight=600);y+=46
+                if p.get('url'):kit.button(host,'Open original URL…',x,y,180,30,lambda c=source['citation_id']:self.action('open_original',{'citation_id':c}),kind='outline',size=13);y+=42
+                if source.get('source_id'):kit.button(host,'Delete saved snapshot…',x,y,210,30,lambda s=source['source_id']:self.action('forget_source',{'source_id':s}),kind='outline',size=13);y+=42
             y+=14;y+=label_row(['note.text','doc.text'],ACC,'Add a note',y)
             field_box(self.note,y);y+=54
             kit.button(host,'Save excerpt…',x,y,160,32,lambda:self.action('show_excerpt_form'),kind='outline',size=13);y+=44
@@ -218,6 +222,11 @@ class MemoryPane:
         host=self.host;y=8;notice=view.get('notice')
         y+=4
         kit.put_text(host,'Memory settings',x,y,w,24,700,height=32);y+=48
+        if not (view.get('binding') or {}).get('active',True):
+            y+=kit.put_text(host,'Memory is disconnected. Its retained snapshots remain on this Mac. Re-enable it to search, or delete retained memory before deleting the project.',x,y,w,14,400,kit.mute())+20
+            kit.button(host,'Enable Memory',x,y,170,34,lambda:self.action('enroll',{}),kind='primary',size=13);y+=46
+            kit.button(host,'Delete retained memory…',x,y,220,34,lambda:self.action('confirm_delete_memory'),kind='outline',size=13)
+            self.bottom=y+60;return
         if view.get('preview'):y=self._preview(view,x,w,y,kit,panel)+8
         mode=view['state']
         if mode=='Needs attention':
@@ -305,4 +314,5 @@ class MemoryPane:
         row(['terminal.fill','terminal'],ACC,'Codex','Connected. Can read this project’s notes and sources.' if view.get('codex_connected') else 'Preview and grant access to this project’s notes and sources.',[('Copy prompt','copy_codex_prompt','outline'),('Preview','preview','outline'),('Revoke','revoke_agent','outline')] if view.get('codex_connected') else [('Connect…','confirm_agent','primary')])
         cap('Danger zone')
         row(['bolt.slash.fill','xmark.circle'],ACC,'Disconnect Memory','Stops capture and agent access. Saved notes stay on this Mac.',[('Disconnect…','confirm_disconnect','outline')])
+        row(['trash'],ACC,'Delete retained memory','Permanently removes this project’s retained snapshots, graph and agent access. Original notes/files remain.',[('Delete…','confirm_delete_memory','outline')])
         self.bottom=y

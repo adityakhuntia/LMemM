@@ -20,16 +20,18 @@ actions=[]
 w=window.MainWindow(lambda *a:None,lambda:(reg,items),on_memory=lambda *a:actions.append(a),memory_view=lambda _:snapshot)
 w.nav=page_model.press(reg,w.nav,'go',pid)
 w.show(window_model.view({'screen':True}));app.activateIgnoringOtherApps_(True)
-for label in ['disabled','ready','processing','paused','error','source','overview','settings','settings-paused','settings-error','ask-done','ask-failed','asking','resume-empty','resume-populated','resume-source','folder-free-settings']:
+for label in ['disabled','ready','processing','paused','error','source','overview','settings','settings-paused','settings-error','ask-done','ask-failed','asking','resume-empty','resume-populated','resume-source','folder-free-settings','settings-disconnected','resume-related']:
     state['tab']='Resume' if label.startswith('resume') else 'Overview' if label=='overview' else 'Memory'
     status={'state':{'disabled':'Disabled','processing':'Processing','paused':'Paused','error':'Needs attention'}.get(label,'Ready'),'model_state':'missing' if label=='disabled' else 'available','enrolled_at':'2026-10-10T09:00:00Z','indexed_at':'2026-10-10T10:21:00Z','pending':2 if label=='processing' else 0}
-    state['source']={'text':'We decided to use local embeddings because project evidence stays on device.','locator':'/synthetic/lmemm-mvp/notes.md','at':'2026-10-10T10:00:00Z','citation_id':'synthetic-1','can_open_file':False,'origin_type':'user_note','truncated':False} if label=='source' else None
+    state['source']={'text':'We decided to use local embeddings because project evidence stays on device.','locator':'/synthetic/lmemm-mvp/notes.md','at':'2026-10-10T10:00:00Z','citation_id':'synthetic-1','source_id':'synthetic-source','can_open_file':False,'origin_type':'user_note','truncated':False} if label=='source' else None
     snapshot=memory_view(state,None if label=='disabled' else binding,status,result)
     if label.startswith('resume'):
         snapshot['result']={} if label=='resume-empty' else dict(result,saved_activity=result['recent_evidence'],related_sources=[])
         if label!='resume-empty':snapshot['result']['open_tasks']=[dict(t,id='synthetic-task') for t in result['open_tasks']]
         if label=='resume-source':snapshot['source']=dict(text='SQLite stays on this Mac.',title='Database research',url='https://example.org/research',locator='https://example.org/research',origin_type='browser_selection',at='2026-10-20T10:00:00Z',citation_id='synthetic-web',source_id='synthetic-source',can_open_file=False)
     if label=='folder-free-settings':snapshot['binding']=dict(binding,workspace_root=None)
+    if label=='settings-disconnected':snapshot['binding']=None;snapshot['retained_binding']=dict(binding,active=False)
+    if label=='resume-related':snapshot['result']['related_sources']=[dict(id='synthetic-reference',title='Database comparison',citation_id='synthetic-web',from_citation='synthetic-3')]
     snapshot['extension_installed']=True
     if label in ('ask-done','ask-failed','asking'):
         snapshot['codex_connected']=True
@@ -46,7 +48,10 @@ for label in ['disabled','ready','processing','paused','error','source','overvie
             snapshot['status']['model_state']='missing'
     elif w.memory_pane:w.memory_pane.settings=False
     w.shown=None;w.render()
-    for _ in range(8):macos.next_event(app,.05)
+    w.window.makeKeyAndOrderFront_(None);app.activateIgnoringOtherApps_(True)
+    w.window.displayIfNeeded()
+    deadline=time.monotonic()+.6
+    while time.monotonic()<deadline:macos.next_event(app,.05)
     import Quartz
     captured=Quartz.CGWindowListCreateImage(Quartz.CGRectNull,Quartz.kCGWindowListOptionIncludingWindow,int(w.window.windowNumber()),Quartz.kCGWindowImageBoundsIgnoreFraming)
     if captured is None:raise RuntimeError('Own-window capture unavailable')

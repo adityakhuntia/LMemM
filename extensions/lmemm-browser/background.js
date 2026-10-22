@@ -21,8 +21,9 @@ const saver=LMemMBrowser.createSaver({store,transport,id:()=>crypto.randomUUID()
   const payload=result[0].result;LMemMCapture.safeUrl(payload.url);return payload;
 }});
 const confirmations=new Map();
-async function openControls(tabId,mode='choose'){
-  await chrome.windows.create({url:chrome.runtime.getURL('popup.html')+'?tab='+encodeURIComponent(tabId||'')+'&mode='+mode,type:'popup',width:400,height:440});
+async function openControls(tabId,mode='choose',source_id=null){
+  if(!source_id)source_id=(await store.get()).lastSave?.source_id;
+  await chrome.windows.create({url:chrome.runtime.getURL('popup.html')+'?tab='+encodeURIComponent(tabId||'')+'&mode='+mode+'&source='+encodeURIComponent(source_id||''),type:'popup',width:400,height:440});
 }
 function showToast(message,nonce){
   document.getElementById('lmemm-save-confirmation')?.remove();
@@ -30,7 +31,7 @@ function showToast(message,nonce){
   Object.assign(host.style,{position:'fixed',right:'20px',bottom:'20px',zIndex:'2147483647'});
   const shadow=host.attachShadow({mode:'closed'});const box=document.createElement('div');
   Object.assign(box.style,{background:'#202124',color:'#fff',padding:'16px',borderRadius:'12px',font:'14px system-ui',boxShadow:'0 4px 24px #0006'});
-  const label=document.createElement('div');label.textContent=message;box.append(label);
+  const label=document.createElement('div');label.setAttribute('role','status');label.setAttribute('aria-live','polite');label.textContent=message;box.append(label);
   for(const [title,action] of [['Undo','undo'],['Change project','change']]){
     const b=document.createElement('button');b.textContent=title;
     Object.assign(b.style,{margin:'10px 8px 0 0',padding:'6px 10px',cursor:'pointer'});
@@ -65,15 +66,14 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
   if(!ownPage&&!trustedToast){respond({ok:false,error:'Not permitted'});return;}
   (async()=>{
     if(trustedToast){
-      const {lastSave}=await store.get();if(lastSave?.source_id!==confirmation.source_id)throw Error('Use extension controls for the latest save.');
-      if(message.action==='undo'){await saver.undo();confirmations.delete(sender.tab.id);return {};}
-      if(message.action==='change'){await openControls(sender.tab.id,'controls');return {};}
+      if(message.action==='undo'){await saver.undo(confirmation.source_id);confirmations.delete(sender.tab.id);return {};}
+      if(message.action==='change'){await openControls(sender.tab.id,'controls',confirmation.source_id);return {};}
       throw Error('Not permitted');
     }
     if(message.action==='state')return {...await store.get(),projects:await saver.projects(),...await chrome.storage.session.get('lastError')};
     if(message.action==='choose')return saver.chooseProject(message.project_id);
-    if(message.action==='undo')return saver.undo();
-    if(message.action==='move')return saver.move(message.project_id);
+    if(message.action==='undo')return saver.undo(message.source_id);
+    if(message.action==='move')return saver.move(message.source_id,message.project_id);
     if(message.action==='save'){const tab=await chrome.tabs.get(message.tab_id);await saveTab(tab);return {};}
     throw Error('Not permitted');
   })().then(result=>respond({ok:true,result}),e=>respond({ok:false,error:e.message}));return true;

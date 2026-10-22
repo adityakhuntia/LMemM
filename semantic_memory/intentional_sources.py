@@ -111,10 +111,10 @@ def move_saved_source(store, source_id, project_id):
 
 def delete_saved_source(store, source_id):
     with store.lock:
-        if not store.connection.execute('SELECT 1 FROM source_details WHERE source_id=?',(source_id,)).fetchone():
+        if not store.connection.execute('SELECT 1 FROM sources WHERE id=?',(source_id,)).fetchone():
             raise ValueError('Saved source unavailable')
-        from .retention import delete_memory_source
-        return {'removed':delete_memory_source(store,source_id).sources}
+        from .retention import delete_sources
+        return {'removed':delete_sources(store,{source_id},forget=True).sources}
 
 
 def record_claim(store, project_id, source_id, kind, start, end, reason_span=None):

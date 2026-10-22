@@ -44,9 +44,12 @@ class ResumePane:
             if source.get('source_id'):
                 for kind,label in [('task','Record as task'),('decision','Record as decision')]:
                     button(label,'record_claim',{'source_id':source['source_id'],'kind':kind,'start':0,'end':len(source['text'])})
+                button('Delete saved snapshot…','forget_source',{'source_id':source['source_id']})
             button('Close source','close_source')
         else:
             result=view.get('result') or {}
+            if result.get('coverage',{}).get('display_shortened'):
+                text('Some text is shortened here. Open a source to read its retained snapshot.',12,muted=True)
             if not any(result.get(k) for k in ('decisions','open_tasks','saved_activity')):
                 text('Start with one useful note',17,700)
                 text('Save a decision, a next action or a browser source. Your project context will appear here.',14,muted=True)

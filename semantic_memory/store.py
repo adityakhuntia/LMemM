@@ -4,6 +4,8 @@ import hashlib
 import json
 import os
 import sqlite3
+import secrets
+import stat
 import threading
 from contextlib import contextmanager
 from pathlib import Path
@@ -29,6 +31,22 @@ CREATE TABLE corrections(id TEXT PRIMARY KEY,action TEXT NOT NULL,subject_id TEX
 CREATE TABLE jobs(episode_id TEXT PRIMARY KEY REFERENCES episodes(id) ON DELETE CASCADE,status TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,bytes INTEGER NOT NULL DEFAULT 0,error TEXT);
 CREATE TABLE tombstones(source_id TEXT PRIMARY KEY);
 """
+
+
+def _validate_recovery(path,current_version):
+    info=path.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_uid!=os.getuid() or stat.S_IMODE(info.st_mode)!=0o600 or info.st_nlink!=1:
+        raise ValueError('Recovery backup must be a private regular file; move the incomplete copy aside and retry')
+    copy=sqlite3.connect(path.resolve().as_uri()+'?mode=ro',uri=True)
+    try:
+        version=copy.execute('PRAGMA user_version').fetchone()[0]
+        if not 1<=version<current_version or copy.execute('PRAGMA integrity_check').fetchone()[0]!='ok':
+            raise ValueError('Recovery backup is incomplete; move it aside and retry')
+        from .migrations import validate_schema
+        validate_schema(copy,version)
+    finally:copy.close()
+
+
 class SemanticStore:
     def __init__(self, path, readonly=False):
         self.path = Path(path)
@@ -70,25 +88,23 @@ class SemanticStore:
         try:
             if version and version < VERSION:
                 backup = self.path.with_name(self.path.name + '.pre-v' + str(VERSION))
-                # Exclusive creation prevents overwriting a previous recovery copy.
-                try:
-                    backup_fd = os.open(backup, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-                except FileExistsError:
-                    if backup.is_symlink() or not backup.is_file() or backup.stat().st_uid != os.getuid():
-                        raise ValueError('Unsafe memory migration backup')
-                else:
-                    os.close(backup_fd)
+                if not backup.exists() and not backup.is_symlink():
+                    temporary=backup.with_name(backup.name+'.'+secrets.token_hex(8)+'.tmp')
+                    backup_fd=os.open(temporary,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600);os.close(backup_fd)
                     try:
-                        recovery = sqlite3.connect(backup)
+                        recovery = sqlite3.connect(temporary)
                         try:
                             self.connection.backup(recovery)
-                            if recovery.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
-                                raise ValueError('Memory migration backup failed validation')
-                        finally:
-                            recovery.close()
-                    except BaseException:
-                        backup.unlink()
-                        raise
+                        finally:recovery.close()
+                        _validate_recovery(temporary,VERSION)
+                        with temporary.open('rb') as stream:os.fsync(stream.fileno())
+                        try:os.link(temporary,backup)  # Atomic publish without replacing an older recovery copy.
+                        except FileExistsError:pass
+                    finally:temporary.unlink(missing_ok=True)
+                _validate_recovery(backup,VERSION)
+                directory_fd=os.open(backup.parent,os.O_RDONLY)
+                try:os.fsync(directory_fd)
+                finally:os.close(directory_fd)
             migrate(self.connection)
             if version != VERSION:
                 # Table replacement leaves free pages; reclaim before quota setup.

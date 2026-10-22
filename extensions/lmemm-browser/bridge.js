@@ -15,8 +15,8 @@
         const receipt={source_id:saved.source_id,project_id:project.project_id,name:project.name,tab_id:tab.id};
         await store.set({lastSave:receipt,destination:project});return receipt;
       }),
-      undo:()=>serial(async()=>{const {lastSave}=await store.get();if(!lastSave)throw Error('No recent save to undo.');await transport('undo',{source_id:lastSave.source_id});await store.set({lastSave:null});return {undone:true};}),
-      move:project_id=>serial(async()=>{const {lastSave}=await store.get();if(!lastSave)throw Error('No recent save to move.');const project=(await projects()).find(p=>p.project_id===project_id);if(!project)throw Error('Project unavailable.');await transport('move',{source_id:lastSave.source_id,project_id});await store.set({destination:project,lastSave:{...lastSave,...project}});return project;}),
+      undo:source_id=>serial(async()=>{if(typeof source_id!=='string'||!source_id)throw Error('Choose the exact save to undo.');const {lastSave}=await store.get();await transport('undo',{source_id});if(lastSave?.source_id===source_id)await store.set({lastSave:null});return {undone:true};}),
+      move:(source_id,project_id)=>serial(async()=>{if(typeof source_id!=='string'||!source_id)throw Error('Choose the exact save to move.');const {lastSave}=await store.get();const project=(await projects()).find(p=>p.project_id===project_id);if(!project)throw Error('Project unavailable.');await transport('move',{source_id,project_id});await store.set({destination:project,...(lastSave?.source_id===source_id?{lastSave:{...lastSave,...project}}:{})});return project;}),
     };
   }
   root.LMemMBrowser={createSaver};if(typeof module!=='undefined')module.exports={createSaver};

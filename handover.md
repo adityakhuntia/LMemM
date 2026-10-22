@@ -1,38 +1,44 @@
 # LMemM — continuation handover
 
-Updated 2026-10-20. Read [current context](docs/current-context.md), [runbook](docs/hybrid-memory-runbook.md), and [acceptance](docs/benchmarks/project-memory/hybrid-mvp/acceptance.md).
+Updated 2026-10-22. Launch 1 engineering candidate is implemented on main.
+Read [current context](docs/current-context.md), [installation](docs/launch-one-installation.md), [acceptance](docs/launch-one-acceptance.md), and [review](docs/launch-one-review.md).
 
-Current delivery (2026-10-20): main includes the cofounder's UI at `9b8efb3`,
-local readiness integration `e425854`, and note-search/test-isolation fix
-`a0410f5`. The user authorized publication after manually verifying AskCodex.
-This handover supersedes the historical unpushed status recorded below.
+Projects now work without a folder. Resume shows saved activity, decisions with
+reasons, and next actions backed by inspectable retained sources. The knowledge
+graph connects supported claims and explicit references; semantic search finds
+related evidence. Copy context carries citations into an assistant; AskCodex is
+optional synthesis over authorized evidence. Browser text does not automatically
+become a user commitment.
 
-Latest validation: **880 Python tests pass** with isolated default data paths.
-Six Node tests and 13 real native synthetic UI states passed during integration;
-the alias app built and its command startup worked. Live synthetic AskCodex
-returned both expected exact citations, and the user subsequently verified it.
-Search no longer labels relevant paraphrases unrelated; saved notes without
-external files explain why Open file is unavailable. Restart the existing app
-once to load those final wording fixes.
+Chrome/Chromium explicit saves are built: choose a project once, highlight text
+and press Control+Shift+S or use the right-click menu. Clicking the extension
+saves a selection or visible page text. Confirmation offers Undo and Change
+project. No passive history or incognito capture is included.
 
-Read the [integration review](docs/2026-10-16-main-review-and-direction.md) for
-fixed project/answer scoping, MCP registration races and alias worker environment
-issues. The [Astra scope proposal](docs/2026-10-20-project-resume-beta-proposal.md)
-is included for discussion; it is not approved implementation or built features.
-Personal context.md remains untracked and excluded from publication.
+Quick demonstration:
+1. Build `./build_app.sh --standalone`, then `open dist/LMemM.app`.
+2. Create a project, enable Memory without selecting a folder, and add
+   `We decided to use SQLite because the data stays on this Mac.`
+3. Add `TODO: Validate the first useful browser save.` Return to Resume; inspect
+   both sources, mark the task done, undo it, and Copy context.
+4. Follow installation instructions to connect Chrome and load the extension.
+   Save a highlighted paragraph, inspect its retained text and original URL,
+   move the save to another enabled project, then Undo that exact save.
+5. Restart the app and verify retained evidence remains project scoped. Use
+   source deletion or Settings → Delete retained memory to test explicit forget.
 
-User direction: serve developers AND knowledge workers through one outcome,
-resuming a project across code/docs/browser work. The documented next-step
-proposal is a common resume front door, notes/context without mandatory coding
-setup, then one controlled browser/document source. Broader app tracking exists,
-but current scoped semantic evidence is still VS Code + intentional notes.
-Do not represent the proposed broader sources/brief as already implemented.
+Fresh verification: 923 Python tests, 15 combined extension tests, 19 synthetic
+native states rendered. Real isolated Chromium exercised selection/page saving,
+move and Undo; a separate old/new browser regression verified private editable
+selection exclusions. The final standalone app passed strict ad hoc signing and
+copied-app verification outside the checkout with minimal PATH: memory service,
+browser host, MiniLM semantic search, official MCP SDK, permission probe, shutdown.
 
-App test: `./build_app.sh` succeeds; `open dist/LMemM.app` runs a checkout-linked
-alias app. It requires this repo and .venv to stay in place. It is not yet a
-portable distribution. Fresh app permissions must be granted to LMemM itself.
-For synthetic UI testing use `scripts/memory_ui_smoke.py --output <directory>`;
-this avoids starting personal capture or invoking hosted AI.
+This is an early-access candidate. Developer ID/notarization, second-Mac onboarding,
+physical crash/sleep/lock and sustained resource acceptance, and real user pilots
+remain release gates. The standalone build runs independently of the checkout;
+the default build remains a developer alias. See installation for explicit legacy
+data import before first installed startup. Personal context.md stays untracked.
 
 ## Historical verification records
 

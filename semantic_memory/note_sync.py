@@ -20,6 +20,8 @@ class NativeNoteMirror:
     def publish_bindings(self):
         from memory_notes import snapshot_hash
         bindings=self.service.bindings()
+        for binding in bindings:
+            binding['retained_count']=self.store.connection.execute('SELECT count(*) FROM sources WHERE project_id=?',(binding['project_id'],)).fetchone()[0]
         write_private_json(self.directory/'native-bindings.json',{'bindings':bindings})
         path=self.directory/'native-note-state.json'
         state=read_private_json(path) if path.exists() else {}
@@ -77,6 +79,7 @@ class NativeNoteMirror:
         for orphan in orphans:delete_memory_source(self.store,orphan[0])
         for mirror in old:
             snapshot=current.get(mirror['note_id'])
+            if snapshot and mirror['deleted']==2 and snapshot.revision==mirror['revision']:continue
             if snapshot and snapshot.revision==mirror['revision'] and not mirror['deleted'] and mirror['source_id']:continue
             if mirror['source_id']:delete_memory_source(self.store,mirror['source_id'])
             with self.store.transaction() as c:
@@ -85,6 +88,7 @@ class NativeNoteMirror:
             if snapshot.origin!='native_note' or snapshot.project_id!=project_id or utc(snapshot.created_at)<binding.enrolled_at:raise ValueError('Invalid native note scope')
             mirror=self.store.connection.execute('SELECT * FROM note_mirrors WHERE note_id=?',(snapshot.note_id,)).fetchone()
             if mirror and mirror['project_id']!=project_id:raise ValueError('Native note identity belongs to another project')
+            if mirror and mirror['deleted']==2 and mirror['revision']==snapshot.revision:continue
             if mirror and mirror['revision']==snapshot.revision and mirror['source_id'] and not mirror['deleted']:continue
             from .intentional_sources import save_intentional
             result=save_intentional(self.store,project_id,dict(request_id='note-sync-'+secrets.token_hex(16),

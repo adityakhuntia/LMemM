@@ -108,6 +108,12 @@ class AskCodexTests(unittest.TestCase):
         self.assertEqual(m.view()['ask']['state'],'failed');self.assertIn('not found',m.view()['ask']['message'])
         m.action('close_ask');self.assertIsNone(m.view()['ask'])
 class ControllerTests(unittest.TestCase):
+    def test_late_purge_response_keeps_newly_selected_project_binding(self):
+        c=Client();m=MemoryController(lambda:c,lambda:{},lambda:None)
+        m.bindings=[dict(ui_project_id=p,project_id='p'+p,active=False,workspace_root=None) for p in ('a','b')]
+        m.select('a');m.action('delete_project_memory');rid=c.calls[-1][2]
+        m.select('b');m.poll([dict(type='response',id=rid,result={'removed':1})])
+        self.assertEqual([b['ui_project_id'] for b in m.bindings],['b'])
     def test_entering_bound_project_loads_resume_without_waiting_for_a_global_revision(self):
         c=Client();m=MemoryController(lambda:c,lambda:{},lambda:None)
         m.bindings=[dict(ui_project_id='a',project_id='pa',active=True,workspace_root=None)]

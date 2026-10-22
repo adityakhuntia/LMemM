@@ -1045,6 +1045,15 @@ class MainWindow:
                     elif response==1001:
                         self._memory_dispatch('note',{'text':str(fields[2].stringValue())})
                 alert.beginSheetModalForWindow_completionHandler_(self.window,saved);return
+            if action in {'forget_source','confirm_delete_memory'}:
+                from AppKit import NSAlert
+                alert=NSAlert.alloc().init()
+                alert.setMessageText_('Delete this saved snapshot?' if action=='forget_source' else 'Delete this project’s retained memory?')
+                alert.setInformativeText_('Removes retained evidence and its search/graph connections. Original notes, files and pages remain. New edits or saves may create new snapshots. This cannot be undone in LMemM.')
+                alert.addButtonWithTitle_('Delete');alert.addButtonWithTitle_('Cancel')
+                def forgotten(response):
+                    if response==1000:self._memory_dispatch('delete_saved_source',{'source_id':payload['source_id']}) if action=='forget_source' else self._memory_dispatch('delete_project_memory',{})
+                alert.beginSheetModalForWindow_completionHandler_(self.window,forgotten);return
             elif action in {'confirm_model','confirm_agent','confirm_disconnect'}:
                 self._pane().confirm=action;self.shown=None;self.render();return        # asked in the window itself: a pop-up could open out of sight
             elif action=='confirm_no':
@@ -1473,11 +1482,11 @@ class MainWindow:
         self._label(host, page["meta"], x + 54, y + 33, w - 54, size=13, weight=400)
         y += 62
         if self.memory_snapshot:
-            tx=x;in_settings=bool(self.memory_pane and self.memory_pane.settings and self.memory_snapshot.get('binding'))
+            tx=x;in_settings=bool(self.memory_pane and self.memory_pane.settings and (self.memory_snapshot.get('binding') or self.memory_snapshot.get('retained_binding')))
             for tab in self.memory_snapshot['tabs']:
                 symbol={'Resume':'arrow.clockwise','Overview':'square.grid.2x2','Memory':'brain'}.get(tab)
                 tx+=kit.chip(host,tab,symbol,tx,y,self.memory_snapshot['tab']==tab and not in_settings,lambda t=tab:self._memory_action('tab',{'tab':t}))+8
-            if self.memory_snapshot.get('binding'):                    # always in view, so setup is never hunted for
+            if self.memory_snapshot.get('binding') or self.memory_snapshot.get('retained_binding'):
                 sx=x+w-kit.chip_width('Settings','gearshape')
                 kit.chip(host,'Settings','gearshape',sx,y,in_settings,lambda:self._memory_action('open_settings'))
                 if in_settings:                                        # the way back sits right beside it

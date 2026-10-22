@@ -92,7 +92,10 @@ def add_project_note(items,binding,text,at=None):
 
 
 def check_project_action(action,ui_project_ids,directory):
-    active={b['ui_project_id'] for b in native_bindings(directory) if b['active']}
+    bindings=native_bindings(directory)
+    if action=='delete' and any(b['ui_project_id'] in ui_project_ids and b.get('retained_count',1)>0 for b in bindings):
+        raise ValueError('Delete retained memory in this project’s Memory Settings before deleting the project.')
+    active={b['ui_project_id'] for b in bindings if b['active']}
     if active.intersection(ui_project_ids):
         if action=='merge':raise ValueError('Projects linked to Memory cannot be merged. Disconnect Memory first.')
         if action=='delete':raise ValueError('Disconnect Memory for this project before deleting it; agent access will be revoked.')

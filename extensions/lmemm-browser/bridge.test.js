@@ -26,11 +26,21 @@ test('private and restricted tabs never capture',async()=>{
 });
 test('undo affects exact receipt and move updates remembered project after success',async()=>{
   const f=fixture();await f.saver.save({id:1,url:'https://example.org'});
-  await f.saver.move('b');assert.equal(f.state.destination.project_id,'b');assert.equal(f.calls.at(-1).params.source_id,'source');
-  await f.saver.undo();assert.equal(f.calls.at(-1).method,'undo');assert.equal(f.state.lastSave,null);
+  await f.saver.move('source','b');assert.equal(f.state.destination.project_id,'b');assert.equal(f.calls.at(-1).params.source_id,'source');
+  await f.saver.undo('source');assert.equal(f.calls.at(-1).method,'undo');assert.equal(f.state.lastSave,null);
 });
 test('offline failure creates no receipt or hidden queue',async()=>{
   const state={destination:{project_id:'a',name:'Alpha'}};
   const saver=createSaver({store:{get:async()=>state,set:async v=>Object.assign(state,v)},transport:async()=>{throw Error('offline');},capture:async()=>{throw Error('must not capture');},id:()=> 'one'});
   await assert.rejects(saver.save({id:1,url:'https://example.org'}));assert.equal(state.lastSave,undefined);
+});
+test('queued Undo pins the original source while another save completes',async()=>{
+  const state={destination:{project_id:'a',name:'Alpha'}};let number=0;const removed=[];
+  const saver=createSaver({store:{get:async()=>state,set:async v=>Object.assign(state,v)},id:()=>String(++number),
+    capture:async()=>({text:'Evidence',title:'Research',url:'https://example.org',kind:'browser_selection'}),
+    transport:async(method,params)=>{if(method==='list_projects')return {projects:[{project_id:'a',name:'Alpha'}]};if(method==='undo'){removed.push(params.source_id);return {};}return {source_id:'source-'+params.payload.request_id};}});
+  const first=await saver.save({id:1,url:'https://example.org'});
+  const next=saver.save({id:2,url:'https://example.org'});
+  const undo=saver.undo(first.source_id);
+  await Promise.all([next,undo]);assert.deepEqual(removed,['source-1']);assert.equal(state.lastSave.source_id,'source-2');
 });

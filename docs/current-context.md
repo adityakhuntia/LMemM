@@ -174,3 +174,20 @@ pass. No production code changed for publication and no history was rewritten.
 Root context.md remains private untracked work. Earlier unpushed statements
 above are historical; the updated root handover is the current entry point.
 The proposal remains proposed scope, not approval to implement new features.
+
+
+## 2026-10-22 — Launch 1 engineering candidate
+
+Main now implements the approved Launch 1 scope: folder-free projects, intentional
+notes/excerpts, source-backed decisions/tasks/references, Resume and context copy,
+explicit Chrome saves with Undo/move, authenticated ingestion-only browser host,
+and standalone bundled workers. Commits 137a39e through c7ff88f implement tasks
+1–6; final review fixes and qualification follow in the next commit.
+
+Fresh verification: 923 Python / 15 extension tests, 19 native fixture states,
+real isolated browser save flow and editable-selection regression. Rebuilt app
+passed copied-app MiniLM/browser/MCP/service/permissions/shutdown verification.
+All seven independent final-review findings are fixed; see launch-one-review.md.
+Handover now points to exact installation/demo steps. Public release still waits
+on notarization, second Mac, physical hardware/resource acceptance and pilots.
+Personal context.md is untracked and excluded. No personal capture was started.

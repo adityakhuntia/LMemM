@@ -1,18 +1,18 @@
 # Launch 1 acceptance record
 
-Implementation qualification in progress, October 21, 2026. This is a local
+Engineering qualification completed, October 22, 2026. This is a local
 early-access candidate, not approval for public distribution.
 
 ## Verified so far
 
-- 916 isolated Python tests pass; 14 combined browser/editor extension tests pass.
+- 923 isolated Python tests pass; 15 combined browser/editor extension tests pass.
 - Existing project upgrade preserves IDs, evidence, task state and citations;
   interrupted migration rolls back. Optional folders keep stable ownership.
 - Intentional notes/excerpts and browser snapshots have separate provenance.
   Supported tasks/decisions, explicit URL/file references and related-source
   navigation reuse the evidence lifecycle. Old AI scopes do not gain new origins.
 - Resume, context copy and source navigation have backend/controller coverage.
-  Seventeen synthetic native states rendered; Resume and browser evidence screens
+  Nineteen synthetic native states rendered; Resume and browser evidence screens
   inspected. New-source and first-project-load refresh regressions fixed.
 - Real Chrome for Testing with an isolated profile: native Control+Shift+S saved
   exactly the highlighted sentence. Page capture excluded synthetic password,
@@ -29,13 +29,23 @@ Standalone verifier: `scripts/verify_standalone_memory.py --app dist/LMemM.app
 model cache; no personal text or hosted AI. Native renderer:
 `scripts/memory_ui_smoke.py --output OUTPUT_DIRECTORY`.
 
-Native screenshots: `/tmp/lmemm-launch-one-ui`. Real browser artifacts:
+Native screenshots: `/tmp/lmemm-launch-one-final-ui`. Real browser artifacts:
 `/tmp/lmemm-launch-one-browser/artifacts/page-save.png`. These local temporary
 artifacts are not a recording of the user's desktop or a published demo.
 
+## Final review
+
+The final browser selection regression reproduced editable-text leakage in the old
+build and passed with the fix. Concurrent Undo pins the exact source; moved older
+saves remain visible; Resume responses are bounded; migration backups validate
+before publication; deletion cleans graph artifacts and is available after
+disconnection. No review finding was deferred.
+
 ## Required before widening release
 
-- Independent final code review and fixes, followed by final suite/build rerun.
+- Independent final review completed; all seven findings fixed and covered by
+  regressions. Final suite, standalone rebuild and copied-app verifier passed.
+  See [review and decisions](launch-one-review.md).
 - Developer ID/hardened runtime/notarization/stapling and fresh Gatekeeper test.
   Current default signature is ad hoc. Credentials have not been supplied.
 - Observed second-Mac onboarding, browser installation and first useful save.

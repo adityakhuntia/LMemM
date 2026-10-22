@@ -82,6 +82,9 @@ class MemoryController:
     @property
     def binding(self):
         return next((b for b in self.bindings if b['ui_project_id']==self.ui_project and b['active']),None)
+    @property
+    def retained_binding(self):
+        return next((b for b in self.bindings if b['ui_project_id']==self.ui_project),None)
     def send(self,method,params,kind,token=None):
         self.serial+=1;rid='memory-ui-'+str(self.serial)
         self.pending[rid]=(kind,token);self.client().request(method,params,rid)
@@ -194,6 +197,7 @@ class MemoryController:
         view=memory_view(self.state,self.binding,status,self.state['result'])
         view['notice']=self.notice;view['accessibility']=self.ax_trusted;view['codex_connected']=bool(self.binding and self.agent)
         view['last_completed']=getattr(self,'last_completed',{}).get(self.ui_project)
+        view['retained_binding']=self.retained_binding
         view['ask']=self.ask if self.ask and self.binding and self.agent and self.ask.get('grant_id')==self.agent['grant_id'] and self.ask.get('project_id')==self.binding['project_id'] and self.ask.get('serial')==self.ask_serial else None
         connection=(view.get('preview') or {}).get('connection')
         if connection:connection['codex']=self.codex_states.get(codex_server_name(connection['config_path']),{})
@@ -207,6 +211,14 @@ class MemoryController:
         payload=payload or {}
         if action=='time_filter':self.ask_serial+=1;self.ask=None
         if action=='enroll':self.busy='Enabling Memory…';self.send('enroll',{'ui_project_id':self.ui_project,'root':payload.get('root')},'enroll');return
+        if action=='delete_project_memory':
+            binding=self.retained_binding
+            if not binding:raise ValueError('Project memory unavailable')
+            self.ask_serial+=1;self.ask=None
+            for connection in list(self.agents.values()):
+                if binding['project_id'] in connection['project_ids']:self.remove_from_codex(connection)
+            self.send(action,{'project_id':binding['project_id']},'purge',{'project_id':self.ui_project})
+            self.state=memory_reduce(self.state,'revoke',{});return
         if action in {'save_excerpt','record_claim','remove_relationship','set_task_state','delete_saved_source'}:
             if not self.binding:raise ValueError('Enable Memory first')
             data=dict(payload)
@@ -335,6 +347,10 @@ class MemoryController:
                     url=event['result']['url'];origin(url)
                     NSWorkspace.sharedWorkspace().openURL_(NSURL.URLWithString_(url))
             elif kind=='mutation':self.action('submit',{})
+            elif kind=='purge':
+                self.bindings=[b for b in self.bindings if b['ui_project_id']!=token['project_id']]
+                self.last_poll=0
+                if self.ui_project==token['project_id']:self.set_notice('Retained project memory deleted. Original notes and files remain.')
             elif kind=='agent':
                 connection={k:v for k,v in event['result'].items() if k!='capability'}
                 self.agents[connection['grant_id']]=connection
